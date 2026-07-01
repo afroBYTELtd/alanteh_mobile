@@ -1,0 +1,11 @@
+name: asm_ride_domain
+description: Country-neutral immutable ride-domain values for ASM applications.
+publish_to: 'none'
+version: 0.2.0
+
+environment:
+  sdk: ^3.12.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

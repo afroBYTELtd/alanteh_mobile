@@ -1,0 +1,19 @@
+name: asm_offline_queue
+description: Local offline event queue foundation for ASM mobile apps.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path: ^1.9.1
+  sqflite: ^2.4.3
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  sqflite_common_ffi: ^2.4.2

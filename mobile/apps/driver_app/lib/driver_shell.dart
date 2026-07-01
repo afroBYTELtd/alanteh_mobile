@@ -1,0 +1,98 @@
+import 'package:asm_app_config/asm_app_config.dart';
+import 'package:asm_design_system/asm_design_system.dart';
+import 'package:flutter/material.dart';
+
+import 'concern/driver_concern_page.dart';
+import 'driver_home.dart';
+import 'readiness/driver_readiness_page.dart';
+import 'ride_offer/driver_ride_offer_page.dart';
+
+class DriverShell extends StatefulWidget {
+  const DriverShell({this.configuration = AsmAppConfig.localGhana, super.key});
+
+  final AsmAppConfig configuration;
+
+  @override
+  State<DriverShell> createState() => _DriverShellState();
+}
+
+class _DriverShellState extends State<DriverShell> {
+  int _selectedIndex = 0;
+
+  Future<void> _openReadiness() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            DriverReadinessPage(market: widget.configuration.market),
+      ),
+    );
+  }
+
+  Future<void> _openConcern() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverConcernPage(market: widget.configuration.market),
+      ),
+    );
+  }
+
+  Future<void> _openRideOfferPreview() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            DriverRideOfferPage(market: widget.configuration.market),
+      ),
+    );
+  }
+
+  Widget get _selectedPage {
+    return switch (_selectedIndex) {
+      0 => DriverHome(
+        market: widget.configuration.market,
+        onOpenReadiness: _openReadiness,
+        onRecordConcern: _openConcern,
+        onPreviewIncomingRequest: _openRideOfferPreview,
+      ),
+      1 => const AsmDemoPlaceholder(
+        icon: Icons.route_outlined,
+        title: 'No trips connected',
+        message: 'Driver assignments are unavailable in this local demo.',
+      ),
+      _ => const AsmDemoPlaceholder(
+        icon: Icons.support_agent_outlined,
+        title: 'Support not connected',
+        message: 'Driver support is unavailable in this local demo.',
+      ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _selectedPage,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) {
+          setState(() => _selectedIndex = index);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.work_outline),
+            selectedIcon: Icon(Icons.work),
+            label: 'Work',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route),
+            label: 'Trips',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.support_agent_outlined),
+            selectedIcon: Icon(Icons.support_agent),
+            label: 'Support',
+          ),
+        ],
+      ),
+    );
+  }
+}

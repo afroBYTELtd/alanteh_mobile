@@ -1,0 +1,18 @@
+name: asm_auth
+description: Shared authentication foundation for ASM mobile apps.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  asm_api_client:
+    path: ../asm_api_client
+  flutter_secure_storage: ^10.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
