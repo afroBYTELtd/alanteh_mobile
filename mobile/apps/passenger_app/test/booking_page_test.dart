@@ -6,6 +6,49 @@ import 'package:passenger_app/booking/booking_page.dart';
 import 'package:passenger_app/main.dart';
 
 void main() {
+  testWidgets('renders existing booking form controls without submission', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    await tester.pumpWidget(_bookingTestApp());
+
+    expect(find.byKey(const Key('booking-service-context')), findsOneWidget);
+    expect(find.text('Approved service context'), findsOneWidget);
+    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+    expect(find.text('Pickup description'), findsOneWidget);
+    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+    expect(find.text('Destination description'), findsOneWidget);
+    expect(find.text('Passengers'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-count-decrease')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-count-increase')), findsOneWidget);
+    expect(find.byKey(const Key('booking-assistance')), findsOneWidget);
+    expect(find.text('Assistance note (optional)'), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('review-local-draft')));
+    expect(find.byKey(const Key('review-local-draft')), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('passenger-count-decrease')))
+          .onPressed,
+      isNull,
+    );
+
+    for (var count = 2; count <= 6; count++) {
+      await tester.tap(find.byKey(const Key('passenger-count-increase')));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('6'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('passenger-count-increase')))
+          .onPressed,
+      isNull,
+    );
+    expect(find.text('Submit'), findsNothing);
+    expect(find.text('Request Ride'), findsNothing);
+  });
+
   testWidgets('keeps empty booking validation and corrected assistance label', (
     tester,
   ) async {

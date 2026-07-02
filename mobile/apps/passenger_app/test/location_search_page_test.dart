@@ -4,6 +4,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/location/location_search_page.dart';
 
 void main() {
+  testWidgets('renders location search input for local descriptions only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_pageApp(kind: LocationSearchKind.pickup));
+
+    expect(find.text('Choose pickup'), findsWidgets);
+    expect(find.byKey(const Key('location-market-context')), findsOneWidget);
+    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.byKey(const Key('location-description')), findsOneWidget);
+    expect(find.text('Use this location description'), findsOneWidget);
+    expect(
+      find.text('Local description only. No map search is connected.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('location-description')),
+      'Osu local pickup point',
+    );
+
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('location-description')))
+          .controller!
+          .text,
+      'Osu local pickup point',
+    );
+    expect(find.text('GPS'), findsNothing);
+    expect(find.text('GoogleMap'), findsNothing);
+  });
+
   testWidgets('rejects a blank local description', (tester) async {
     await tester.pumpWidget(_pageApp(kind: LocationSearchKind.pickup));
 

@@ -81,6 +81,26 @@ void main() {
     );
   });
 
+  testWidgets('confirms Passenger login controls are local demo only', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    await tester.pumpWidget(const PassengerApp(showLoginShell: true));
+
+    expect(find.text('Passenger login shell'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-pin-field')), findsOneWidget);
+    expect(find.text('Continue local demo'), findsOneWidget);
+    expect(find.text('Clear form'), findsOneWidget);
+    expect(
+      find.textContaining('Live login will connect after'),
+      findsOneWidget,
+    );
+    expect(find.text('Submit credentials'), findsNothing);
+    expect(find.text('Login'), findsNothing);
+    expect(find.text('Request ride'), findsNothing);
+  });
+
   testWidgets('navigates the map-first controlled Ghana passenger shell', (
     tester,
   ) async {

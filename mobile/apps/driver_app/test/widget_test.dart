@@ -167,6 +167,34 @@ void main() {
     expect(find.text('Not connected'), findsOneWidget);
   });
 
+  testWidgets('Driver local demo exposes existing field areas', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+    await tester.pumpWidget(const DriverApp());
+    await _openDriverLocalDemo(tester);
+
+    expect(find.byKey(const Key('open-readiness')), findsOneWidget);
+    expect(find.byKey(const Key('open-concern')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
+    expect(find.text('Pre-shift readiness'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('open-concern')));
+    await tester.pumpAndSettle();
+    expect(find.text('Vehicle concern'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await _openRideOfferPreview(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Incoming request preview'), findsOneWidget);
+    expect(find.text('LOCAL PREVIEW'), findsOneWidget);
+    _expectNoOperationalActions();
+  });
+
   testWidgets('completes, resets, closes, and reopens the local checklist', (
     tester,
   ) async {
