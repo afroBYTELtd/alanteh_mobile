@@ -111,10 +111,22 @@ extension PaymentMethodBackendCode on PaymentMethod {
   String get backendCode {
     return switch (this) {
       PaymentMethod.mtnMomo => 'mtn_momo',
-      PaymentMethod.telecelCash => 'telecel_cash',
+      PaymentMethod.telecelCash => 'vod',
       PaymentMethod.airteltigoMoney => 'airteltigo_money',
       PaymentMethod.partnerBilling => 'partner_billing',
       PaymentMethod.manual => 'manual',
+    };
+  }
+}
+
+extension PaymentMethodDisplayLabel on PaymentMethod {
+  String get displayLabel {
+    return switch (this) {
+      PaymentMethod.mtnMomo => 'MTN MoMo',
+      PaymentMethod.telecelCash => 'Telecel Cash',
+      PaymentMethod.airteltigoMoney => 'AirtelTigo Money',
+      PaymentMethod.partnerBilling => 'Partner Billing',
+      PaymentMethod.manual => 'Manual Review',
     };
   }
 }

@@ -73,11 +73,34 @@ void main() {
 
     test('payment method backend code mapping is correct', () {
       expect(PaymentMethod.mtnMomo.backendCode, 'mtn_momo');
-      expect(PaymentMethod.telecelCash.backendCode, 'telecel_cash');
+      expect(PaymentMethod.telecelCash.backendCode, 'vod');
       expect(PaymentMethod.airteltigoMoney.backendCode, 'airteltigo_money');
       expect(PaymentMethod.partnerBilling.backendCode, 'partner_billing');
       expect(PaymentMethod.manual.backendCode, 'manual');
     });
+
+    test(
+      'payment method display labels use current Ghana mobile money naming',
+      () {
+        expect(PaymentMethod.telecelCash.displayLabel, 'Telecel Cash');
+
+        final labels = PaymentMethod.values
+            .map((paymentMethod) => paymentMethod.displayLabel)
+            .toList();
+        final outdatedProviderName = ['Voda', 'fone'].join();
+        final outdatedCashLabel = [outdatedProviderName, 'Cash'].join(' ');
+
+        expect(
+          labels.any(
+            (label) =>
+                label == outdatedProviderName ||
+                label == outdatedCashLabel ||
+                label.contains(outdatedProviderName),
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('service context backend code mapping matches platform codes', () {
       expect(RideServiceContextCode.hotelOrAccommodation.backendCode, 'hotel');

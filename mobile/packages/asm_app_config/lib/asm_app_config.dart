@@ -2,6 +2,8 @@ enum OperatingModel { controlledPilot }
 
 enum RuntimeEnvironment { local, development, staging, production }
 
+enum PaymentMethod { mtnMomo, telecelCash, airteltigoMoney }
+
 final class MarketConfig {
   const MarketConfig({
     required this.marketCode,
@@ -14,6 +16,8 @@ final class MarketConfig {
     required this.timeZone,
     required this.phonePrefix,
     required this.operatingModel,
+    required this.supportedPaymentMethods,
+    required this.defaultPaymentMethod,
   });
 
   static const ghanaAccra = MarketConfig(
@@ -27,6 +31,12 @@ final class MarketConfig {
     timeZone: 'Africa/Accra',
     phonePrefix: '+233',
     operatingModel: OperatingModel.controlledPilot,
+    supportedPaymentMethods: [
+      PaymentMethod.mtnMomo,
+      PaymentMethod.telecelCash,
+      PaymentMethod.airteltigoMoney,
+    ],
+    defaultPaymentMethod: PaymentMethod.mtnMomo,
   );
 
   final String marketCode;
@@ -39,6 +49,11 @@ final class MarketConfig {
   final String timeZone;
   final String phonePrefix;
   final OperatingModel operatingModel;
+  final List<PaymentMethod> supportedPaymentMethods;
+  final PaymentMethod defaultPaymentMethod;
+
+  bool get defaultPaymentMethodIsSupported =>
+      supportedPaymentMethods.contains(defaultPaymentMethod);
 }
 
 final class CapabilityConfig {
