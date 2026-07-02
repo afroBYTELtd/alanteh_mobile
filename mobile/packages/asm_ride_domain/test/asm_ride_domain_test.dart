@@ -40,6 +40,7 @@ void main() {
         PaymentStatus.expired,
         PaymentStatus.cancelled,
         PaymentStatus.partnerBilled,
+        PaymentStatus.partnerPaid,
         PaymentStatus.manualVerified,
       ]);
     });
@@ -48,17 +49,23 @@ void main() {
       expect(PaymentStatus.notStarted.backendCode, 'not_started');
       expect(PaymentStatus.pending.backendCode, 'pending');
       expect(PaymentStatus.processing.backendCode, 'processing');
-      expect(PaymentStatus.paid.backendCode, 'paid');
+      expect(PaymentStatus.paid.backendCode, 'payment_confirmed');
       expect(PaymentStatus.failed.backendCode, 'failed');
       expect(PaymentStatus.expired.backendCode, 'expired');
       expect(PaymentStatus.cancelled.backendCode, 'cancelled');
       expect(PaymentStatus.partnerBilled.backendCode, 'partner_billed');
+      expect(PaymentStatus.partnerPaid.backendCode, 'partner_paid');
       expect(PaymentStatus.manualVerified.backendCode, 'manual_verified');
     });
 
     test('manual verified status keeps the Control Center backend code', () {
       expect(PaymentStatus.manualVerified, isA<PaymentStatus>());
       expect(PaymentStatus.manualVerified.backendCode, 'manual_verified');
+    });
+
+    test('partner paid status keeps the Control Center backend code', () {
+      expect(PaymentStatus.partnerPaid, isA<PaymentStatus>());
+      expect(PaymentStatus.partnerPaid.backendCode, 'partner_paid');
     });
 
     test('payment methods contain exactly the approved values', () {
@@ -72,9 +79,9 @@ void main() {
     });
 
     test('payment method backend code mapping is correct', () {
-      expect(PaymentMethod.mtnMomo.backendCode, 'mtn_momo');
+      expect(PaymentMethod.mtnMomo.backendCode, 'mtn');
       expect(PaymentMethod.telecelCash.backendCode, 'vod');
-      expect(PaymentMethod.airteltigoMoney.backendCode, 'airteltigo_money');
+      expect(PaymentMethod.airteltigoMoney.backendCode, 'atl');
       expect(PaymentMethod.partnerBilling.backendCode, 'partner_billing');
       expect(PaymentMethod.manual.backendCode, 'manual');
     });

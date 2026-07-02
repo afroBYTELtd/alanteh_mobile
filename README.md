@@ -206,3 +206,13 @@ No live API work was added.
 
 When the Passenger App payment screen is eventually built, MTN MoMo must be pre-selected by default for Ghana Accra. Passengers should only need to change provider if they use Telecel Cash or AirtelTigo Money.
 
+## M1BF Payment Domain Alignment
+
+M1BF aligned mobile payment provider backend codes with the Control Center/Paystack provider-code direction:
+MTN MoMo -> mtn
+Telecel Cash -> vod
+AirtelTigo Money -> atl
+
+M1BF also aligned payment confirmed status to payment_confirmed and added partnerPaid -> partner_paid.
+No payment screen or live payment integration was added.
+
