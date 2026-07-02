@@ -80,6 +80,7 @@ enum PaymentStatus {
   expired,
   cancelled,
   partnerBilled,
+  partnerPaid,
   manualVerified,
 }
 
@@ -89,11 +90,12 @@ extension PaymentStatusBackendCode on PaymentStatus {
       PaymentStatus.notStarted => 'not_started',
       PaymentStatus.pending => 'pending',
       PaymentStatus.processing => 'processing',
-      PaymentStatus.paid => 'paid',
+      PaymentStatus.paid => 'payment_confirmed',
       PaymentStatus.failed => 'failed',
       PaymentStatus.expired => 'expired',
       PaymentStatus.cancelled => 'cancelled',
       PaymentStatus.partnerBilled => 'partner_billed',
+      PaymentStatus.partnerPaid => 'partner_paid',
       PaymentStatus.manualVerified => 'manual_verified',
     };
   }
@@ -110,9 +112,9 @@ enum PaymentMethod {
 extension PaymentMethodBackendCode on PaymentMethod {
   String get backendCode {
     return switch (this) {
-      PaymentMethod.mtnMomo => 'mtn_momo',
+      PaymentMethod.mtnMomo => 'mtn',
       PaymentMethod.telecelCash => 'vod',
-      PaymentMethod.airteltigoMoney => 'airteltigo_money',
+      PaymentMethod.airteltigoMoney => 'atl',
       PaymentMethod.partnerBilling => 'partner_billing',
       PaymentMethod.manual => 'manual',
     };
@@ -126,7 +128,7 @@ extension PaymentMethodDisplayLabel on PaymentMethod {
       PaymentMethod.telecelCash => 'Telecel Cash',
       PaymentMethod.airteltigoMoney => 'AirtelTigo Money',
       PaymentMethod.partnerBilling => 'Partner Billing',
-      PaymentMethod.manual => 'Manual Review',
+      PaymentMethod.manual => 'Manual',
     };
   }
 }
