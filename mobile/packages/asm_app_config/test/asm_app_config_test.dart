@@ -18,6 +18,22 @@ void main() {
       expect(market.operatingModel, OperatingModel.controlledPilot);
     });
 
+    test('orders Ghana Accra supported payment methods and default safely', () {
+      const market = MarketConfig.ghanaAccra;
+
+      expect(market.supportedPaymentMethods, [
+        PaymentMethod.mtnMomo,
+        PaymentMethod.telecelCash,
+        PaymentMethod.airteltigoMoney,
+      ]);
+      expect(market.defaultPaymentMethod, PaymentMethod.mtnMomo);
+      expect(market.defaultPaymentMethodIsSupported, isTrue);
+      expect(
+        market.supportedPaymentMethods.contains(market.defaultPaymentMethod),
+        isTrue,
+      );
+    });
+
     test('keeps the geographic code separate from operating status', () {
       const market = MarketConfig.ghanaAccra;
 

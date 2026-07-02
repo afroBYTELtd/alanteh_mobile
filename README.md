@@ -202,3 +202,7 @@ No runtime behavior changed.
 
 No live API work was added.
 
+## M1BE Future Passenger Payment Rule
+
+When the Passenger App payment screen is eventually built, MTN MoMo must be pre-selected by default for Ghana Accra. Passengers should only need to change provider if they use Telecel Cash or AirtelTigo Money.
+
