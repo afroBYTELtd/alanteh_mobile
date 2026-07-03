@@ -216,3 +216,10 @@ AirtelTigo Money -> atl
 M1BF also aligned payment confirmed status to payment_confirmed and added partnerPaid -> partner_paid.
 No payment screen or live payment integration was added.
 
+## M1BG Mobile Visual QA Evidence Pack
+
+M1BG added a visual QA evidence pack only.
+No runtime behavior changed.
+No app source files changed.
+M2A remains blocked until CC4A and CC4B Control Center handoff.
+
