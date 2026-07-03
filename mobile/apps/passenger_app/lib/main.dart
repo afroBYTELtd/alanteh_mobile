@@ -101,19 +101,16 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
             children: [
               AsmScreenHeader(
                 leading: const AsmAppBrandMark(),
-                title: 'Passenger login shell',
+                title: 'Passenger access',
                 subtitle: '${market.city}, ${market.countryName}',
-                trailing: const AsmLocalDemoBadge(),
               ),
               const SizedBox(height: AsmSpacing.space20),
               const Text(
-                'Local demo only',
+                'Pilot access',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: AsmSpacing.space8),
-              const Text(
-                'Live login will connect after Control Center auth API is ready',
-              ),
+              const Text('Enter your phone number and PIN to continue.'),
               const SizedBox(height: AsmSpacing.space20),
               TextFormField(
                 key: const Key('passenger-phone-field'),
@@ -155,7 +152,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                 key: const Key('passenger-continue-local-demo'),
                 onPressed: _continueLocalDemo,
                 icon: Icons.play_arrow_outlined,
-                label: 'Continue local demo',
+                label: 'Continue',
               ),
               const SizedBox(height: AsmSpacing.space8),
               AsmPrimaryActionButton(
@@ -169,8 +166,8 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
               const SizedBox(height: AsmSpacing.space20),
               const AsmPilotNoticeBanner(
                 message:
-                    'Demo mode only. This screen does not open a real account '
-                    'or submit credentials.',
+                    'This screen checks the phone and PIN format before '
+                    'opening the passenger app.',
               ),
             ],
           ),

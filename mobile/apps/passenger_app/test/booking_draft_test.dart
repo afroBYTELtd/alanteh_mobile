@@ -6,7 +6,7 @@ void main() {
   group('BookingDraft', () {
     test('creates a normalized valid draft with an optional note', () {
       final draft = BookingDraft(
-        marketCode: '  gh-accra  ',
+        marketCode: '  accra-test  ',
         serviceContext: RideServiceContextCode.hotelOrAccommodation,
         pickupDescription: '  Solar Hotel  ',
         destinationDescription: '  Accra Airport  ',
@@ -15,7 +15,7 @@ void main() {
       );
 
       expect(draft.identity.value, BookingDraft.localDraftIdentityValue);
-      expect(draft.marketCode.value, 'gh-accra');
+      expect(draft.marketCode.value, 'accra-test');
       expect(draft.serviceContext, RideServiceContextCode.hotelOrAccommodation);
       expect(draft.pickupDescription.value, 'Solar Hotel');
       expect(draft.destinationDescription.value, 'Accra Airport');
@@ -101,11 +101,11 @@ void main() {
       );
 
       expect(original.destinationDescription.value, 'Airport');
-      expect(original.marketCode.value, 'gh-accra');
+      expect(original.marketCode.value, 'accra-test');
       expect(original.passengerCount.value, 1);
       expect(original.assistanceNote?.value, 'Wheelchair space');
       expect(updated.destinationDescription.value, 'Conference Centre');
-      expect(updated.marketCode.value, 'gh-accra');
+      expect(updated.marketCode.value, 'accra-test');
       expect(updated.passengerCount.value, 4);
       expect(updated.assistanceNote, isNull);
       expect(updated.identity.value, original.identity.value);
@@ -116,7 +116,7 @@ void main() {
       final updated = original.copyWith(marketCode: '  test-market  ');
 
       expect(updated.marketCode.value, 'test-market');
-      expect(original.marketCode.value, 'gh-accra');
+      expect(original.marketCode.value, 'accra-test');
       expect(
         () => original.copyWith(marketCode: '   '),
         throwsA(
@@ -155,7 +155,7 @@ void main() {
 }
 
 BookingDraft _validDraft({
-  String marketCode = 'gh-accra',
+  String marketCode = 'accra-test',
   String pickupDescription = 'Solar Hotel',
   String destinationDescription = 'Airport',
   int passengerCount = 1,

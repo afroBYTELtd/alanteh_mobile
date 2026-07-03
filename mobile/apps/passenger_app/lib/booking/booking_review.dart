@@ -1,4 +1,3 @@
-import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
@@ -8,19 +7,19 @@ import 'booking_draft.dart';
 class BookingReview extends StatelessWidget {
   const BookingReview({
     required this.draft,
-    required this.market,
     required this.onEdit,
-    required this.onClose,
+    required this.onConfirm,
     super.key,
   });
 
   final BookingDraft draft;
-  final MarketConfig market;
   final VoidCallback onEdit;
-  final VoidCallback onClose;
+  final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AsmSpacing.space20,
@@ -29,22 +28,19 @@ class BookingReview extends StatelessWidget {
         AsmSpacing.space32,
       ),
       children: [
-        const _LocalDemoHeading(
-          message: 'Review this draft before closing or editing it.',
+        Text(
+          'Confirm your ride',
+          style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: AsmSpacing.space20),
-        const AsmLocalInfoPanel(message: 'No ride request has been sent.'),
+        const SizedBox(height: AsmSpacing.space8),
+        Text(
+          'Check your ride details before requesting.',
+          style: textTheme.bodyLarge?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
         const SizedBox(height: AsmSpacing.space24),
-        AsmRideDetailRow(
-          label: 'Operating market',
-          value: '${market.city}, ${market.countryName}',
-          selectableValue: true,
-        ),
-        AsmRideDetailRow(
-          label: 'Service context',
-          value: draft.serviceContext.label,
-          selectableValue: true,
-        ),
         AsmRideDetailRow(
           label: 'Pickup',
           value: draft.rideDraft.pickupDisplayText,
@@ -56,19 +52,24 @@ class BookingReview extends StatelessWidget {
           selectableValue: true,
         ),
         AsmRideDetailRow(
-          label: 'Passengers',
+          label: 'Passenger count',
           value: '${draft.passengerCount.value}',
+          selectableValue: true,
+        ),
+        const AsmRideDetailRow(
+          label: 'Payment method',
+          value: 'MTN MoMo',
           selectableValue: true,
         ),
         if (draft.assistanceNote != null)
           AsmRideDetailRow(
-            label: 'Assistance note',
+            label: 'Special request',
             value: draft.assistanceNote!.value,
             selectableValue: true,
           ),
         const SizedBox(height: AsmSpacing.space16),
         OutlinedButton.icon(
-          key: const Key('edit-booking-draft'),
+          key: const Key('edit-booking-details'),
           onPressed: onEdit,
           icon: const Icon(Icons.edit_outlined),
           label: const Text('Edit details'),
@@ -78,54 +79,11 @@ class BookingReview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space12),
         FilledButton.icon(
-          key: const Key('close-booking-draft'),
-          onPressed: onClose,
-          icon: const Icon(Icons.close),
-          label: const Text('Close draft'),
+          key: const Key('confirm-and-request'),
+          onPressed: onConfirm,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Confirm and request'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-        ),
-      ],
-    );
-  }
-}
-
-class _LocalDemoHeading extends StatelessWidget {
-  const _LocalDemoHeading({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AsmSpacing.space12,
-            vertical: AsmSpacing.space8,
-          ),
-          decoration: BoxDecoration(
-            color: colors.primaryContainer,
-            borderRadius: BorderRadius.circular(AsmRadii.radius6),
-          ),
-          child: Text(
-            'LOCAL DEMO',
-            style: TextStyle(
-              color: colors.onPrimaryContainer,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        const SizedBox(height: AsmSpacing.space12),
-        Text(
-          message,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: colors.onSurfaceVariant,
-            height: 1.4,
-          ),
         ),
       ],
     );

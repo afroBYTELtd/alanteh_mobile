@@ -35,9 +35,7 @@ class PassengerHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pilotNotice =
-        '${market.countryName.toUpperCase()} PILOT · ${market.city} local '
-        'planning only. No ride service is connected.';
+    final textTheme = Theme.of(context).textTheme;
 
     return AsmScreenSurface(
       scrollable: true,
@@ -57,15 +55,27 @@ class PassengerHome extends StatelessWidget {
               fontSize: 16,
               fontWeight: FontWeight.w800,
             ),
-            trailing: const AsmLocalDemoBadge(),
           ),
           const SizedBox(height: AsmSpacing.space12),
           AsmLocalMapPreviewSurface(
             key: const Key('local-map-preview'),
             icon: Icons.map_outlined,
-            title: 'Map preview unavailable in this local demo.',
+            title: 'Map preview unavailable.',
             minHeight: 190,
             titleStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          Text(
+            'Book a ride',
+            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: AsmSpacing.space4),
+          Text(
+            'Where are you?',
+            style: textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: AsmSpacing.space12),
           PassengerRoutePlanner(
@@ -81,8 +91,6 @@ class PassengerHome extends StatelessWidget {
             onSwap: onSwap,
             onClear: onClear,
           ),
-          const SizedBox(height: AsmSpacing.space12),
-          AsmPilotNoticeBanner(message: pilotNotice),
         ],
       ),
     );

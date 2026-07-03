@@ -238,3 +238,19 @@ Driver App expects driver account context.
 Passenger offline queue decision and future MTN MoMo login-phone prefill note were added to the Phase 2 readiness gate.
 
 No email/password conversion, live API call, token writing from app UI, Django connection, or M2A behavior was added.
+
+## M1BI Passenger Booking UX Simplification
+
+M1BI simplified the Passenger booking UI before M2A.
+
+Passenger-facing engineering labels were removed.
+
+The service context dropdown was removed from Passenger UI.
+
+The booking form now uses plain passenger language.
+
+The confirm screen shows MTN MoMo as the default payment method display only.
+
+No backend/API call, live booking submission, payment integration, maps, GPS, or new package was added.
+
+Future pilot UX decision: pickup and destination may become predefined approved-location lists before live launch, because GPS/maps are not yet integrated and free text may increase dispatcher uncertainty.
