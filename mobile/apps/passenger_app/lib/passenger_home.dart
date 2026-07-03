@@ -50,7 +50,7 @@ class PassengerHome extends StatelessWidget {
         children: [
           AsmScreenHeader(
             leading: const AsmAppBrandMark(),
-            title: 'ASM PASSENGER',
+            title: 'ALANTEH',
             titleStyle: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,

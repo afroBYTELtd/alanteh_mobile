@@ -36,10 +36,10 @@ class _DriverRideOfferPageState extends State<DriverRideOfferPage> {
     final marketLabel = '${widget.market.city}, ${widget.market.countryName}';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Incoming request preview')),
+      appBar: AppBar(title: const Text('New trip')),
       body: SafeArea(
         child: Semantics(
-          label: 'Sample incoming-request preview',
+          label: 'New trip',
           container: true,
           explicitChildNodes: true,
           child: ListView(
@@ -91,9 +91,9 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = switch (status) {
-      DriverRideOfferPreviewStatus.pending => 'LOCAL PREVIEW',
-      DriverRideOfferPreviewStatus.acceptedPreview => 'PREVIEW ACCEPTED',
-      DriverRideOfferPreviewStatus.declinedPreview => 'PREVIEW DECLINED',
+      DriverRideOfferPreviewStatus.pending => 'New trip',
+      DriverRideOfferPreviewStatus.acceptedPreview => 'Accepted',
+      DriverRideOfferPreviewStatus.declinedPreview => 'Declined',
     };
 
     return Container(

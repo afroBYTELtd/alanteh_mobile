@@ -40,7 +40,7 @@ class DriverConcernReview extends StatelessWidget {
             borderRadius: BorderRadius.circular(AsmRadii.radius8),
           ),
           child: Text(
-            'No concern report has been sent.',
+            'No issue report has been sent.',
             style: TextStyle(
               color: colors.onPrimaryContainer,
               fontWeight: FontWeight.w800,
@@ -49,18 +49,15 @@ class DriverConcernReview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space20),
         _ReviewValue(label: 'Operating market', value: marketLabel),
-        _ReviewValue(label: 'Category', value: draft.category.label),
-        _ReviewValue(
-          label: 'Attention level',
-          value: draft.attentionLevel.label,
-        ),
+        _ReviewValue(label: 'What is the issue?', value: draft.category.label),
+        _ReviewValue(label: 'How urgent?', value: draft.attentionLevel.label),
         _ReviewValue(label: 'Description', value: draft.description),
         const SizedBox(height: AsmSpacing.space16),
         OutlinedButton.icon(
           key: const Key('edit-concern'),
           onPressed: onEdit,
           icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit concern'),
+          label: const Text('Edit report'),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
           ),
@@ -70,7 +67,7 @@ class DriverConcernReview extends StatelessWidget {
           key: const Key('close-concern'),
           onPressed: onClose,
           icon: const Icon(Icons.close),
-          label: const Text('Close draft'),
+          label: const Text('Close'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         ),
       ],

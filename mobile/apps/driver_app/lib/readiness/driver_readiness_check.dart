@@ -1,8 +1,8 @@
 enum DriverReadinessItem {
-  approvedShiftDetails('Approved shift details confirmed'),
-  vehicleExterior('Tyres, lights and vehicle exterior checked'),
-  cabinSafety('Seat belts and cabin safety checked'),
-  batteryStatus('Battery status and visible warnings checked');
+  approvedShiftDetails('Shift details'),
+  vehicleExterior('Vehicle outside'),
+  cabinSafety('Inside the car'),
+  batteryStatus('Battery');
 
   const DriverReadinessItem(this.label);
 

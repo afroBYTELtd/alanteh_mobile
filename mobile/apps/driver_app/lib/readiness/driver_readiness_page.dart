@@ -36,7 +36,7 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Pre-shift readiness')),
+      appBar: AppBar(title: const Text('Shift check')),
       body: DriverReadinessContent(
         market: widget.market,
         check: _check,

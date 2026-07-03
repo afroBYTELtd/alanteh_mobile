@@ -27,7 +27,7 @@ class DriverApp extends StatelessWidget {
     assert(AuthState.unauthenticated().status == AuthStatus.unauthenticated);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'ASM Driver',
+      title: 'ALANTEH Driver',
       theme: AsmThemes.driver,
       home: showLoginShell
           ? DriverLoginShell(configuration: configuration)
@@ -85,8 +85,6 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return DriverShell(configuration: widget.configuration);
     }
 
-    final market = widget.configuration.market;
-
     return Scaffold(
       body: AsmScreenSurface(
         scrollable: true,
@@ -115,14 +113,9 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                     color: AsmColors.driverScaffold,
                   ),
                 ),
-                title: 'Driver login shell',
-                subtitle: '${market.city}, ${market.countryName}',
+                title: 'ALANTEH',
+                subtitle: 'Driver',
                 compact: true,
-                trailing: const AsmLocalDemoBadge(
-                  backgroundColor: AsmColors.driverPanelMuted,
-                  foregroundColor: AsmColors.driverWarningSurface,
-                  padding: EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                ),
               ),
               const SizedBox(height: 64),
               const Icon(
@@ -132,12 +125,12 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
               ),
               const SizedBox(height: AsmSpacing.space20),
               const Text(
-                'Local demo only',
+                'Driver access',
                 style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 14),
               const Text(
-                'Live login will connect after Control Center auth API is ready',
+                'Enter your phone number and PIN to continue.',
                 style: TextStyle(
                   color: AsmColors.driverTextSecondary,
                   height: 1.45,
@@ -150,7 +143,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(
-                  labelText: 'phone number',
+                  labelText: 'Phone number',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
@@ -184,7 +177,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                 key: const Key('driver-continue-local-demo'),
                 onPressed: _continueLocalDemo,
                 icon: Icons.play_arrow_outlined,
-                label: 'Continue local demo',
+                label: 'Continue without signing in',
               ),
               const SizedBox(height: AsmSpacing.space8),
               AsmPrimaryActionButton(
@@ -197,8 +190,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
               ),
               const SizedBox(height: AsmSpacing.space20),
               const Text(
-                'Demo mode only. This screen does not open a real account '
-                'or submit credentials.',
+                'This screen does not submit credentials.',
                 style: TextStyle(
                   color: AsmColors.driverTextSecondary,
                   height: 1.4,

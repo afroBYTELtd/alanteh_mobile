@@ -1,9 +1,9 @@
 enum DriverConcernCategory {
-  vehicleCondition('Vehicle condition'),
-  batteryOrCharging('Battery or charging'),
-  cabinOrSafetyEquipment('Cabin or safety equipment'),
-  shiftDetailsOrDocuments('Shift details or documents'),
-  otherConcern('Other concern');
+  vehicleCondition('Vehicle'),
+  batteryOrCharging('Battery'),
+  cabinOrSafetyEquipment('Safety'),
+  shiftDetailsOrDocuments('Documents'),
+  otherConcern('Other');
 
   const DriverConcernCategory(this.label);
 
@@ -11,8 +11,8 @@ enum DriverConcernCategory {
 }
 
 enum DriverConcernAttentionLevel {
-  reviewBeforeDriving('Review before driving'),
-  nonUrgentObservation('Non-urgent observation');
+  reviewBeforeDriving('Urgent'),
+  nonUrgentObservation('Not urgent');
 
   const DriverConcernAttentionLevel(this.label);
 

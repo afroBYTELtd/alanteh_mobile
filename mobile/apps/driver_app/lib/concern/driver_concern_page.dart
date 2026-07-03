@@ -56,7 +56,7 @@ class _DriverConcernPageState extends State<DriverConcernPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Vehicle concern')),
+      appBar: AppBar(title: const Text('Report an issue')),
       body: SafeArea(
         child: _reviewDraft == null
             ? DriverConcernForm(

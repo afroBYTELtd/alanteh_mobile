@@ -28,14 +28,14 @@ class DriverRideOfferDecisionPreview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space16),
         Text(
-          accepted ? 'Preview accepted' : 'Preview declined',
+          accepted ? 'Accepted' : 'Declined',
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: AsmSpacing.space16),
         AsmLocalInfoPanel(
           message: accepted
-              ? 'No ride has been reserved or assigned.'
-              : 'No live request was changed.',
+              ? 'Trip marked accepted on this screen.'
+              : 'Trip marked declined on this screen.',
           backgroundColor: const Color(0xFF343026),
           borderColor: const Color(0xFF554C39),
           iconColor: AsmColors.solarYellow,
@@ -46,7 +46,7 @@ class DriverRideOfferDecisionPreview extends StatelessWidget {
           key: const Key('close-ride-offer-preview'),
           onPressed: onClosePreview,
           icon: const Icon(Icons.close_outlined),
-          label: const Text('Close preview'),
+          label: const Text('Close'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         ),
       ],

@@ -75,7 +75,7 @@ void main() {
     await tester.tap(find.byKey(const Key('passenger-continue-local-demo')));
     await tester.pumpAndSettle();
 
-    expect(find.text('ASM PASSENGER'), findsOneWidget);
+    expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(find.text('Where are you?'), findsOneWidget);
@@ -106,7 +106,7 @@ void main() {
     await tester.pumpWidget(const PassengerApp());
     await _openPassengerAccess(tester);
 
-    expect(find.text('ASM PASSENGER'), findsOneWidget);
+    expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(find.text('Where are you?'), findsOneWidget);
@@ -193,6 +193,9 @@ void main() {
 }
 
 const _removedPassengerTexts = [
+  'ASM PASSENGER',
+  'ASM DRIVER',
+  'Africa Solar Mobility',
   'Approved service context',
   'LOCAL DEMO',
   'Plan a demo ride',

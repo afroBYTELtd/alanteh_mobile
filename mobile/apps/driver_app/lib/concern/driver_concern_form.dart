@@ -57,7 +57,7 @@ class DriverConcernForm extends StatelessWidget {
                 SizedBox(width: AsmSpacing.space12),
                 Expanded(
                   child: Text(
-                    'This local draft is not monitored or submitted. Do not use it for emergencies.',
+                    'This report is not sent from the app yet. For emergencies, follow approved local safety procedures.',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -74,7 +74,7 @@ class DriverConcernForm extends StatelessWidget {
             key: const Key('concern-category'),
             initialValue: category,
             isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Category'),
+            decoration: const InputDecoration(labelText: 'What is the issue?'),
             items: [
               for (final category in DriverConcernCategory.values)
                 DropdownMenuItem(
@@ -84,14 +84,14 @@ class DriverConcernForm extends StatelessWidget {
             ],
             onChanged: onCategoryChanged,
             validator: (value) =>
-                value == null ? 'Choose a concern category.' : null,
+                value == null ? 'Choose what the issue is.' : null,
           ),
           const SizedBox(height: AsmSpacing.space16),
           DropdownButtonFormField<DriverConcernAttentionLevel>(
             key: const Key('concern-attention'),
             initialValue: attentionLevel,
             isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Attention level'),
+            decoration: const InputDecoration(labelText: 'How urgent?'),
             items: [
               for (final level in DriverConcernAttentionLevel.values)
                 DropdownMenuItem(
@@ -101,14 +101,14 @@ class DriverConcernForm extends StatelessWidget {
             ],
             onChanged: onAttentionLevelChanged,
             validator: (value) =>
-                value == null ? 'Choose an attention level.' : null,
+                value == null ? 'Choose how urgent this is.' : null,
           ),
           const SizedBox(height: AsmSpacing.space16),
           TextFormField(
             key: const Key('concern-description'),
             controller: descriptionController,
             decoration: const InputDecoration(
-              labelText: 'Concern description',
+              labelText: 'Describe the issue...',
               alignLabelWithHint: true,
             ),
             minLines: 3,
@@ -118,7 +118,7 @@ class DriverConcernForm extends StatelessWidget {
             textCapitalization: TextCapitalization.sentences,
             textInputAction: TextInputAction.newline,
             validator: (value) => value == null || value.trim().isEmpty
-                ? 'Describe the local concern.'
+                ? 'Describe the issue.'
                 : null,
           ),
           const SizedBox(height: AsmSpacing.space16),
@@ -126,7 +126,7 @@ class DriverConcernForm extends StatelessWidget {
             key: const Key('review-concern'),
             onPressed: onReview,
             icon: const Icon(Icons.fact_check_outlined),
-            label: const Text('Review local concern'),
+            label: const Text('Send report'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
             ),

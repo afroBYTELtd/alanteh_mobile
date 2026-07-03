@@ -22,8 +22,7 @@ class DriverRideOfferPendingPreview extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const AsmLocalInfoPanel(
-          message:
-              'No live ride request has been received. This screen uses sample local data.',
+          message: 'Review the route before accepting.',
           backgroundColor: Color(0xFF343026),
           borderColor: Color(0xFF554C39),
           iconColor: AsmColors.solarYellow,
@@ -31,7 +30,7 @@ class DriverRideOfferPendingPreview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space24),
         const Text(
-          'Request summary',
+          'Route card',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: AsmSpacing.space16),
@@ -78,7 +77,7 @@ class DriverRideOfferPendingPreview extends StatelessWidget {
           key: const Key('accept-ride-offer-preview'),
           onPressed: onAcceptPreview,
           icon: const Icon(Icons.check_outlined),
-          label: const Text('Accept preview'),
+          label: const Text('Accept'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         ),
         const SizedBox(height: AsmSpacing.space8),
@@ -86,7 +85,7 @@ class DriverRideOfferPendingPreview extends StatelessWidget {
           key: const Key('decline-ride-offer-preview'),
           onPressed: onDeclinePreview,
           icon: const Icon(Icons.close_outlined),
-          label: const Text('Decline preview'),
+          label: const Text('Decline'),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
           ),
