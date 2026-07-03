@@ -74,6 +74,10 @@ void main() {
     expect(find.text('Clear form'), findsOneWidget);
     expect(find.text('Create account'), findsNothing);
     expect(find.text('Open public account'), findsNothing);
+    expect(find.text('Email'), findsNothing);
+    expect(find.text('email'), findsNothing);
+    expect(find.text('Password'), findsNothing);
+    expect(find.text('password'), findsNothing);
 
     await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
     await tester.pumpAndSettle();

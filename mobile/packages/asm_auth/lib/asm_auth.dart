@@ -28,6 +28,86 @@ void requireMobileAuth() {
 /// Minimum authentication states needed by the Passenger and Driver apps.
 enum AuthStatus { loading, authenticated, unauthenticated }
 
+/// Clear error message for account type/app-context mismatches.
+const authAppContextErrorMessage =
+    'This account is not allowed to sign in to this app.';
+
+/// Ghana pilot phone validation for CC4A phone/PIN auth.
+bool isValidGhanaPhoneNumber(String phone) {
+  return RegExp(r'^\+233\d{9}$').hasMatch(phone.trim());
+}
+
+/// Ghana pilot PIN validation for CC4A phone/PIN auth.
+bool isValidPin(String pin) {
+  return RegExp(r'^\d{4}$').hasMatch(pin.trim());
+}
+
+/// Account types returned by the finalized CC4A auth response.
+enum AuthAccountType {
+  passenger,
+  driver,
+  staff;
+
+  String get backendCode {
+    return switch (this) {
+      AuthAccountType.passenger => 'passenger',
+      AuthAccountType.driver => 'driver',
+      AuthAccountType.staff => 'staff',
+    };
+  }
+
+  static AuthAccountType? tryParse(Object? value) {
+    if (value is! String) {
+      return null;
+    }
+
+    return switch (value.trim()) {
+      'passenger' => AuthAccountType.passenger,
+      'driver' => AuthAccountType.driver,
+      'staff' => AuthAccountType.staff,
+      _ => null,
+    };
+  }
+
+  static AuthAccountType parse(Object? value) {
+    final accountType = tryParse(value);
+    if (accountType == null) {
+      throw const AuthException(
+        type: AuthExceptionType.accountType,
+        message: authAppContextErrorMessage,
+      );
+    }
+
+    return accountType;
+  }
+}
+
+/// App context expected by Passenger and Driver app login flows.
+enum AuthAppContext {
+  passenger,
+  driver;
+
+  AuthAccountType get expectedAccountType {
+    return switch (this) {
+      AuthAppContext.passenger => AuthAccountType.passenger,
+      AuthAppContext.driver => AuthAccountType.driver,
+    };
+  }
+
+  bool allowsAccountType(AuthAccountType accountType) {
+    return accountType == expectedAccountType;
+  }
+
+  void validateAccountType(AuthAccountType accountType) {
+    if (!allowsAccountType(accountType)) {
+      throw const AuthException(
+        type: AuthExceptionType.accountType,
+        message: authAppContextErrorMessage,
+      );
+    }
+  }
+}
+
 /// User authentication state for future controlled app login flows.
 class AuthState {
   const AuthState._({required this.status, this.session, this.error});
@@ -80,14 +160,21 @@ class AuthTokens {
 
 /// Authenticated session value used by future app auth state.
 class AuthSession {
-  const AuthSession({required this.tokens});
+  const AuthSession({required this.tokens, this.accountType});
 
   final AuthTokens tokens;
+  final AuthAccountType? accountType;
 
   bool get isAuthenticated => tokens.isValid;
 }
 
-enum AuthExceptionType { validation, apiFailure, missingRefreshToken, storage }
+enum AuthExceptionType {
+  validation,
+  apiFailure,
+  accountType,
+  missingRefreshToken,
+  storage,
+}
 
 /// Clear authentication exception for validation, API, and storage failures.
 class AuthException implements Exception {
@@ -216,16 +303,20 @@ class AuthService {
   AuthService({
     required AuthApiGateway apiGateway,
     required AuthTokenStore tokenStore,
+    AuthAppContext? appContext,
   }) : _apiGateway = apiGateway,
-       _tokenStore = tokenStore;
+       _tokenStore = tokenStore,
+       _appContext = appContext;
 
   factory AuthService.withApiClient({
     required AsmApiClient client,
     AuthTokenStore? tokenStore,
+    AuthAppContext? appContext,
   }) {
     return AuthService(
       apiGateway: AsmAuthApiGateway(client),
       tokenStore: tokenStore ?? SecureAuthTokenStore(),
+      appContext: appContext,
     );
   }
 
@@ -234,21 +325,22 @@ class AuthService {
 
   final AuthApiGateway _apiGateway;
   final AuthTokenStore _tokenStore;
+  final AuthAppContext? _appContext;
 
   Future<AuthState> login(String phone, String pin) async {
     final cleanPhone = phone.trim();
     final cleanPin = pin.trim();
 
-    if (cleanPhone.isEmpty) {
+    if (!isValidGhanaPhoneNumber(cleanPhone)) {
       throw const AuthException(
         type: AuthExceptionType.validation,
-        message: 'Phone must not be empty.',
+        message: 'Phone must use +233 followed by 9 digits.',
       );
     }
-    if (cleanPin.isEmpty) {
+    if (!isValidPin(cleanPin)) {
       throw const AuthException(
         type: AuthExceptionType.validation,
-        message: 'PIN must not be empty.',
+        message: 'PIN must be exactly 4 numeric digits.',
       );
     }
 
@@ -263,9 +355,9 @@ class AuthService {
     }
 
     try {
-      final tokens = _tokensFromResponse(response.data!);
-      await _tokenStore.saveTokens(tokens);
-      return AuthState.authenticated(AuthSession(tokens: tokens));
+      final session = _sessionFromLoginResponse(response.data!);
+      await _tokenStore.saveTokens(session.tokens);
+      return AuthState.authenticated(session);
     } on Object catch (error) {
       await _tokenStore.clearTokens();
       return AuthState.unauthenticated(_parseError(error));
@@ -327,6 +419,14 @@ class AuthService {
       refreshToken: refreshToken,
     );
     return AuthState.authenticated(AuthSession(tokens: tokens));
+  }
+
+  AuthSession _sessionFromLoginResponse(Map<String, Object?> json) {
+    final tokens = _tokensFromResponse(json);
+    final accountType = AuthAccountType.parse(json['account_type']);
+    _appContext?.validateAccountType(accountType);
+
+    return AuthSession(tokens: tokens, accountType: accountType);
   }
 
   AuthTokens _tokensFromResponse(

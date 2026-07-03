@@ -223,3 +223,18 @@ No runtime behavior changed.
 No app source files changed.
 M2A remains blocked until CC4A and CC4B Control Center handoff.
 
+## M1BH Phone/PIN Auth Readiness
+
+M1BH confirmed mobile auth remains phone/PIN to match the finalized CC4A-AUTH-FIX backend contract.
+
+The documented CC4A login request payload is:
+phone + pin
+
+Auth response handling now includes account_type parsing and expected app-context validation.
+
+Passenger App expects passenger account context.
+Driver App expects driver account context.
+
+Passenger offline queue decision and future MTN MoMo login-phone prefill note were added to the Phase 2 readiness gate.
+
+No email/password conversion, live API call, token writing from app UI, Django connection, or M2A behavior was added.
