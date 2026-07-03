@@ -52,25 +52,21 @@ void main() {
     });
   });
 
-  testWidgets('renders and validates the Driver local demo login shell', (
-    tester,
-  ) async {
+  testWidgets('renders and validates the Driver access shell', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(const DriverApp(showLoginShell: true));
 
-    expect(find.text('Driver login shell'), findsOneWidget);
+    expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.byKey(const Key('driver-phone-field')), findsOneWidget);
-    expect(find.text('phone number'), findsOneWidget);
+    expect(find.text('Phone number'), findsOneWidget);
     expect(find.byKey(const Key('driver-pin-field')), findsOneWidget);
     expect(find.text('PIN'), findsOneWidget);
-    expect(find.text('Local demo only'), findsOneWidget);
+    expect(find.text('Driver access'), findsOneWidget);
     expect(
-      find.text(
-        'Live login will connect after Control Center auth API is ready',
-      ),
+      find.text('Enter your phone number and PIN to continue.'),
       findsOneWidget,
     );
-    expect(find.text('Continue local demo'), findsOneWidget);
+    expect(find.text('Continue without signing in'), findsOneWidget);
     expect(find.text('Clear form'), findsOneWidget);
     expect(find.text('Create account'), findsNothing);
     expect(find.text('Open public account'), findsNothing);
@@ -118,12 +114,12 @@ void main() {
     await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
     await tester.pumpAndSettle();
 
-    expect(find.text('ASM DRIVER'), findsOneWidget);
-    expect(find.text('LOCAL DEMO'), findsOneWidget);
+    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.text('Off shift'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
   });
 
-  testWidgets('navigates the configured approved-driver local demo shell', (
+  testWidgets('navigates the configured approved-driver field shell', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -131,17 +127,17 @@ void main() {
     );
     await _openDriverLocalDemo(tester);
 
-    expect(find.text('ASM DRIVER'), findsOneWidget);
+    expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.text('Field workspace'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('LOCAL DEMO'), findsOneWidget);
+    expect(find.text('Off shift'), findsOneWidget);
     expect(find.text('Accra, Ghana'), findsOneWidget);
-    expect(find.text('Not connected'), findsOneWidget);
-    expect(find.textContaining('No live'), findsOneWidget);
-    expect(find.text('Open readiness check'), findsOneWidget);
-    expect(find.text('Record local concern'), findsOneWidget);
-    expect(find.text('Preview incoming request'), findsOneWidget);
-    expect(find.text('Incoming request preview'), findsNothing);
+    expect(find.text('Map coming soon'), findsOneWidget);
+    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('Start shift check'), findsOneWidget);
+    expect(find.text('Report an issue'), findsOneWidget);
+    expect(find.text('New trip'), findsWidgets);
+    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       0,
@@ -149,29 +145,22 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips connected'), findsOneWidget);
-    expect(
-      find.textContaining('unavailable in this local demo.'),
-      findsOneWidget,
-    );
+    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('Trip assignments will appear here.'), findsOneWidget);
     expect(find.text('Earnings'), findsNothing);
-    expect(find.text('LOCAL DEMO'), findsOneWidget);
 
     await tester.tap(find.text('Support'));
     await tester.pumpAndSettle();
     expect(find.text('Support not connected'), findsOneWidget);
-    expect(
-      find.text('Driver support is unavailable in this local demo.'),
-      findsOneWidget,
-    );
+    expect(find.text('Support is not available yet.'), findsOneWidget);
 
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Not connected'), findsOneWidget);
+    expect(find.text('Map coming soon'), findsOneWidget);
   });
 
-  testWidgets('Driver local demo exposes existing field areas', (tester) async {
+  testWidgets('Driver shell exposes existing field areas', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(const DriverApp());
     await _openDriverLocalDemo(tester);
@@ -182,24 +171,23 @@ void main() {
 
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
-    expect(find.text('Pre-shift readiness'), findsOneWidget);
+    expect(find.text('Shift check'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
-    expect(find.text('Vehicle concern'), findsOneWidget);
+    expect(find.text('Report an issue'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
     await _openRideOfferPreview(tester);
     await tester.pumpAndSettle();
-    expect(find.text('Incoming request preview'), findsOneWidget);
-    expect(find.text('LOCAL PREVIEW'), findsOneWidget);
+    expect(find.text('New trip'), findsWidgets);
     _expectNoOperationalActions();
   });
 
-  testWidgets('completes, resets, closes, and reopens the local checklist', (
+  testWidgets('completes, resets, closes, and reopens the shift check', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
@@ -209,13 +197,9 @@ void main() {
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pre-shift readiness'), findsOneWidget);
-    expect(find.text('LOCAL DEMO'), findsOneWidget);
+    expect(find.text('Shift check'), findsOneWidget);
     expect(find.text('Accra, Ghana'), findsOneWidget);
-    expect(
-      find.textContaining('This local checklist does not start a shift'),
-      findsOneWidget,
-    );
+    expect(find.text('Complete these checks before driving.'), findsOneWidget);
     for (final item in DriverReadinessItem.values) {
       expect(find.text(item.label), findsOneWidget);
     }
@@ -230,15 +214,18 @@ void main() {
     await tester.tap(find.byKey(const Key('readiness-batteryStatus')));
     await tester.pumpAndSettle();
     expect(find.text('4 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsOneWidget);
-    expect(find.text('No driver service has been activated.'), findsOneWidget);
+    expect(find.text('Shift check complete'), findsOneWidget);
+    expect(
+      find.text('Review your vehicle and route before starting work.'),
+      findsOneWidget,
+    );
     _expectNoOperationalActions();
 
     await tester.ensureVisible(find.byKey(const Key('reset-readiness')));
     await tester.tap(find.byKey(const Key('reset-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsNothing);
+    expect(find.text('Shift check complete'), findsNothing);
 
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
     await tester.pumpAndSettle();
@@ -250,7 +237,7 @@ void main() {
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Record a local concern'), findsOneWidget);
+    expect(find.text('Report an issue'), findsOneWidget);
   });
 
   testWidgets('validates, reviews, edits, closes, and resets a concern draft', (
@@ -262,12 +249,11 @@ void main() {
 
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
-    expect(find.text('Vehicle concern'), findsOneWidget);
-    expect(find.text('LOCAL DEMO'), findsOneWidget);
+    expect(find.text('Report an issue'), findsOneWidget);
     expect(find.text('Accra, Ghana'), findsOneWidget);
     expect(
       find.text(
-        'This local draft is not monitored or submitted. Do not use it for emergencies.',
+        'This report is not sent from the app yet. For emergencies, follow approved local safety procedures.',
       ),
       findsOneWidget,
     );
@@ -281,16 +267,16 @@ void main() {
     await _scrollToConcernReview(tester);
     await tester.tap(find.byKey(const Key('review-concern')));
     await tester.pumpAndSettle();
-    expect(find.text('Choose a concern category.'), findsOneWidget);
-    expect(find.text('Choose an attention level.'), findsOneWidget);
-    expect(find.text('Describe the local concern.'), findsOneWidget);
+    expect(find.text('Choose what the issue is.'), findsOneWidget);
+    expect(find.text('Choose how urgent this is.'), findsOneWidget);
+    expect(find.text('Describe the issue.'), findsOneWidget);
 
     await _completeConcernForm(tester, description: '  Loose mirror  ');
-    expect(find.text('No concern report has been sent.'), findsOneWidget);
+    expect(find.text('No issue report has been sent.'), findsOneWidget);
     expect(find.text('Operating market'), findsOneWidget);
     expect(find.byKey(const Key('concern-market')), findsOneWidget);
-    expect(find.text('Vehicle condition'), findsOneWidget);
-    expect(find.text('Review before driving'), findsOneWidget);
+    expect(find.text('Vehicle'), findsOneWidget);
+    expect(find.text('Urgent'), findsOneWidget);
     expect(find.text('Loose mirror'), findsOneWidget);
     _expectNoOperationalActions();
 
@@ -314,7 +300,7 @@ void main() {
       find.byKey(const Key('concern-description')),
     );
     expect(reopenedField.controller!.text, isEmpty);
-    expect(find.text('No concern report has been sent.'), findsNothing);
+    expect(find.text('No issue report has been sent.'), findsNothing);
     await tester.enterText(
       find.byKey(const Key('concern-description')),
       'x' * 241,
@@ -346,30 +332,30 @@ void main() {
     await tester.tap(find.byKey(const Key('close-concern')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pre-shift readiness'), findsOneWidget);
+    expect(find.text('Shift check'), findsOneWidget);
     expect(find.text('1 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsNothing);
-    expect(find.text('Record a local concern'), findsOneWidget);
+    expect(find.text('Shift check complete'), findsNothing);
+    expect(find.text('Report an issue'), findsOneWidget);
   });
 
-  testWidgets('accepts a local preview, closes, and reopens pending', (
+  testWidgets('accepts a trip screen decision, closes, and reopens pending', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(const DriverApp());
     await _openDriverLocalDemo(tester);
 
-    expect(find.text('Incoming request preview'), findsNothing);
+    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
     await _openRideOfferPreview(tester);
     await tester.pumpAndSettle();
 
     _expectPendingRideOffer();
     await tester.tap(find.byKey(const Key('accept-ride-offer-preview')));
     await tester.pumpAndSettle();
-    expect(find.text('Preview accepted'), findsOneWidget);
-    expect(find.textContaining('No ride has been reserved'), findsOneWidget);
-    expect(find.text('Accept preview'), findsNothing);
-    expect(find.text('Decline preview'), findsNothing);
+    expect(find.text('Accepted'), findsWidgets);
+    expect(find.text('Trip marked accepted on this screen.'), findsOneWidget);
+    expect(find.text('Accept'), findsNothing);
+    expect(find.text('Decline'), findsNothing);
     _expectNoRideOfferLiveContent();
 
     await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
@@ -379,20 +365,17 @@ void main() {
     await _openRideOfferPreview(tester);
     await tester.pumpAndSettle();
     _expectPendingRideOffer();
-    expect(find.text('Preview accepted'), findsNothing);
+    expect(find.text('Accepted'), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips connected'), findsOneWidget);
-    expect(
-      find.textContaining('unavailable in this local demo.'),
-      findsOneWidget,
-    );
+    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('Trip assignments will appear here.'), findsOneWidget);
   });
 
-  testWidgets('declines a local preview and returns to Driver Home', (
+  testWidgets('declines a trip screen decision and returns to Driver Home', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
@@ -404,9 +387,9 @@ void main() {
     await tester.tap(find.byKey(const Key('decline-ride-offer-preview')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Preview declined'), findsOneWidget);
-    expect(find.text('No live request was changed.'), findsOneWidget);
-    expect(find.text('Close preview'), findsOneWidget);
+    expect(find.text('Declined'), findsWidgets);
+    expect(find.text('Trip marked declined on this screen.'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
     _expectNoRideOfferLiveContent();
 
     await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
@@ -416,7 +399,23 @@ void main() {
     expect(find.byKey(const Key('open-concern')), findsOneWidget);
   });
 
-  testWidgets('ride preview remains reachable on a small scaled screen', (
+  testWidgets('driver screens hide old brand and internal marker wording', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    await tester.pumpWidget(const DriverApp(showLoginShell: true));
+
+    for (final removedText in _removedDriverTexts) {
+      expect(find.text(removedText), findsNothing);
+    }
+
+    await _openDriverLocalDemo(tester);
+    for (final removedText in _removedDriverTexts) {
+      expect(find.text(removedText), findsNothing);
+    }
+  });
+
+  testWidgets('ride screen remains reachable on a small scaled screen', (
     tester,
   ) async {
     _useSurface(tester, const Size(320, 568));
@@ -433,7 +432,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Incoming request preview'), findsOneWidget);
+    expect(find.text('New trip'), findsWidgets);
     await tester.scrollUntilVisible(
       find.byKey(const Key('decline-ride-offer-preview')),
       200,
@@ -443,7 +442,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('concern form remains reachable on a small scaled screen', (
+  testWidgets('issue form remains reachable on a small scaled screen', (
     tester,
   ) async {
     _useSurface(tester, const Size(320, 568));
@@ -460,11 +459,11 @@ void main() {
       ),
     );
 
-    expect(find.text('Vehicle concern'), findsOneWidget);
+    expect(find.text('Report an issue'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('review-concern')),
       200,
-      scrollable: find.byType(Scrollable).last,
+      scrollable: find.byType(Scrollable).first,
     );
     expect(find.byKey(const Key('review-concern')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -490,7 +489,7 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('open-readiness')));
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
-    expect(find.text('Pre-shift readiness'), findsOneWidget);
+    expect(find.text('Shift check'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('readiness-batteryStatus')),
       200,
@@ -506,6 +505,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+const _removedDriverTexts = [
+  'ASM DRIVER',
+  'ASM PASSENGER',
+  'Africa Solar Mobility',
+  'LOCAL DEMO',
+  'local demo',
+  'ASM_DRIVER_APP_AUTOMATION_ACTIVE',
+  'No live trips engineering warning',
+  'No real offer',
+  'demo preview',
+  'Pre-shift readiness check',
+  'Submit readiness',
+  'Incoming ride offer',
+  'Accept offer',
+  'Report a vehicle concern',
+  'Attention level',
+  'Submit concern',
+];
 
 void _expectNoOperationalActions() {
   for (final label in [
@@ -525,22 +543,16 @@ void _expectNoOperationalActions() {
 }
 
 void _expectPendingRideOffer() {
-  expect(find.text('Incoming request preview'), findsOneWidget);
-  expect(find.text('LOCAL PREVIEW'), findsOneWidget);
+  expect(find.text('New trip'), findsWidgets);
   expect(find.text('Accra, Ghana'), findsOneWidget);
-  expect(
-    find.text(
-      'No live ride request has been received. This screen uses sample local data.',
-    ),
-    findsOneWidget,
-  );
+  expect(find.text('Review the route before accepting.'), findsOneWidget);
   expect(find.text('Airport connection'), findsOneWidget);
   expect(find.text('Solar Hotel'), findsOneWidget);
   expect(find.text('Accra Airport'), findsOneWidget);
   expect(find.text('Passengers'), findsOneWidget);
   expect(find.text('2'), findsOneWidget);
-  expect(find.text('Accept preview'), findsOneWidget);
-  expect(find.text('Decline preview'), findsOneWidget);
+  expect(find.text('Accept'), findsOneWidget);
+  expect(find.text('Decline'), findsOneWidget);
   _expectNoRideOfferLiveContent();
 }
 
@@ -588,12 +600,12 @@ Future<void> _completeConcernForm(
 }) async {
   await tester.tap(find.byKey(const Key('concern-category')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Vehicle condition').last);
+  await tester.tap(find.text('Vehicle').last);
   await tester.pumpAndSettle();
 
   await tester.tap(find.byKey(const Key('concern-attention')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Review before driving').last);
+  await tester.tap(find.text('Urgent').last);
   await tester.pumpAndSettle();
 
   await tester.enterText(

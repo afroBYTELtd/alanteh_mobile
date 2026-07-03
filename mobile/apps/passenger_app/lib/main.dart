@@ -25,7 +25,7 @@ class PassengerApp extends StatelessWidget {
     assert(AuthState.unauthenticated().status == AuthStatus.unauthenticated);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'ASM Passenger',
+      title: 'ALANTEH Passenger',
       theme: AsmThemes.passenger,
       home: showLoginShell
           ? PassengerLoginShell(configuration: configuration)

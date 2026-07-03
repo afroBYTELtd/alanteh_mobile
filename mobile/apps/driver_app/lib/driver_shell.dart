@@ -55,13 +55,13 @@ class _DriverShellState extends State<DriverShell> {
       ),
       1 => const AsmDemoPlaceholder(
         icon: Icons.route_outlined,
-        title: 'No trips connected',
-        message: 'Driver assignments are unavailable in this local demo.',
+        title: 'No trips yet',
+        message: 'Trip assignments will appear here.',
       ),
       _ => const AsmDemoPlaceholder(
         icon: Icons.support_agent_outlined,
         title: 'Support not connected',
-        message: 'Driver support is unavailable in this local demo.',
+        message: 'Support is not available yet.',
       ),
     };
   }

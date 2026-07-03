@@ -35,36 +35,14 @@ class DriverReadinessContent extends StatelessWidget {
           AsmSpacing.space24,
         ),
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AsmSpacing.space12,
-                  vertical: AsmSpacing.space8,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.primaryContainer,
-                  borderRadius: BorderRadius.circular(AsmRadii.radius6),
-                ),
-                child: Text(
-                  'LOCAL DEMO',
-                  style: TextStyle(
-                    color: colors.onPrimaryContainer,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Flexible(
-                child: Text(
-                  marketLabel,
-                  key: const Key('readiness-market'),
-                  textAlign: TextAlign.end,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              marketLabel,
+              key: const Key('readiness-market'),
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
           const SizedBox(height: AsmSpacing.space20),
           Container(
@@ -81,7 +59,7 @@ class DriverReadinessContent extends StatelessWidget {
                 SizedBox(width: AsmSpacing.space12),
                 Expanded(
                   child: Text(
-                    'This local checklist does not start a shift or connect dispatch.',
+                    'Complete these checks before driving.',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -122,7 +100,7 @@ class DriverReadinessContent extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AsmRadii.radius8),
               ),
               child: Text(
-                'Local checklist complete',
+                'Shift check complete',
                 style: TextStyle(
                   color: colors.onPrimaryContainer,
                   fontWeight: FontWeight.w800,
@@ -132,8 +110,18 @@ class DriverReadinessContent extends StatelessWidget {
           ],
           const SizedBox(height: AsmSpacing.space12),
           const Text(
-            'No driver service has been activated.',
+            'Review your vehicle and route before starting work.',
             style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          FilledButton.icon(
+            key: const Key('readiness-ready'),
+            onPressed: check.isComplete ? () {} : null,
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text("I'm ready"),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+            ),
           ),
           const SizedBox(height: AsmSpacing.space8),
           Align(
@@ -151,7 +139,7 @@ class DriverReadinessContent extends StatelessWidget {
               key: const Key('readiness-open-concern'),
               onPressed: onOpenConcern,
               icon: const Icon(Icons.report_problem_outlined),
-              label: const Text('Record a local concern'),
+              label: const Text('Report an issue'),
             ),
           ),
         ],

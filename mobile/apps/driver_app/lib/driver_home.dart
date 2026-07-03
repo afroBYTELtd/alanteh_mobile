@@ -46,7 +46,7 @@ class DriverHome extends StatelessWidget {
                 color: AsmColors.driverScaffold,
               ),
             ),
-            title: 'ASM DRIVER',
+            title: 'ALANTEH',
             subtitle: 'Field workspace',
             compact: true,
             titleStyle: const TextStyle(
@@ -54,10 +54,20 @@ class DriverHome extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
             subtitleStyle: const TextStyle(color: Color(0xFFAEB8BD)),
-            trailing: const AsmLocalDemoBadge(
-              backgroundColor: Color(0xFF343026),
-              foregroundColor: Color(0xFFFFD968),
-              padding: EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF343026),
+                borderRadius: BorderRadius.circular(AsmRadii.radius6),
+              ),
+              child: const Text(
+                'Off shift',
+                style: TextStyle(
+                  color: Color(0xFFFFD968),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 64),
@@ -73,8 +83,7 @@ class DriverHome extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'This foundation is reserved for drivers approved by '
-            'Africa Solar Mobility.',
+            'This workspace is reserved for approved ALANTEH drivers.',
             style: TextStyle(
               color: Color(0xFFB7C0C4),
               fontSize: 17,
@@ -91,15 +100,20 @@ class DriverHome extends StatelessWidget {
             textMaxLines: null,
           ),
           const SizedBox(height: AsmSpacing.space16),
+          const Text(
+            'Today',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
           const AsmEmptyStatePanel(
             compact: true,
             padding: EdgeInsets.all(18),
             backgroundColor: Color(0xFF20272B),
             borderColor: Color(0xFF3A4449),
-            icon: Icons.cloud_off_outlined,
+            icon: Icons.map_outlined,
             iconColor: AsmColors.solarYellow,
-            title: 'Not connected',
-            message: 'No live dispatch or driver services are active.',
+            title: 'Map coming soon',
+            message: 'No trips yet',
             titleStyle: TextStyle(fontWeight: FontWeight.w700),
             messageStyle: TextStyle(color: Color(0xFFB7C0C4)),
             textSpacing: 3,
@@ -110,7 +124,7 @@ class DriverHome extends StatelessWidget {
             onPressed: onOpenReadiness,
             variant: AsmActionButtonVariant.outlined,
             icon: Icons.fact_check_outlined,
-            label: 'Open readiness check',
+            label: 'Start shift check',
           ),
           const SizedBox(height: AsmSpacing.space8),
           AsmPrimaryActionButton(
@@ -118,7 +132,7 @@ class DriverHome extends StatelessWidget {
             onPressed: onRecordConcern,
             variant: AsmActionButtonVariant.text,
             icon: Icons.report_problem_outlined,
-            label: 'Record local concern',
+            label: 'Report an issue',
             minimumHeight: 48,
           ),
           const SizedBox(height: AsmSpacing.space4),
@@ -127,7 +141,7 @@ class DriverHome extends StatelessWidget {
             onPressed: onPreviewIncomingRequest,
             variant: AsmActionButtonVariant.text,
             icon: Icons.notifications_none_outlined,
-            label: 'Preview incoming request',
+            label: 'New trip',
             minimumHeight: 48,
           ),
           const SizedBox(height: AsmSpacing.space16),
