@@ -47,38 +47,219 @@ void main() {
     });
   });
 
+  group('CC4A phone and PIN validation helpers', () {
+    test('supports Ghana +233 phone and exact 4 digit PIN', () {
+      expect(isValidGhanaPhoneNumber('+233551234567'), isTrue);
+      expect(isValidGhanaPhoneNumber('+233241234567'), isTrue);
+      expect(isValidGhanaPhoneNumber('0200000000'), isFalse);
+      expect(isValidGhanaPhoneNumber('+23355123456'), isFalse);
+      expect(isValidGhanaPhoneNumber('+2335512345670'), isFalse);
+      expect(isValidGhanaPhoneNumber('+23355abc4567'), isFalse);
+
+      expect(isValidPin('1234'), isTrue);
+      expect(isValidPin('4321'), isTrue);
+      expect(isValidPin('123'), isFalse);
+      expect(isValidPin('12345'), isFalse);
+      expect(isValidPin('12a4'), isFalse);
+    });
+  });
+
+  group('Auth account type parsing and app context validation', () {
+    test('parses finalized CC4A account_type values', () {
+      expect(AuthAccountType.tryParse('passenger'), AuthAccountType.passenger);
+      expect(AuthAccountType.tryParse('driver'), AuthAccountType.driver);
+      expect(AuthAccountType.tryParse('staff'), AuthAccountType.staff);
+
+      expect(AuthAccountType.passenger.backendCode, 'passenger');
+      expect(AuthAccountType.driver.backendCode, 'driver');
+      expect(AuthAccountType.staff.backendCode, 'staff');
+    });
+
+    test('Passenger context accepts only passenger account_type', () {
+      expect(
+        AuthAppContext.passenger.allowsAccountType(AuthAccountType.passenger),
+        isTrue,
+      );
+      expect(
+        AuthAppContext.passenger.allowsAccountType(AuthAccountType.driver),
+        isFalse,
+      );
+      expect(
+        AuthAppContext.passenger.allowsAccountType(AuthAccountType.staff),
+        isFalse,
+      );
+    });
+
+    test('Driver context accepts only driver account_type', () {
+      expect(
+        AuthAppContext.driver.allowsAccountType(AuthAccountType.driver),
+        isTrue,
+      );
+      expect(
+        AuthAppContext.driver.allowsAccountType(AuthAccountType.passenger),
+        isFalse,
+      );
+      expect(
+        AuthAppContext.driver.allowsAccountType(AuthAccountType.staff),
+        isFalse,
+      );
+    });
+
+    test('missing and unknown account_type fail safely', () {
+      expect(
+        () => AuthAccountType.parse(null),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            authAppContextErrorMessage,
+          ),
+        ),
+      );
+      expect(
+        () => AuthAccountType.parse('unknown'),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            authAppContextErrorMessage,
+          ),
+        ),
+      );
+    });
+  });
+
   group('AuthService', () {
-    test('login validates phone and PIN', () async {
-      final service = _serviceWithResponse(_successTokens());
+    test('login validates phone and PIN against the CC4A contract', () async {
+      final service = _serviceWithResponse(_successLoginResponse());
 
       await expectLater(
         service.login('', '1234'),
         throwsA(isA<AuthException>()),
       );
       await expectLater(
-        service.login('0200000000', ''),
+        service.login('0200000000', '1234'),
+        throwsA(isA<AuthException>()),
+      );
+      await expectLater(
+        service.login('+233551234567', ''),
+        throwsA(isA<AuthException>()),
+      );
+      await expectLater(
+        service.login('+233551234567', 'bad-pin'),
+        throwsA(isA<AuthException>()),
+      );
+      await expectLater(
+        service.login('+233551234567', '12345'),
         throwsA(isA<AuthException>()),
       );
     });
 
     test(
-      'login stores access and refresh tokens from mocked response',
+      'login request body uses phone and pin exactly and keeps PIN as string',
       () async {
         final store = MemoryAuthTokenStore();
-        final api = _MockAuthApiGateway(responseData: _successTokens());
+        final api = _MockAuthApiGateway(responseData: _successLoginResponse());
         final service = AuthService(apiGateway: api, tokenStore: store);
 
-        final state = await service.login(' 0200000000 ', ' 1234 ');
+        final state = await service.login(' +233551234567 ', ' 1234 ');
 
         expect(state.status, AuthStatus.authenticated);
-        expect(state.session?.tokens.accessToken, 'access-one');
-        expect(await store.readAccessToken(), 'access-one');
-        expect(await store.readRefreshToken(), 'refresh-one');
+        expect(state.session?.accountType, AuthAccountType.passenger);
         expect(api.paths, <String>[AuthService.tokenPath]);
         expect(api.bodies.single, <String, Object?>{
-          'phone': '0200000000',
+          'phone': '+233551234567',
           'pin': '1234',
         });
+        expect(api.bodies.single.keys, isNot(contains('email')));
+        expect(api.bodies.single.keys, isNot(contains('password')));
+        expect(api.bodies.single['pin'], isA<String>());
+      },
+    );
+
+    test('Passenger app context accepts passenger account_type', () async {
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(accountType: 'passenger'),
+        ),
+        tokenStore: MemoryAuthTokenStore(),
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233551234567', '1234');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(state.session?.accountType, AuthAccountType.passenger);
+    });
+
+    test('Driver app context accepts driver account_type', () async {
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(accountType: 'driver'),
+        ),
+        tokenStore: MemoryAuthTokenStore(),
+        appContext: AuthAppContext.driver,
+      );
+
+      final state = await service.login('+233241234567', '4321');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(state.session?.accountType, AuthAccountType.driver);
+    });
+
+    test(
+      'Passenger context rejects driver, staff, missing, and unknown',
+      () async {
+        for (final accountType in <Object?>[
+          'driver',
+          'staff',
+          null,
+          'unknown',
+        ]) {
+          final store = MemoryAuthTokenStore();
+          final service = AuthService(
+            apiGateway: _MockAuthApiGateway(
+              responseData: _successLoginResponse(accountType: accountType),
+            ),
+            tokenStore: store,
+            appContext: AuthAppContext.passenger,
+          );
+
+          final state = await service.login('+233551234567', '1234');
+
+          expect(state.status, AuthStatus.unauthenticated);
+          expect(state.error?.message, authAppContextErrorMessage);
+          expect(await store.readAccessToken(), isNull);
+          expect(await store.readRefreshToken(), isNull);
+        }
+      },
+    );
+
+    test(
+      'Driver context rejects passenger, staff, missing, and unknown',
+      () async {
+        for (final accountType in <Object?>[
+          'passenger',
+          'staff',
+          null,
+          'unknown',
+        ]) {
+          final store = MemoryAuthTokenStore();
+          final service = AuthService(
+            apiGateway: _MockAuthApiGateway(
+              responseData: _successLoginResponse(accountType: accountType),
+            ),
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          );
+
+          final state = await service.login('+233241234567', '4321');
+
+          expect(state.status, AuthStatus.unauthenticated);
+          expect(state.error?.message, authAppContextErrorMessage);
+          expect(await store.readAccessToken(), isNull);
+          expect(await store.readRefreshToken(), isNull);
+        }
       },
     );
 
@@ -93,7 +274,9 @@ void main() {
           ),
         );
         final service = AuthService(
-          apiGateway: _MockAuthApiGateway(responseData: _successTokens()),
+          apiGateway: _MockAuthApiGateway(
+            responseData: _successLoginResponse(),
+          ),
           tokenStore: store,
         );
 
@@ -107,7 +290,7 @@ void main() {
     test(
       'currentSession returns unauthenticated when tokens are missing',
       () async {
-        final service = _serviceWithResponse(_successTokens());
+        final service = _serviceWithResponse(_successLoginResponse());
 
         final state = await service.currentSession();
 
@@ -159,7 +342,7 @@ void main() {
         AuthTokens(accessToken: 'access-one', refreshToken: 'refresh-one'),
       );
       final service = AuthService(
-        apiGateway: _MockAuthApiGateway(responseData: _successTokens()),
+        apiGateway: _MockAuthApiGateway(responseData: _successLoginResponse()),
         tokenStore: store,
       );
 
@@ -177,7 +360,7 @@ void main() {
         tokenStore: store,
       );
 
-      final state = await service.login('0200000000', 'bad-pin');
+      final state = await service.login('+233551234567', '1234');
 
       expect(state.status, AuthStatus.unauthenticated);
       expect(await store.readAccessToken(), isNull);
@@ -231,8 +414,14 @@ AuthService _serviceWithResponse(Map<String, Object?> responseData) {
   );
 }
 
-Map<String, Object?> _successTokens() {
-  return <String, Object?>{'access': 'access-one', 'refresh': 'refresh-one'};
+Map<String, Object?> _successLoginResponse({
+  Object? accountType = 'passenger',
+}) {
+  return <String, Object?>{
+    'access': 'access-one',
+    'refresh': 'refresh-one',
+    if (accountType != null) 'account_type': accountType,
+  };
 }
 
 class _MockAuthApiGateway implements AuthApiGateway {

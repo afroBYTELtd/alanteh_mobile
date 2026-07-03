@@ -149,3 +149,50 @@ handed over by the Control Center PM. This checkpoint adds documentation only
 and does not change Passenger App source, Driver App source, tests, pubspec
 files, `pubspec.lock` files, shared package source, native Android/iOS files, or
 backend/Django files.
+
+## M1BH Phone/PIN Auth Contract Readiness
+
+The finalized CC4A-AUTH-FIX backend contract confirms that Ghana pilot mobile login remains phone number plus PIN, not email/password.
+
+Documented login request payload:
+
+```json
+{
+  "phone": "+233551234567",
+  "pin": "1234"
+}
+```
+
+Validation expected by the backend:
+
+- Phone uses `+233` followed by 9 digits.
+- PIN is a string of exactly 4 numeric digits.
+
+The login success response includes `access`, `refresh`, `account_type`, and `account`. The mobile auth foundation must parse `account_type` and validate it against the expected app context.
+
+Expected app contexts:
+
+- Passenger App expects `passenger`.
+- Driver App expects `driver`.
+- Passenger and Driver app contexts must reject `staff`.
+- Unknown or missing `account_type` must fail safely.
+
+## Passenger Offline Queue Decision
+
+Passenger ride requests must not be silently queued offline.
+
+If the Passenger App has no network during ride request submission, it must show a clear error and retry action.
+
+The Passenger App must not add `asm_offline_queue` support for booking submission unless the PM explicitly approves a future change.
+
+The Driver App keeps offline queue support because driver operational events may occur during active service and must sync when connectivity returns.
+
+## Future MTN MoMo Login Phone Prefill Note
+
+After successful phone/PIN login, the authenticated profile phone number may be used to pre-populate the MTN MoMo payment phone field during the future ride payment flow.
+
+This must be included in the future M2A/payment-flow brief.
+
+The passenger should be able to edit the payment phone number if the payer uses a different mobile money number, unless backend/payment policy later says otherwise.
+
+No payment UI is built by M1BH.
