@@ -139,7 +139,7 @@ String _messageForRideValidation(
     'passengerCount' => 'Passenger count must be between 1 and 6.',
     'assistanceNote' => 'Assistance note must be 240 characters or fewer.',
     'draftIdentity' => 'Enter a draft identity.',
-    _ => 'Enter a valid local draft value.',
+    _ => 'Enter a valid ride detail.',
   };
 }
 

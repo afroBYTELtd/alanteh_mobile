@@ -4,9 +4,11 @@ import 'package:passenger_app/location/session_location_history.dart';
 void main() {
   group('SessionLocationHistory', () {
     test('starts empty for one normalized market', () {
-      final history = SessionLocationHistory.empty(marketCode: '  gh-accra  ');
+      final history = SessionLocationHistory.empty(
+        marketCode: '  accra-test  ',
+      );
 
-      expect(history.marketCode, 'gh-accra');
+      expect(history.marketCode, 'accra-test');
       expect(history.entries, isEmpty);
     });
 
@@ -91,5 +93,5 @@ void main() {
 }
 
 SessionLocationHistory _emptyHistory() {
-  return SessionLocationHistory.empty(marketCode: 'gh-accra');
+  return SessionLocationHistory.empty(marketCode: 'accra-test');
 }

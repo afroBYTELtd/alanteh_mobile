@@ -23,12 +23,14 @@ class BookingPage extends StatefulWidget {
 }
 
 class _BookingPageState extends State<BookingPage> {
+  static const _internalServiceContext =
+      RideServiceContextCode.otherApprovedRequest;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _pickupController;
   late final TextEditingController _destinationController;
   final _assistanceController = TextEditingController();
 
-  RideServiceContextCode? _serviceContext;
   int _passengerCount = 1;
   BookingDraft? _draft;
 
@@ -59,7 +61,7 @@ class _BookingPageState extends State<BookingPage> {
     setState(() {
       _draft = BookingDraft(
         marketCode: widget.market.marketCode,
-        serviceContext: _serviceContext!,
+        serviceContext: _internalServiceContext,
         pickupDescription: _pickupController.text,
         destinationDescription: _destinationController.text,
         passengerCount: _passengerCount,
@@ -72,28 +74,24 @@ class _BookingPageState extends State<BookingPage> {
     setState(() => _draft = null);
   }
 
-  void _closeDraft() {
-    _draft = null;
+  void _confirmRequest() {
     Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Plan a demo ride')),
+      appBar: AppBar(
+        title: Text(_draft == null ? 'Book a ride' : 'Confirm your ride'),
+      ),
       body: SafeArea(
         child: _draft == null
             ? BookingForm(
-                market: widget.market,
                 formKey: _formKey,
-                serviceContext: _serviceContext,
                 pickupController: _pickupController,
                 destinationController: _destinationController,
                 assistanceController: _assistanceController,
                 passengerCount: _passengerCount,
-                onServiceContextChanged: (value) {
-                  setState(() => _serviceContext = value);
-                },
                 onPassengerCountChanged: (value) {
                   setState(() => _passengerCount = value);
                 },
@@ -101,9 +99,8 @@ class _BookingPageState extends State<BookingPage> {
               )
             : BookingReview(
                 draft: _draft!,
-                market: widget.market,
                 onEdit: _editDraft,
-                onClose: _closeDraft,
+                onConfirm: _confirmRequest,
               ),
       ),
     );

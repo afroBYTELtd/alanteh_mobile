@@ -138,16 +138,16 @@ class _PassengerShellState extends State<PassengerShell> {
         onSwap: _swapRoute,
         onClear: _clearRoute,
       ),
-      1 => const AsmDemoPlaceholder(
+      1 => const _PassengerPlaceholder(
         icon: Icons.route_outlined,
         title: 'No trips connected',
         message:
             'Trip history will appear after secure services are connected.',
       ),
-      _ => const AsmDemoPlaceholder(
+      _ => const _PassengerPlaceholder(
         icon: Icons.support_agent_outlined,
         title: 'Support not connected',
-        message: 'Live support is unavailable in this local demo.',
+        message: 'Support is not available yet.',
       ),
     };
   }
@@ -178,6 +178,52 @@ class _PassengerShellState extends State<PassengerShell> {
             label: 'Support',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PassengerPlaceholder extends StatelessWidget {
+  const _PassengerPlaceholder({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return AsmScreenSurface(
+      padding: const EdgeInsets.all(AsmSpacing.space20),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: colors.primary),
+            const SizedBox(height: AsmSpacing.space16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: colors.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
