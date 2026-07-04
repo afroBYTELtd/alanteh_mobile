@@ -1,4 +1,6 @@
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:driver_app/concern/driver_concern_page.dart';
 import 'package:driver_app/main.dart';
@@ -54,9 +56,22 @@ void main() {
 
   testWidgets('renders and validates the Driver access shell', (tester) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp(showLoginShell: true));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
 
     expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.text('Driver'), findsOneWidget);
     expect(find.byKey(const Key('driver-phone-field')), findsOneWidget);
     expect(find.text('Phone number'), findsOneWidget);
     expect(find.byKey(const Key('driver-pin-field')), findsOneWidget);
@@ -66,6 +81,8 @@ void main() {
       find.text('Enter your phone number and PIN to continue.'),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Continue without signing in'), findsOneWidget);
     expect(find.text('Clear form'), findsOneWidget);
     expect(find.text('Create account'), findsNothing);
@@ -75,10 +92,11 @@ void main() {
     expect(find.text('Password'), findsNothing);
     expect(find.text('password'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
     expect(find.text('Phone number cannot be blank.'), findsOneWidget);
     expect(find.text('PIN cannot be blank.'), findsOneWidget);
+    expect(authApi.paths, isEmpty);
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
@@ -105,18 +123,166 @@ void main() {
           ?.text,
       isEmpty,
     );
+  });
+
+  testWidgets(
+    'driver phone PIN sign in calls token endpoint and stores tokens',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway();
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        ' +233241234567 ',
+      );
+      await tester.enterText(
+        find.byKey(const Key('driver-pin-field')),
+        ' 4321 ',
+      );
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(authApi.paths, <String>[AuthService.tokenPath]);
+      expect(authApi.bodies.single, <String, Object?>{
+        'phone': '+233241234567',
+        'pin': '4321',
+      });
+      expect(authApi.bodies.single.keys, isNot(contains('email')));
+      expect(authApi.bodies.single.keys, isNot(contains('password')));
+      expect(authApi.bodies.single['pin'], isA<String>());
+      expect(await store.readAccessToken(), 'driver-access-token');
+      expect(await store.readRefreshToken(), 'driver-refresh-token');
+      expect(find.text('Approved drivers only'), findsOneWidget);
+      expect(find.text('Off shift'), findsOneWidget);
+      expect(find.text('4321'), findsNothing);
+    },
+  );
+
+  testWidgets('driver app rejects non-driver account types', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+
+    for (final accountType in <Object?>[
+      'passenger',
+      'staff',
+      'unknown',
+      null,
+    ]) {
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway(
+        responseData: _driverLoginResponse(accountType: accountType),
+      );
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(authAppContextErrorMessage),
+        findsOneWidget,
+        reason: 'account_type=$accountType',
+      );
+      expect(find.text('Approved drivers only'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.text('4321'), findsNothing);
+    }
+  });
+
+  testWidgets('failed driver login shows clear error and stores no tokens', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway(statusCode: 401);
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '0550000000',
+      '+233241234567',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '1234');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-login-error')), findsOneWidget);
+    expect(
+      find.text('Could not sign in. Please check your phone and PIN.'),
+      findsOneWidget,
+    );
+    expect(find.text('Approved drivers only'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.text('4321'), findsNothing);
+  });
+
+  testWidgets('continue without signing in remains separate local QA path', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
     await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
     await tester.pumpAndSettle();
 
-    expect(find.text('ALANTEH'), findsOneWidget);
-    expect(find.text('Off shift'), findsOneWidget);
+    expect(authApi.paths, isEmpty);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
     expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Off shift'), findsOneWidget);
   });
 
   testWidgets('navigates the configured approved-driver field shell', (
@@ -558,6 +724,51 @@ void main() {
     expect(find.byKey(const Key('reset-readiness')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _RecordingDriverAuthApiGateway implements AuthApiGateway {
+  _RecordingDriverAuthApiGateway({
+    Map<String, Object?>? responseData,
+    this.statusCode = 200,
+  }) : responseData = responseData ?? _driverLoginResponse();
+
+  final Map<String, Object?> responseData;
+  final int statusCode;
+  final List<String> paths = <String>[];
+  final List<Map<String, Object?>> bodies = <Map<String, Object?>>[];
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    paths.add(path);
+    bodies.add(Map<String, Object?>.of(body));
+
+    if (statusCode < 200 || statusCode >= 300) {
+      return ApiResponse.apiFailure(
+        AsmApiException(
+          type: AsmApiExceptionType.authentication,
+          message: 'Authentication failed.',
+          statusCode: statusCode,
+        ),
+      );
+    }
+
+    return ApiResponse.success(responseData, statusCode: statusCode);
+  }
+}
+
+Map<String, Object?> _driverLoginResponse({Object? accountType = 'driver'}) {
+  final response = <String, Object?>{
+    'access': 'driver-access-token',
+    'refresh': 'driver-refresh-token',
+    'account': <String, Object?>{},
+  };
+  if (accountType != null) {
+    response['account_type'] = accountType;
+  }
+  return response;
 }
 
 const _removedDriverTexts = [
