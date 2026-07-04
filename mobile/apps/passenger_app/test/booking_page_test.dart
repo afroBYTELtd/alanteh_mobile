@@ -597,6 +597,50 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
   });
 
+  test(
+    'api submitter blocks ride request when API base URL is not configured',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-passenger-access',
+          refreshToken: 'stored-passenger-refresh',
+        ),
+      );
+      final submitter = ApiPassengerRideRequestSubmitter.withDefaultClient(
+        tokenStore: store,
+      );
+
+      await expectLater(
+        submitter.submit(_validDraft(), idempotencyKey: 'APP-no-base-url'),
+        throwsA(
+          isA<PassengerRideRequestSubmissionException>()
+              .having(
+                (error) => error.message,
+                'message',
+                AsmApiClient.connectionNotConfiguredMessage,
+              )
+              .having(
+                (error) => error.requiresSignIn,
+                'requiresSignIn',
+                isFalse,
+              ),
+        ),
+      );
+    },
+  );
+
+  test('api submitter uses configured API base URL', () {
+    final store = MemoryAuthTokenStore();
+    final submitter = ApiPassengerRideRequestSubmitter.withDefaultClient(
+      tokenStore: store,
+      baseUrl: 'https://example.test',
+    );
+
+    expect(submitter.client.baseUrl, 'https://example.test');
+    expect(submitter.connectionConfigured, isTrue);
+  });
+
   testWidgets('blocked ride request shows sign-in path', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     var signInRequested = false;

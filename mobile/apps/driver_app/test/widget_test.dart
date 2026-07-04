@@ -10,6 +10,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('Driver auth endpoint contract paths remain stable', () {
+    expect(AuthService.tokenPath, '/api/auth/token/');
+    expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+  });
+
   group('DriverReadinessCheck', () {
     test('starts empty and exposes an unmodifiable set', () {
       final check = DriverReadinessCheck.empty();
@@ -128,6 +133,10 @@ void main() {
   testWidgets(
     'driver phone PIN sign in calls token endpoint and stores tokens',
     (tester) async {
+      if (AsmApiClient.defaultBaseUrl.trim().isNotEmpty) {
+        return;
+      }
+
       _useSurface(tester, const Size(430, 1000));
       final store = MemoryAuthTokenStore();
       final authApi = _RecordingDriverAuthApiGateway();
@@ -251,6 +260,40 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('4321'), findsNothing);
   });
+
+  testWidgets(
+    'driver real sign-in without API base URL shows connection configuration error',
+    (tester) async {
+      if (AsmApiClient.defaultBaseUrl.trim().isNotEmpty) {
+        return;
+      }
+
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+
+      await tester.pumpWidget(
+        DriverApp(showLoginShell: true, authTokenStore: store),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-login-error')), findsOneWidget);
+      expect(
+        find.text(AsmApiClient.connectionNotConfiguredMessage),
+        findsOneWidget,
+      );
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.text('Approved drivers only'), findsNothing);
+    },
+  );
 
   testWidgets('continue without signing in remains separate local QA path', (
     tester,

@@ -58,6 +58,39 @@ void main() {
   });
 
   group('AsmApiClient', () {
+    test('validates mobile API base URL values', () {
+      expect(AsmApiBaseUrl.environmentKey, 'ASM_API_BASE_URL');
+      expect(AsmApiBaseUrl.isUsable('https://example.com'), isTrue);
+      expect(AsmApiBaseUrl.isUsable('http://localhost:8000'), isTrue);
+      expect(AsmApiBaseUrl.isUsable('http://127.0.0.1:8000'), isTrue);
+      expect(AsmApiBaseUrl.isUsable(''), isFalse);
+      expect(AsmApiBaseUrl.isUsable('not a url'), isFalse);
+      expect(AsmApiBaseUrl.isUsable('ftp://example.com'), isFalse);
+      expect(AsmApiBaseUrl.isUsable('https:///missing-host'), isFalse);
+    });
+
+    test('rejects invalid API base URL safely', () {
+      expect(() => AsmApiClient(baseUrl: ''), throwsA(isA<ArgumentError>()));
+      expect(
+        () => AsmApiClient(baseUrl: 'not a url'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('exposes compile-time dart-define API base URL value', () {
+      const value = String.fromEnvironment('ASM_API_BASE_URL');
+
+      expect(AsmApiClient.apiBaseUrlEnvironmentKey, 'ASM_API_BASE_URL');
+      expect(AsmApiClient.defaultBaseUrl, value);
+    });
+
+    test('keeps configured base URL on the client', () {
+      final client = AsmApiClient(baseUrl: 'https://example.test');
+
+      expect(client.baseUrl, 'https://example.test');
+      expect(AsmApiClient.defaultBaseUrl, isA<String>());
+    });
+
     test('sends standard JSON headers', () async {
       final adapter = _MockHttpClientAdapter();
       final client = _client(adapter);

@@ -32,15 +32,17 @@ class PassengerApp extends StatelessWidget {
   Widget build(BuildContext context) {
     assert(AuthState.unauthenticated().status == AuthStatus.unauthenticated);
     final tokenStore = authTokenStore ?? SecureAuthTokenStore();
+    const apiBaseUrl = AsmApiClient.defaultBaseUrl;
     final resolvedRideRequestSubmitter =
         rideRequestSubmitter ??
         ApiPassengerRideRequestSubmitter.withDefaultClient(
           tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
         );
     final resolvedAuthService =
         authService ??
-        AuthService.withApiClient(
-          client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+        _authServiceFor(
+          baseUrl: apiBaseUrl,
           tokenStore: tokenStore,
           appContext: AuthAppContext.passenger,
         );
@@ -99,10 +101,11 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   void initState() {
     super.initState();
     _tokenStore = widget.authTokenStore ?? SecureAuthTokenStore();
+    const apiBaseUrl = AsmApiClient.defaultBaseUrl;
     _authService =
         widget.authService ??
-        AuthService.withApiClient(
-          client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+        _authServiceFor(
+          baseUrl: apiBaseUrl,
           tokenStore: _tokenStore,
           appContext: AuthAppContext.passenger,
         );
@@ -110,6 +113,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         widget.rideRequestSubmitter ??
         ApiPassengerRideRequestSubmitter.withDefaultClient(
           tokenStore: _tokenStore,
+          baseUrl: apiBaseUrl,
         );
     _restoreStoredSession();
   }
@@ -253,6 +257,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
     if (error.message == authAppContextErrorMessage) {
       return authAppContextErrorMessage;
+    }
+
+    if (error.message == AsmApiClient.connectionNotConfiguredMessage) {
+      return AsmApiClient.connectionNotConfiguredMessage;
     }
 
     if (error.type == AuthExceptionType.validation) {
@@ -400,6 +408,43 @@ class _LoginErrorPanel extends StatelessWidget {
           fontWeight: FontWeight.w700,
           height: 1.35,
         ),
+      ),
+    );
+  }
+}
+
+AuthService _authServiceFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  required AuthAppContext appContext,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return AuthService(
+      apiGateway: const _UnconfiguredAuthApiGateway(),
+      tokenStore: tokenStore,
+      appContext: appContext,
+    );
+  }
+
+  return AuthService.withApiClient(
+    client: AsmApiClient(baseUrl: baseUrl!),
+    tokenStore: tokenStore,
+    appContext: appContext,
+  );
+}
+
+class _UnconfiguredAuthApiGateway implements AuthApiGateway {
+  const _UnconfiguredAuthApiGateway();
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    return ApiResponse.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.badResponse,
+        message: AsmApiClient.connectionNotConfiguredMessage,
       ),
     );
   }
