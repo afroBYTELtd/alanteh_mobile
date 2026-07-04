@@ -335,9 +335,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
-    expect(find.text('Could not send ride request.'), findsOneWidget);
     expect(
-      find.text('Please check your connection and try again.'),
+      find.text(
+        'Cannot reach the server. Check your connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Cannot reach the server. Check your connection and try again.',
+      ),
       findsOneWidget,
     );
     expect(find.byKey(const Key('retry-ride-request')), findsOneWidget);
@@ -630,6 +637,174 @@ void main() {
     },
   );
 
+  test('api submitter maps 403 to passenger account required', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.badResponse,
+            message: 'Raw backend 403 should not be visible.',
+            statusCode: 403,
+            cause: <String, Object?>{'detail': 'Raw forbidden detail'},
+          ),
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-403'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>().having(
+          (error) => error.message,
+          'message',
+          'Passenger account required.',
+        ),
+      ),
+    );
+  });
+
+  test('api submitter maps 409 to safe idempotency conflict message', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.badResponse,
+            message: 'Raw backend 409 should not be visible.',
+            statusCode: 409,
+            cause: <String, Object?>{'detail': 'Raw conflict detail'},
+          ),
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-409'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>().having(
+          (error) => error.message,
+          'message',
+          'This ride request was already used with different details. Please review and try again.',
+        ),
+      ),
+    );
+  });
+
+  test('api submitter maps 503 to service unavailable message', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.server,
+            message: 'Raw backend 503 should not be visible.',
+            statusCode: 503,
+          ),
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-503'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>().having(
+          (error) => error.message,
+          'message',
+          'Service is temporarily unavailable. Please try again later.',
+        ),
+      ),
+    );
+  });
+
+  test(
+    'api submitter maps network failure to server reachability message',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+      );
+      final client = _RecordingApiClient(
+        responses: <ApiResponse<PassengerRideRequestResult>>[
+          ApiResponse.clientException(
+            const AsmApiException(
+              type: AsmApiExceptionType.network,
+              message: 'SocketException: raw technical network failure',
+            ),
+          ),
+        ],
+      );
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        tokenStore: store,
+      );
+
+      await expectLater(
+        submitter.submit(_validDraft(), idempotencyKey: 'APP-network'),
+        throwsA(
+          isA<PassengerRideRequestSubmissionException>().having(
+            (error) => error.message,
+            'message',
+            'Cannot reach the server. Check your connection and try again.',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('api submitter maps malformed response to safe fallback', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.clientException(
+          const AsmApiException(
+            type: AsmApiExceptionType.badResponse,
+            message: 'FormatException: raw malformed response',
+          ),
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-malformed'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>().having(
+          (error) => error.message,
+          'message',
+          'Something went wrong. Please try again.',
+        ),
+      ),
+    );
+  });
+
   test('api submitter uses configured API base URL', () {
     final store = MemoryAuthTokenStore();
     final submitter = ApiPassengerRideRequestSubmitter.withDefaultClient(
@@ -847,7 +1022,7 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
 
     if (failFirst && submissions.length == 1) {
       throw const PassengerRideRequestSubmissionException(
-        'Could not send ride request.\nPlease check your connection and try again.',
+        'Cannot reach the server. Check your connection and try again.',
       );
     }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -252,13 +253,209 @@ void main() {
 
     expect(find.byKey(const Key('driver-login-error')), findsOneWidget);
     expect(
-      find.text('Could not sign in. Please check your phone and PIN.'),
+      find.text('Sign in failed. Check your phone and PIN.'),
       findsOneWidget,
     );
     expect(find.text('Approved drivers only'), findsNothing);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('4321'), findsNothing);
+  });
+
+  testWidgets(
+    'Driver sign-in shows loading state and prevents duplicate submit while loading',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final pending = Completer<ApiResponse<Map<String, Object?>>>();
+      final api = _RecordingDriverAuthApiGateway(pendingResponse: pending);
+
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authTokenStore: store,
+          authService: AuthService(
+            apiGateway: api,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pump();
+
+      expect(find.text('Signing in...'), findsOneWidget);
+      expect(api.paths, <String>[AuthService.tokenPath]);
+
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pump();
+
+      expect(api.paths, <String>[AuthService.tokenPath]);
+
+      pending.complete(
+        ApiResponse.success(_driverLoginResponse(), statusCode: 200),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-login-error')), findsNothing);
+      expect(await store.readAccessToken(), isNotNull);
+    },
+  );
+
+  testWidgets('Driver sign-in invalid credentials shows safe message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _RecordingDriverAuthApiGateway(statusCode: 401);
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Sign in failed. Check your phone and PIN.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Authentication failed'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Driver sign-in network failure shows safe message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _RecordingDriverAuthApiGateway(
+      exceptionType: AsmApiExceptionType.network,
+    );
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Cannot reach the server. Check your connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Raw technical'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Driver sign-in 503 shows service unavailable message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _RecordingDriverAuthApiGateway(statusCode: 503);
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Service is temporarily unavailable. Please try again later.'),
+      findsOneWidget,
+    );
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Driver sign-in non-driver account shows app mismatch', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _RecordingDriverAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'passenger-access',
+        'refresh': 'passenger-refresh',
+        'account_type': 'passenger',
+      },
+    );
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(authAppContextErrorMessage), findsOneWidget);
+    expect(await store.readAccessToken(), isNull);
   });
 
   testWidgets(
@@ -950,10 +1147,14 @@ class _RecordingDriverAuthApiGateway implements AuthApiGateway {
   _RecordingDriverAuthApiGateway({
     Map<String, Object?>? responseData,
     this.statusCode = 200,
+    this.exceptionType,
+    this.pendingResponse,
   }) : responseData = responseData ?? _driverLoginResponse();
 
   final Map<String, Object?> responseData;
   final int statusCode;
+  final AsmApiExceptionType? exceptionType;
+  final Completer<ApiResponse<Map<String, Object?>>>? pendingResponse;
   final List<String> paths = <String>[];
   final List<Map<String, Object?>> bodies = <Map<String, Object?>>[];
 
@@ -965,10 +1166,30 @@ class _RecordingDriverAuthApiGateway implements AuthApiGateway {
     paths.add(path);
     bodies.add(Map<String, Object?>.of(body));
 
+    final pending = pendingResponse;
+    if (pending != null) {
+      return pending.future;
+    }
+
+    final type = exceptionType;
+    if (type != null) {
+      return ApiResponse.clientException(
+        AsmApiException(
+          type: type,
+          message: 'Raw technical auth failure must not be shown.',
+          statusCode: statusCode == 200 ? null : statusCode,
+        ),
+      );
+    }
+
     if (statusCode < 200 || statusCode >= 300) {
       return ApiResponse.apiFailure(
         AsmApiException(
-          type: AsmApiExceptionType.authentication,
+          type: statusCode == 401
+              ? AsmApiExceptionType.authentication
+              : statusCode >= 500
+              ? AsmApiExceptionType.server
+              : AsmApiExceptionType.badResponse,
           message: 'Authentication failed.',
           statusCode: statusCode,
         ),

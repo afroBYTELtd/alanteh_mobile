@@ -79,9 +79,9 @@ class ApiPassengerRideRequestSubmitter
     }
 
     if (response.statusCode == 401 && tokenStore != null) {
-      final refreshed = await _refreshAccessToken();
-      if (!refreshed) {
-        throw const PassengerRideRequestSubmissionException.signInRequired();
+      final refreshError = await _refreshAccessToken();
+      if (refreshError != null) {
+        throw refreshError;
       }
 
       final retryResponse = await _submitRideRequest(
@@ -118,26 +118,31 @@ class ApiPassengerRideRequestSubmitter
     );
   }
 
-  Future<bool> _refreshAccessToken() async {
+  Future<PassengerRideRequestSubmissionException?> _refreshAccessToken() async {
     final storedRefreshToken = (await tokenStore?.readRefreshToken())?.trim();
     if (storedRefreshToken == null || storedRefreshToken.isEmpty) {
       await tokenStore?.clearTokens();
-      return false;
+      return const PassengerRideRequestSubmissionException.signInRequired();
     }
 
     final service = authService;
     if (service == null) {
       await tokenStore?.clearTokens();
-      return false;
+      return const PassengerRideRequestSubmissionException.signInRequired();
     }
 
-    final state = await service.refresh();
-    if (state.isAuthenticated) {
-      return true;
-    }
+    try {
+      final state = await service.refresh();
+      if (state.isAuthenticated) {
+        return null;
+      }
 
-    await tokenStore?.clearTokens();
-    return false;
+      await tokenStore?.clearTokens();
+      return PassengerRideRequestSubmissionException.fromAuthError(state.error);
+    } catch (_) {
+      await tokenStore?.clearTokens();
+      return const PassengerRideRequestSubmissionException.unknown();
+    }
   }
 }
 
@@ -155,22 +160,66 @@ class PassengerRideRequestSubmissionException implements Exception {
     : message = AsmApiClient.connectionNotConfiguredMessage,
       requiresSignIn = false;
 
+  const PassengerRideRequestSubmissionException.network()
+    : message = networkErrorMessage,
+      requiresSignIn = false;
+
+  const PassengerRideRequestSubmissionException.serverUnavailable()
+    : message = serverUnavailableMessage,
+      requiresSignIn = false;
+
+  const PassengerRideRequestSubmissionException.unknown()
+    : message = unknownErrorMessage,
+      requiresSignIn = false;
+
   static const signInRequiredMessage = 'Please sign in to request a ride.';
+  static const networkErrorMessage =
+      'Cannot reach the server. Check your connection and try again.';
+  static const serverUnavailableMessage =
+      'Service is temporarily unavailable. Please try again later.';
+  static const passengerRequiredMessage = 'Passenger account required.';
+  static const idempotencyConflictMessage =
+      'This ride request was already used with different details. Please review and try again.';
+  static const unknownErrorMessage = 'Something went wrong. Please try again.';
 
   final String message;
   final bool requiresSignIn;
+
+  factory PassengerRideRequestSubmissionException.fromAuthError(
+    AuthException? error,
+  ) {
+    final cause = error?.cause;
+    if (cause is AsmApiException) {
+      if (cause.type == AsmApiExceptionType.network ||
+          cause.type == AsmApiExceptionType.timeout) {
+        return const PassengerRideRequestSubmissionException.network();
+      }
+
+      if (cause.statusCode == 503 || cause.type == AsmApiExceptionType.server) {
+        return const PassengerRideRequestSubmissionException.serverUnavailable();
+      }
+    }
+
+    return const PassengerRideRequestSubmissionException.signInRequired();
+  }
 
   factory PassengerRideRequestSubmissionException.fromResponse(
     ApiResponse<PassengerRideRequestResult> response,
   ) {
     final statusCode = response.statusCode;
-    final cause = response.error?.cause;
-    final detail = _detailFromCause(cause);
+    final apiError = response.error;
 
     if (response.isClientException) {
-      return const PassengerRideRequestSubmissionException(
-        'Could not send ride request.\nPlease check your connection and try again.',
-      );
+      if (apiError?.type == AsmApiExceptionType.network ||
+          apiError?.type == AsmApiExceptionType.timeout) {
+        return const PassengerRideRequestSubmissionException.network();
+      }
+
+      if (statusCode == 503 || apiError?.type == AsmApiExceptionType.server) {
+        return const PassengerRideRequestSubmissionException.serverUnavailable();
+      }
+
+      return const PassengerRideRequestSubmissionException.unknown();
     }
 
     if (statusCode == 401) {
@@ -178,46 +227,68 @@ class PassengerRideRequestSubmissionException implements Exception {
     }
 
     if (statusCode == 403) {
-      return PassengerRideRequestSubmissionException(
-        detail ?? 'Passenger account required.',
+      return const PassengerRideRequestSubmissionException(
+        passengerRequiredMessage,
       );
     }
 
     if (statusCode == 409) {
-      return PassengerRideRequestSubmissionException(
-        detail ??
-            'This ride request was already submitted differently. Please review and try again.',
+      return const PassengerRideRequestSubmissionException(
+        idempotencyConflictMessage,
       );
     }
 
-    if (statusCode == 503) {
-      return const PassengerRideRequestSubmissionException(
-        'Ride requests are not available right now.\nPlease try again later.',
-      );
+    if (statusCode == 503 || apiError?.type == AsmApiExceptionType.server) {
+      return const PassengerRideRequestSubmissionException.serverUnavailable();
     }
 
     if (statusCode == 400) {
+      final detail = _safeDetailFromCause(apiError?.cause);
       return PassengerRideRequestSubmissionException(
-        detail ?? 'Please check your ride details and try again.',
+        detail ?? unknownErrorMessage,
       );
     }
 
-    return PassengerRideRequestSubmissionException(
-      detail ?? 'Could not send ride request.\nPlease try again.',
-    );
+    return const PassengerRideRequestSubmissionException.unknown();
   }
 
   @override
   String toString() => message;
 
-  static String? _detailFromCause(Object? cause) {
-    if (cause is Map) {
-      final detail = cause['detail'];
-      if (detail is String && detail.trim().isNotEmpty) {
-        return detail.trim();
+  static String? _safeDetailFromCause(Object? cause) {
+    if (cause is! Map) {
+      return null;
+    }
+
+    final detail = cause['detail'];
+    if (detail is! String) {
+      return null;
+    }
+
+    final normalized = detail.trim();
+    if (normalized.isEmpty || normalized.length > 160) {
+      return null;
+    }
+
+    final lower = normalized.toLowerCase();
+    final blockedFragments = <String>[
+      'exception',
+      'stacktrace',
+      'traceback',
+      'socketexception',
+      'formatexception',
+      'clientexception',
+      'django',
+      '<html',
+    ];
+
+    for (final fragment in blockedFragments) {
+      if (lower.contains(fragment)) {
+        return null;
       }
     }
-    return null;
+
+    return normalized;
   }
 }
 
