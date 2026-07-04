@@ -281,3 +281,7 @@ M2A does not add Driver dispatch, assignment, trip polling, payment processing, 
 M2B wires the Passenger App login screen to the accepted CC4A phone/PIN token contract. Passenger login uses `POST /api/auth/token/` with `phone` and `pin`, accepts only `account_type: passenger`, stores returned access/refresh tokens through the existing mobile auth token store, and lets M2A ride request submission use the stored Passenger access token. Ride request submission is blocked before POST when no Passenger access token exists, with the passenger-safe message `Please sign in to request a ride.`
 
 M2B does not add Driver login integration, dispatch, trip polling, payment processing, GPS, maps, WebSocket, Passenger offline queue behavior, backend/Django files, native Android/iOS files, pubspec changes, or new packages.
+
+### M2C — Driver Phone/PIN Login Token Wiring
+
+M2C wires the Driver App login shell to the accepted CC4A phone/PIN auth contract. The Driver App uses `POST /api/auth/token/` through the shared auth service, sends only `phone` and `pin`, accepts only `account_type = driver`, stores returned access/refresh tokens through the existing auth token store, clears PIN entry, and keeps `Continue without signing in` as a separate local QA path. No backend, native, pubspec, dispatch, trip polling, GPS, maps, payment, WebSocket, wallet, or new package work is included.
