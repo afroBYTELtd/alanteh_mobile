@@ -166,10 +166,31 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() => _loginError = null);
   }
 
+  Future<void> _signOut() async {
+    await widget.authTokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _phoneController.clear();
+    _pinController.clear();
+    _formKey.currentState?.reset();
+    setState(() {
+      _localDemoOpened = false;
+      _signedIn = false;
+      _isSigningIn = false;
+      _loginError = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_localDemoOpened || _signedIn) {
-      return DriverShell(configuration: widget.configuration);
+      return DriverShell(
+        configuration: widget.configuration,
+        onSignOut: _signOut,
+      );
     }
 
     return Scaffold(

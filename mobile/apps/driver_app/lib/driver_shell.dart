@@ -8,9 +8,14 @@ import 'readiness/driver_readiness_page.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
 
 class DriverShell extends StatefulWidget {
-  const DriverShell({this.configuration = AsmAppConfig.localGhana, super.key});
+  const DriverShell({
+    this.configuration = AsmAppConfig.localGhana,
+    this.onSignOut,
+    super.key,
+  });
 
   final AsmAppConfig configuration;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -55,6 +60,14 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
+  Future<void> _signOut() async {
+    setState(() {
+      _isOnShift = false;
+      _selectedIndex = 0;
+    });
+    await widget.onSignOut?.call();
+  }
+
   Widget get _selectedPage {
     return switch (_selectedIndex) {
       0 => DriverHome(
@@ -63,6 +76,7 @@ class _DriverShellState extends State<DriverShell> {
         onOpenReadiness: _openReadiness,
         onRecordConcern: _openConcern,
         onPreviewIncomingRequest: _openRideOfferPreview,
+        onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
       1 => const AsmDemoPlaceholder(
         icon: Icons.route_outlined,

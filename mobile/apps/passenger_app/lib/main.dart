@@ -207,6 +207,23 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  Future<void> _signOut() async {
+    await _tokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _phoneController.clear();
+    _pinController.clear();
+    _formKey.currentState?.reset();
+    setState(() {
+      _signedIn = false;
+      _isSigningIn = false;
+      _loginErrorMessage = null;
+    });
+  }
+
   String _passengerLoginErrorMessage(AuthException? error) {
     if (error == null) {
       return 'Could not sign in. Please check your phone and PIN.';
@@ -230,6 +247,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         configuration: widget.configuration,
         rideRequestSubmitter: _rideRequestSubmitter,
         onSignInRequired: _returnToSignIn,
+        onSignOut: _signOut,
       );
     }
 
