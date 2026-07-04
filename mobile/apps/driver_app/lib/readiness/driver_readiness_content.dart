@@ -10,6 +10,7 @@ class DriverReadinessContent extends StatelessWidget {
     required this.check,
     required this.onToggle,
     required this.onReset,
+    required this.onReady,
     required this.onOpenConcern,
     super.key,
   });
@@ -18,12 +19,13 @@ class DriverReadinessContent extends StatelessWidget {
   final DriverReadinessCheck check;
   final ValueChanged<DriverReadinessItem> onToggle;
   final VoidCallback onReset;
+  final VoidCallback onReady;
   final VoidCallback onOpenConcern;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final marketLabel = '${market.city}, ${market.countryName}';
+    final marketLabel = market.countryName;
     final totalCount = DriverReadinessItem.values.length;
 
     return SafeArea(
@@ -116,7 +118,7 @@ class DriverReadinessContent extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space12),
           FilledButton.icon(
             key: const Key('readiness-ready'),
-            onPressed: check.isComplete ? () {} : null,
+            onPressed: check.isComplete ? onReady : null,
             icon: const Icon(Icons.check_circle_outline),
             label: const Text("I'm ready"),
             style: FilledButton.styleFrom(

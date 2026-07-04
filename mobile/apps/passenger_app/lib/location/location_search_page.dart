@@ -64,9 +64,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
           padding: const EdgeInsets.all(AsmSpacing.space20),
           children: [
             Semantics(
-              label: '${widget.market.city}, ${widget.market.countryName}',
+              label: widget.market.countryName,
               child: Text(
-                '${widget.market.city}, ${widget.market.countryName}',
+                widget.market.countryName,
                 key: const Key('location-market-context'),
                 style: Theme.of(
                   context,

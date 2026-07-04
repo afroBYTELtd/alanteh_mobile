@@ -48,7 +48,7 @@ class DriverConcernReview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AsmSpacing.space20),
-        _ReviewValue(label: 'Operating market', value: marketLabel),
+        _ReviewValue(label: 'Service area', value: marketLabel),
         _ReviewValue(label: 'What is the issue?', value: draft.category.label),
         _ReviewValue(label: 'How urgent?', value: draft.attentionLevel.label),
         _ReviewValue(label: 'Description', value: draft.description),

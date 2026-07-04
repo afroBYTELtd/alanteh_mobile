@@ -83,8 +83,6 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       return PassengerShell(configuration: widget.configuration);
     }
 
-    final market = widget.configuration.market;
-
     return Scaffold(
       body: AsmScreenSurface(
         scrollable: true,
@@ -101,12 +99,12 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
             children: [
               AsmScreenHeader(
                 leading: const AsmAppBrandMark(),
-                title: 'Passenger access',
-                subtitle: '${market.city}, ${market.countryName}',
+                title: 'ALANTEH',
+                subtitle: 'Passenger access',
               ),
               const SizedBox(height: AsmSpacing.space20),
               const Text(
-                'Pilot access',
+                'Sign in to ride',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: AsmSpacing.space8),

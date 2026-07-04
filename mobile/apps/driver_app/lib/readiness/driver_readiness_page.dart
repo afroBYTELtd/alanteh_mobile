@@ -42,6 +42,7 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
         check: _check,
         onToggle: _toggle,
         onReset: _reset,
+        onReady: () => Navigator.of(context).pop(true),
         onOpenConcern: _openConcern,
       ),
     );

@@ -263,3 +263,9 @@ M1BJ applied the confirmed ALANTEH visible brand direction across the mobile app
 Driver App UI labels were simplified for field use. Driver-facing engineering/demo markers were removed. Passenger visible brand wording was aligned where needed.
 
 No backend/API call, live booking, live trip acceptance, payment integration, GPS/maps, WebSocket, new package, native change, or Django change was added.
+
+### M1BK future Ghana service-area note
+
+Future location task: the app should detect or receive the active Ghana city/service area dynamically, for example Accra, Kumasi, Tamale, Takoradi, Cape Coast, or another approved service city. This must be handled in a separate approved location/GPS/backend/service-area task.
+
+M1BK does not add city auto-detection. M1BK does not add GPS, geolocation permissions, reverse geocoding, maps, backend lookup, or new packages.

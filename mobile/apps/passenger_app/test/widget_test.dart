@@ -11,12 +11,14 @@ void main() {
     _useSurface(tester, const Size(430, 900));
     await tester.pumpWidget(const PassengerApp(showLoginShell: true));
 
+    expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.text('Passenger access'), findsOneWidget);
+    expect(find.text('Sign in to ride'), findsOneWidget);
     expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
     expect(find.text('phone number'), findsOneWidget);
     expect(find.byKey(const Key('passenger-pin-field')), findsOneWidget);
     expect(find.text('PIN'), findsOneWidget);
-    expect(find.text('Pilot access'), findsOneWidget);
+    expect(find.text('Pilot access'), findsNothing);
     expect(
       find.text('Enter your phone number and PIN to continue.'),
       findsOneWidget,
