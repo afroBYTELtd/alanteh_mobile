@@ -128,9 +128,21 @@ class _BookingPageState extends State<BookingPage> {
         return;
       }
 
+      if (!hasValidPassengerRideRequestReceipt(result)) {
+        setState(() {
+          _submissionStatus = BookingSubmissionStatus.failure;
+          _submissionResult = null;
+          _submissionErrorMessage =
+              PassengerRideRequestSubmissionException.unknownErrorMessage;
+          _submissionRequiresSignIn = false;
+        });
+        return;
+      }
+
       setState(() {
         _submissionStatus = BookingSubmissionStatus.success;
         _submissionResult = result;
+        _idempotencyKey = null;
       });
     } on PassengerRideRequestSubmissionException catch (error) {
       if (!mounted) {
