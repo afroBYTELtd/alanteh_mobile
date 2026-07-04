@@ -9,6 +9,7 @@ class DriverHome extends StatelessWidget {
     required this.onOpenReadiness,
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
+    this.onSignOut,
     super.key,
   });
 
@@ -17,6 +18,7 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onOpenReadiness;
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
+  final VoidCallback? onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -57,20 +59,37 @@ class DriverHome extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
             subtitleStyle: const TextStyle(color: Color(0xFFAEB8BD)),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF343026),
-                borderRadius: BorderRadius.circular(AsmRadii.radius6),
-              ),
-              child: Text(
-                shiftLabel,
-                style: const TextStyle(
-                  color: Color(0xFFFFD968),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onSignOut != null) ...[
+                  TextButton.icon(
+                    key: const Key('driver-sign-out'),
+                    onPressed: onSignOut,
+                    icon: const Icon(Icons.exit_to_app_outlined, size: 16),
+                    label: const Text('Sign out'),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF343026),
+                    borderRadius: BorderRadius.circular(AsmRadii.radius6),
+                  ),
+                  child: Text(
+                    shiftLabel,
+                    style: const TextStyle(
+                      color: Color(0xFFFFD968),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 64),

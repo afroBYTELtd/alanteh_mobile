@@ -13,12 +13,14 @@ class PassengerShell extends StatefulWidget {
     this.configuration = AsmAppConfig.localGhana,
     this.rideRequestSubmitter,
     this.onSignInRequired,
+    this.onSignOut,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final VoidCallback? onSignInRequired;
+  final Future<void> Function()? onSignOut;
 
   @override
   State<PassengerShell> createState() => _PassengerShellState();
@@ -103,6 +105,15 @@ class _PassengerShellState extends State<PassengerShell> {
     });
   }
 
+  Future<void> _signOut() async {
+    setState(() {
+      _selectedIndex = 0;
+      _pickupDescription = null;
+      _destinationDescription = null;
+    });
+    await widget.onSignOut?.call();
+  }
+
   Future<void> _continueToDraft() async {
     if (!_canContinue) {
       return;
@@ -163,6 +174,14 @@ class _PassengerShellState extends State<PassengerShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _selectedPage,
+      floatingActionButton: widget.onSignOut == null
+          ? null
+          : FloatingActionButton.extended(
+              key: const Key('passenger-sign-out'),
+              onPressed: _signOut,
+              icon: const Icon(Icons.exit_to_app_outlined),
+              label: const Text('Sign out'),
+            ),
       bottomNavigationBar: AsmBottomNavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {

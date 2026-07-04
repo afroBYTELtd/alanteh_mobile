@@ -249,6 +249,49 @@ void main() {
       expect(find.textContaining(forbiddenText), findsNothing);
     }
   });
+
+  testWidgets('passenger sign out clears tokens and returns to login', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+    await tester.pumpWidget(
+      PassengerApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        ),
+        authTokenStore: store,
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(await store.readAccessToken(), 'passenger-access-token');
+    expect(await store.readRefreshToken(), 'passenger-refresh-token');
+    expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('passenger-sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
+    expect(find.text('Sign in'), findsOneWidget);
+  });
 }
 
 Widget _loginTestApp({

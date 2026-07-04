@@ -285,3 +285,7 @@ M2B does not add Driver login integration, dispatch, trip polling, payment proce
 ### M2C — Driver Phone/PIN Login Token Wiring
 
 M2C wires the Driver App login shell to the accepted CC4A phone/PIN auth contract. The Driver App uses `POST /api/auth/token/` through the shared auth service, sends only `phone` and `pin`, accepts only `account_type = driver`, stores returned access/refresh tokens through the existing auth token store, clears PIN entry, and keeps `Continue without signing in` as a separate local QA path. No backend, native, pubspec, dispatch, trip polling, GPS, maps, payment, WebSocket, wallet, or new package work is included.
+
+### M2D — Authenticated Session Sign-Out and Token Clear
+
+M2D adds visible Passenger and Driver sign-out actions using the existing auth token store. Sign out clears stored access and refresh tokens, returns the user to the relevant login screen, keeps Driver local shift state reset by remounting the Driver shell, and preserves `Continue without signing in` as a separate token-free local QA path. No backend logout endpoint, token refresh behavior, live session validation, native, pubspec, package, dispatch, GPS, maps, payment, WebSocket, wallet, or offline queue behavior change is included.

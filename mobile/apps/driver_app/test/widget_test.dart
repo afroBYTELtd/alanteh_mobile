@@ -724,6 +724,73 @@ void main() {
     expect(find.byKey(const Key('reset-readiness')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'driver sign out clears tokens, returns login, and resets shift',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway();
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(await store.readAccessToken(), 'driver-access-token');
+      expect(await store.readRefreshToken(), 'driver-refresh-token');
+      expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
+      expect(find.text('Off shift'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
+      for (final item in DriverReadinessItem.values) {
+        await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
+      }
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+      await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('On shift'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('driver-sign-out')));
+      await tester.pumpAndSettle();
+
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.byKey(const Key('driver-sign-out')), findsNothing);
+      expect(find.text('Sign in'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
+      await tester.pumpAndSettle();
+
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.text('Off shift'), findsOneWidget);
+      expect(find.text('On shift'), findsNothing);
+    },
+  );
 }
 
 class _RecordingDriverAuthApiGateway implements AuthApiGateway {
