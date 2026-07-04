@@ -3,6 +3,7 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'booking/booking_submission.dart';
 import 'passenger_shell.dart';
 
 void main() {
@@ -14,11 +15,13 @@ class PassengerApp extends StatelessWidget {
   const PassengerApp({
     this.configuration = AsmAppConfig.localGhana,
     this.showLoginShell = false,
+    this.rideRequestSubmitter,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final bool showLoginShell;
+  final PassengerRideRequestSubmitter? rideRequestSubmitter;
 
   @override
   Widget build(BuildContext context) {
@@ -28,8 +31,14 @@ class PassengerApp extends StatelessWidget {
       title: 'ALANTEH Passenger',
       theme: AsmThemes.passenger,
       home: showLoginShell
-          ? PassengerLoginShell(configuration: configuration)
-          : PassengerShell(configuration: configuration),
+          ? PassengerLoginShell(
+              configuration: configuration,
+              rideRequestSubmitter: rideRequestSubmitter,
+            )
+          : PassengerShell(
+              configuration: configuration,
+              rideRequestSubmitter: rideRequestSubmitter,
+            ),
     );
   }
 }
@@ -37,10 +46,12 @@ class PassengerApp extends StatelessWidget {
 class PassengerLoginShell extends StatefulWidget {
   const PassengerLoginShell({
     this.configuration = AsmAppConfig.localGhana,
+    this.rideRequestSubmitter,
     super.key,
   });
 
   final AsmAppConfig configuration;
+  final PassengerRideRequestSubmitter? rideRequestSubmitter;
 
   @override
   State<PassengerLoginShell> createState() => _PassengerLoginShellState();
@@ -80,7 +91,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   @override
   Widget build(BuildContext context) {
     if (_localDemoOpened) {
-      return PassengerShell(configuration: widget.configuration);
+      return PassengerShell(
+        configuration: widget.configuration,
+        rideRequestSubmitter: widget.rideRequestSubmitter,
+      );
     }
 
     return Scaffold(

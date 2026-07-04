@@ -14,10 +14,10 @@ void main() {
       expect(guard.mobileAuthApiAvailable, isFalse);
     });
 
-    test('keeps CC4B ride request API unavailable', () {
+    test('exposes CC4B ride request API after accepted handoff', () {
       const guard = DisabledMobileApiGuard();
 
-      expect(guard.rideRequestApiAvailable, isFalse);
+      expect(guard.rideRequestApiAvailable, isTrue);
     });
 
     test('requires CC4A with the disabled handoff message', () {
@@ -35,18 +35,12 @@ void main() {
       );
     });
 
-    test('requires CC4B with the disabled handoff message', () {
+    test('allows CC4B after accepted ride request handoff', () {
       const guard = DisabledMobileApiGuard();
 
       expect(
         () => guard.requireFeature(MobileApiFeature.cc4bRideRequestApi),
-        throwsA(
-          isA<DisabledMobileApiException>().having(
-            (error) => error.message,
-            'message',
-            'CC4B Ride request API is disabled pending Control Center handoff',
-          ),
-        ),
+        returnsNormally,
       );
     });
 
@@ -113,6 +107,160 @@ void main() {
 
       expect(response.isSuccess, isTrue);
       expect(adapter.lastOptions.method, 'POST');
+    });
+
+    test('posts passenger ride request to accepted CC4B endpoint', () async {
+      final adapter = _MockHttpClientAdapter(
+        statusCode: 201,
+        responseBody: _rideRequestBody(),
+      );
+      final client = _client(adapter, token: 'passenger-access-token');
+
+      final response = await client.submitPassengerRideRequest(
+        PassengerRideRequestSubmission(
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          pickupLocation: ' Kempinski Hotel Gold Coast City, Accra ',
+          destination: 'Kotoka International Airport',
+          passengerCount: 2,
+          assistanceNote: ' Passenger has two suitcases. ',
+        ),
+      );
+
+      expect(response.isSuccess, isTrue);
+      expect(response.statusCode, 201);
+      expect(adapter.lastOptions.method, 'POST');
+      expect(adapter.lastOptions.path, '/api/rides/request/');
+      expect(
+        _header(adapter.lastOptions, 'Authorization'),
+        'Bearer passenger-access-token',
+      );
+      expect(
+        _header(adapter.lastOptions, 'Idempotency-Key'),
+        'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+      );
+      expect(adapter.lastOptions.data, {
+        'pickup_location': 'Kempinski Hotel Gold Coast City, Accra',
+        'destination': 'Kotoka International Airport',
+        'passenger_count': 2,
+        'assistance_note': 'Passenger has two suitcases.',
+      });
+      expect(
+        (adapter.lastOptions.data as Map<String, Object?>).containsKey(
+          'service_context',
+        ),
+        isFalse,
+      );
+      expect(
+        (adapter.lastOptions.data as Map<String, Object?>).containsKey(
+          'request_reference',
+        ),
+        isFalse,
+      );
+      expect(response.data?.requestReference, 'RR-APP-3A9F1C2B4E5D');
+      expect(response.data?.status, 'requested');
+      expect(
+        response.data?.message,
+        'Ride request received by the Control Center.',
+      );
+    });
+
+    test('omits assistance_note when it is blank', () async {
+      final adapter = _MockHttpClientAdapter(
+        statusCode: 201,
+        responseBody: _rideRequestBody(requestReference: null),
+      );
+      final client = _client(adapter, token: 'passenger-access-token');
+
+      final response = await client.submitPassengerRideRequest(
+        PassengerRideRequestSubmission(
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          pickupLocation: 'Osu',
+          destination: 'Airport',
+          passengerCount: 1,
+          assistanceNote: '   ',
+        ),
+      );
+
+      expect(response.isSuccess, isTrue);
+      expect(
+        (adapter.lastOptions.data as Map<String, Object?>).containsKey(
+          'assistance_note',
+        ),
+        isFalse,
+      );
+      expect(response.data?.requestReference, isNull);
+    });
+
+    test('handles 200 idempotent duplicate success', () async {
+      final response =
+          await _client(
+            _MockHttpClientAdapter(
+              statusCode: 200,
+              responseBody: _rideRequestBody(),
+            ),
+            token: 'passenger-access-token',
+          ).submitPassengerRideRequest(
+            PassengerRideRequestSubmission(
+              idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+              pickupLocation: 'Osu',
+              destination: 'Airport',
+              passengerCount: 1,
+            ),
+          );
+
+      expect(response.isSuccess, isTrue);
+      expect(response.statusCode, 200);
+      expect(response.data?.status, 'requested');
+    });
+
+    test('handles ride request validation and permission failures', () async {
+      for (final statusCode in [400, 403, 409, 503]) {
+        final response =
+            await _client(
+              _MockHttpClientAdapter(
+                statusCode: statusCode,
+                responseBody: {
+                  'detail': statusCode == 503
+                      ? 'Mobile API is not enabled.'
+                      : 'Passenger account required.',
+                  if (statusCode == 400) 'code': 'pickup_location_required',
+                  if (statusCode == 503) 'code': 'mobile_api_disabled',
+                },
+              ),
+              token: 'passenger-access-token',
+            ).submitPassengerRideRequest(
+              PassengerRideRequestSubmission(
+                idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+                pickupLocation: 'Osu',
+                destination: 'Airport',
+                passengerCount: 1,
+              ),
+            );
+
+        expect(response.isApiFailure, isTrue);
+        expect(response.statusCode, statusCode);
+      }
+    });
+
+    test('validates ride request submission values locally', () {
+      expect(
+        () => PassengerRideRequestSubmission(
+          idempotencyKey: '',
+          pickupLocation: 'Osu',
+          destination: 'Airport',
+          passengerCount: 1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => PassengerRideRequestSubmission(
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          pickupLocation: 'Osu',
+          destination: 'Airport',
+          passengerCount: 7,
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('maps 401 to authentication error', () async {
@@ -250,10 +398,15 @@ class _FixedTokenProvider implements TokenProvider {
 }
 
 class _MockHttpClientAdapter implements HttpClientAdapter {
-  _MockHttpClientAdapter({this.statusCode = 200, this.failureType});
+  _MockHttpClientAdapter({
+    this.statusCode = 200,
+    this.failureType,
+    this.responseBody = const <String, Object?>{'ok': true},
+  });
 
   final int statusCode;
   final DioExceptionType? failureType;
+  final Object? responseBody;
 
   late RequestOptions lastOptions;
 
@@ -277,11 +430,21 @@ class _MockHttpClientAdapter implements HttpClientAdapter {
     }
 
     return ResponseBody.fromString(
-      jsonEncode(const <String, Object?>{'ok': true}),
+      jsonEncode(responseBody),
       statusCode,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
     );
   }
+}
+
+Map<String, Object?> _rideRequestBody({
+  String? requestReference = 'RR-APP-3A9F1C2B4E5D',
+}) {
+  return <String, Object?>{
+    if (requestReference != null) 'request_reference': requestReference,
+    'status': 'requested',
+    'message': 'Ride request received by the Control Center.',
+  };
 }
