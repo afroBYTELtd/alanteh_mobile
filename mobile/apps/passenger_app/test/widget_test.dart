@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
@@ -157,12 +158,219 @@ void main() {
 
     expect(find.byKey(const Key('passenger-login-error')), findsOneWidget);
     expect(
-      find.text('Could not sign in. Please check your phone and PIN.'),
+      find.text('Sign in failed. Check your phone and PIN.'),
       findsOneWidget,
     );
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
+  });
+
+  testWidgets(
+    'Passenger sign-in shows loading state and prevents duplicate submit while loading',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      final pending = Completer<ApiResponse<Map<String, Object?>>>();
+      final api = _FakeAuthApiGateway(pendingResponse: pending);
+
+      await tester.pumpWidget(
+        PassengerApp(
+          showLoginShell: true,
+          authTokenStore: store,
+          authService: AuthService(
+            apiGateway: api,
+            tokenStore: store,
+            appContext: AuthAppContext.passenger,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233551234567',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '1234',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pump();
+
+      expect(find.text('Signing in...'), findsOneWidget);
+      expect(api.paths, <String>[AuthService.tokenPath]);
+
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pump();
+
+      expect(api.paths, <String>[AuthService.tokenPath]);
+
+      pending.complete(ApiResponse.success(_loginResponse(), statusCode: 200));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('passenger-login-error')), findsNothing);
+      expect(await store.readAccessToken(), isNotNull);
+    },
+  );
+
+  testWidgets('Passenger sign-in invalid credentials shows safe message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(statusCode: 401);
+
+    await tester.pumpWidget(
+      PassengerApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Sign in failed. Check your phone and PIN.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Authentication failed'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Passenger sign-in network failure shows safe message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(exceptionType: AsmApiExceptionType.network);
+
+    await tester.pumpWidget(
+      PassengerApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Cannot reach the server. Check your connection and try again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Raw technical'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Passenger sign-in 503 shows service unavailable message', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(statusCode: 503);
+
+    await tester.pumpWidget(
+      PassengerApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Service is temporarily unavailable. Please try again later.'),
+      findsOneWidget,
+    );
+    expect(await store.readAccessToken(), isNull);
+  });
+
+  testWidgets('Passenger sign-in non-passenger account shows app mismatch', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'driver-access',
+        'refresh': 'driver-refresh',
+        'account_type': 'driver',
+      },
+    );
+
+    await tester.pumpWidget(
+      PassengerApp(
+        showLoginShell: true,
+        authTokenStore: store,
+        authService: AuthService(
+          apiGateway: api,
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(authAppContextErrorMessage), findsOneWidget);
+    expect(await store.readAccessToken(), isNull);
   });
 
   testWidgets(
@@ -458,10 +666,17 @@ class _AccessOnlyAuthTokenStore implements AuthTokenStore {
 }
 
 class _FakeAuthApiGateway implements AuthApiGateway {
-  _FakeAuthApiGateway({this.responseData, this.statusCode = 200});
+  _FakeAuthApiGateway({
+    this.responseData,
+    this.statusCode = 200,
+    this.exceptionType,
+    this.pendingResponse,
+  });
 
   final Map<String, Object?>? responseData;
   final int statusCode;
+  final AsmApiExceptionType? exceptionType;
+  final Completer<ApiResponse<Map<String, Object?>>>? pendingResponse;
 
   final paths = <String>[];
   final bodies = <Map<String, Object?>>[];
@@ -474,6 +689,22 @@ class _FakeAuthApiGateway implements AuthApiGateway {
     paths.add(path);
     bodies.add(body);
 
+    final pending = pendingResponse;
+    if (pending != null) {
+      return pending.future;
+    }
+
+    final type = exceptionType;
+    if (type != null) {
+      return ApiResponse.clientException(
+        AsmApiException(
+          type: type,
+          message: 'Raw technical auth failure must not be shown.',
+          statusCode: statusCode == 200 ? null : statusCode,
+        ),
+      );
+    }
+
     if (statusCode >= 200 && statusCode < 300 && responseData != null) {
       return ApiResponse.success(responseData!, statusCode: statusCode);
     }
@@ -482,6 +713,8 @@ class _FakeAuthApiGateway implements AuthApiGateway {
       AsmApiException(
         type: statusCode == 401
             ? AsmApiExceptionType.authentication
+            : statusCode >= 500
+            ? AsmApiExceptionType.server
             : AsmApiExceptionType.badResponse,
         message: 'Authentication failed.',
         statusCode: statusCode,

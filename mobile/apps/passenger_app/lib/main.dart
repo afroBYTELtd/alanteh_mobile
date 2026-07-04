@@ -203,8 +203,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _pinController.clear();
       setState(() {
         _isSigningIn = false;
-        _loginErrorMessage =
-            'Could not sign in. Please check your phone and PIN.';
+        _loginErrorMessage = _unknownApiErrorMessage;
       });
     }
   }
@@ -250,9 +249,18 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  static const _signInFailedMessage =
+      'Sign in failed. Check your phone and PIN.';
+  static const _networkErrorMessage =
+      'Cannot reach the server. Check your connection and try again.';
+  static const _serverUnavailableMessage =
+      'Service is temporarily unavailable. Please try again later.';
+  static const _unknownApiErrorMessage =
+      'Something went wrong. Please try again.';
+
   String _passengerLoginErrorMessage(AuthException? error) {
     if (error == null) {
-      return 'Could not sign in. Please check your phone and PIN.';
+      return _signInFailedMessage;
     }
 
     if (error.message == authAppContextErrorMessage) {
@@ -263,11 +271,35 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       return AsmApiClient.connectionNotConfiguredMessage;
     }
 
-    if (error.type == AuthExceptionType.validation) {
-      return error.message;
+    final cause = error.cause;
+    if (cause is AsmApiException) {
+      if (cause.type == AsmApiExceptionType.network ||
+          cause.type == AsmApiExceptionType.timeout) {
+        return _networkErrorMessage;
+      }
+
+      if (cause.statusCode == 503 || cause.type == AsmApiExceptionType.server) {
+        return _serverUnavailableMessage;
+      }
+
+      if (cause.statusCode == 401 || cause.statusCode == 400) {
+        return _signInFailedMessage;
+      }
     }
 
-    return 'Could not sign in. Please check your phone and PIN.';
+    if (error.type == AuthExceptionType.accountType) {
+      return authAppContextErrorMessage;
+    }
+
+    if (error.type == AuthExceptionType.validation) {
+      return _signInFailedMessage;
+    }
+
+    if (error.type == AuthExceptionType.apiFailure) {
+      return _unknownApiErrorMessage;
+    }
+
+    return _signInFailedMessage;
   }
 
   @override

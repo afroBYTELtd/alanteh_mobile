@@ -150,7 +150,7 @@ class _BookingPageState extends State<BookingPage> {
       setState(() {
         _submissionStatus = BookingSubmissionStatus.failure;
         _submissionErrorMessage =
-            'Could not send ride request.\nPlease check your connection and try again.';
+            PassengerRideRequestSubmissionException.unknownErrorMessage;
         _submissionRequiresSignIn = false;
       });
     }
