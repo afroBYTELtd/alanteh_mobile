@@ -16,7 +16,11 @@ abstract interface class PassengerRideRequestSubmitter {
 
 class ApiPassengerRideRequestSubmitter
     implements PassengerRideRequestSubmitter {
-  const ApiPassengerRideRequestSubmitter(this.client, {this.tokenStore});
+  const ApiPassengerRideRequestSubmitter(
+    this.client, {
+    this.tokenStore,
+    this.authService,
+  });
 
   factory ApiPassengerRideRequestSubmitter.withDefaultClient({
     AuthTokenStore? tokenStore,
@@ -28,11 +32,16 @@ class ApiPassengerRideRequestSubmitter
         tokenProvider: _AuthTokenProvider(store),
       ),
       tokenStore: store,
+      authService: AuthService.withApiClient(
+        client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+        tokenStore: store,
+      ),
     );
   }
 
   final AsmApiClient client;
   final AuthTokenStore? tokenStore;
+  final AuthService? authService;
 
   @override
   Future<PassengerRideRequestResult> submit(
@@ -45,7 +54,45 @@ class ApiPassengerRideRequestSubmitter
       throw const PassengerRideRequestSubmissionException.signInRequired();
     }
 
-    final response = await client.submitPassengerRideRequest(
+    final response = await _submitRideRequest(
+      draft,
+      idempotencyKey: idempotencyKey,
+    );
+
+    if (response.isSuccess && response.data != null) {
+      return response.data!;
+    }
+
+    if (response.statusCode == 401 && tokenStore != null) {
+      final refreshed = await _refreshAccessToken();
+      if (!refreshed) {
+        throw const PassengerRideRequestSubmissionException.signInRequired();
+      }
+
+      final retryResponse = await _submitRideRequest(
+        draft,
+        idempotencyKey: idempotencyKey,
+      );
+
+      if (retryResponse.isSuccess && retryResponse.data != null) {
+        return retryResponse.data!;
+      }
+
+      if (retryResponse.statusCode == 401) {
+        await tokenStore?.clearTokens();
+      }
+
+      throw PassengerRideRequestSubmissionException.fromResponse(retryResponse);
+    }
+
+    throw PassengerRideRequestSubmissionException.fromResponse(response);
+  }
+
+  Future<ApiResponse<PassengerRideRequestResult>> _submitRideRequest(
+    BookingDraft draft, {
+    required String idempotencyKey,
+  }) {
+    return client.submitPassengerRideRequest(
       PassengerRideRequestSubmission(
         idempotencyKey: idempotencyKey,
         pickupLocation: draft.pickupDescription.value,
@@ -54,12 +101,28 @@ class ApiPassengerRideRequestSubmitter
         assistanceNote: draft.assistanceNote?.value,
       ),
     );
+  }
 
-    if (response.isSuccess && response.data != null) {
-      return response.data!;
+  Future<bool> _refreshAccessToken() async {
+    final storedRefreshToken = (await tokenStore?.readRefreshToken())?.trim();
+    if (storedRefreshToken == null || storedRefreshToken.isEmpty) {
+      await tokenStore?.clearTokens();
+      return false;
     }
 
-    throw PassengerRideRequestSubmissionException.fromResponse(response);
+    final service = authService;
+    if (service == null) {
+      await tokenStore?.clearTokens();
+      return false;
+    }
+
+    final state = await service.refresh();
+    if (state.isAuthenticated) {
+      return true;
+    }
+
+    await tokenStore?.clearTokens();
+    return false;
   }
 }
 

@@ -250,6 +250,78 @@ void main() {
     }
   });
 
+  testWidgets('Passenger startup without stored tokens opens login', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
+    expect(find.text('Passenger access'), findsOneWidget);
+    expect(api.paths, isEmpty);
+  });
+
+  testWidgets('Passenger startup with stored tokens opens home', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = _AccessOnlyAuthTokenStore('stored-passenger-access');
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Map preview unavailable.'), findsOneWidget);
+    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-in')), findsNothing);
+    expect(api.paths, isEmpty);
+  });
+
+  testWidgets('Passenger sign out after restored startup clears next startup', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = _AccessOnlyAuthTokenStore('stored-passenger-access');
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('passenger-sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
+  });
+
+  testWidgets('Passenger local shell does not create stored tokens', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+
+    await tester.pumpWidget(PassengerApp(authTokenStore: store));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Map preview unavailable.'), findsOneWidget);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+  });
+
   testWidgets('passenger sign out clears tokens and returns to login', (
     tester,
   ) async {
@@ -319,6 +391,28 @@ Map<String, Object?> _loginResponse({Object? accountType = 'passenger'}) {
     response['account_type'] = accountType;
   }
   return response;
+}
+
+class _AccessOnlyAuthTokenStore implements AuthTokenStore {
+  _AccessOnlyAuthTokenStore(this._accessToken);
+
+  String? _accessToken;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    _accessToken = tokens.accessToken;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => _accessToken;
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> clearTokens() async {
+    _accessToken = null;
+  }
 }
 
 class _FakeAuthApiGateway implements AuthApiGateway {

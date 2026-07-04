@@ -725,6 +725,94 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('driver startup without stored tokens opens login', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('driver-sign-out')), findsNothing);
+    expect(find.text('Driver access'), findsOneWidget);
+    expect(authApi.paths, isEmpty);
+  });
+
+  testWidgets('driver startup with stored tokens opens home off shift', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = _AccessOnlyAuthTokenStore('stored-driver-access');
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Off shift'), findsOneWidget);
+    expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
+    expect(find.byKey(const Key('driver-sign-in')), findsNothing);
+    expect(authApi.paths, isEmpty);
+  });
+
+  testWidgets('driver sign out after restored startup clears next startup', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = _AccessOnlyAuthTokenStore('stored-driver-access');
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    Widget app() => DriverApp(
+      showLoginShell: true,
+      authService: AuthService(
+        apiGateway: authApi,
+        tokenStore: store,
+        appContext: AuthAppContext.driver,
+      ),
+      authTokenStore: store,
+    );
+
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('driver-sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('driver-sign-out')), findsNothing);
+  });
+
   testWidgets(
     'driver sign out clears tokens, returns login, and resets shift',
     (tester) async {
@@ -791,6 +879,28 @@ void main() {
       expect(find.text('On shift'), findsNothing);
     },
   );
+}
+
+class _AccessOnlyAuthTokenStore implements AuthTokenStore {
+  _AccessOnlyAuthTokenStore(this._accessToken);
+
+  String? _accessToken;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    _accessToken = tokens.accessToken;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => _accessToken;
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> clearTokens() async {
+    _accessToken = null;
+  }
 }
 
 class _RecordingDriverAuthApiGateway implements AuthApiGateway {

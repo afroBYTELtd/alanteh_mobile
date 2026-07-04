@@ -82,6 +82,33 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   String? _loginError;
 
   @override
+  void initState() {
+    super.initState();
+    _restoreStoredSession();
+  }
+
+  Future<void> _restoreStoredSession() async {
+    final accessToken = (await widget.authTokenStore.readAccessToken())?.trim();
+    if (!mounted || _localDemoOpened || _signedIn) {
+      return;
+    }
+
+    if (accessToken == null || accessToken.isEmpty) {
+      setState(() {
+        _signedIn = false;
+        _isSigningIn = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _signedIn = true;
+      _isSigningIn = false;
+      _loginError = null;
+    });
+  }
+
+  @override
   void dispose() {
     _phoneController.dispose();
     _pinController.dispose();
