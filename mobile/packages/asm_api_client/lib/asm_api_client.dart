@@ -226,6 +226,41 @@ final class PassengerRideRequestSubmission {
   }
 }
 
+/// Mobile API base URL configuration for live QA.
+final class AsmApiBaseUrl {
+  AsmApiBaseUrl._();
+
+  static const environmentKey = 'ASM_API_BASE_URL';
+  static const connectionNotConfiguredMessage =
+      'Connection is not configured yet.';
+
+  static bool isUsable(String? value) {
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return false;
+    }
+
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || !uri.isAbsolute || uri.host.trim().isEmpty) {
+      return false;
+    }
+
+    return uri.scheme == 'http' || uri.scheme == 'https';
+  }
+
+  static String normalize(String value) {
+    final normalized = value.trim();
+    if (!isUsable(normalized)) {
+      throw ArgumentError.value(
+        value,
+        'baseUrl',
+        'must be an absolute http or https URL with a host',
+      );
+    }
+    return normalized;
+  }
+}
+
 /// Accepted response for Passenger Ride Request submission.
 final class PassengerRideRequestResult {
   const PassengerRideRequestResult({
@@ -278,10 +313,7 @@ class AsmApiClient {
     Duration receiveTimeout = const Duration(seconds: 20),
   }) : _dio = dio ?? Dio(),
        _tokenProvider = tokenProvider {
-    final cleanedBaseUrl = baseUrl.trim();
-    if (cleanedBaseUrl.isEmpty) {
-      throw ArgumentError.value(baseUrl, 'baseUrl', 'must not be empty');
-    }
+    final cleanedBaseUrl = AsmApiBaseUrl.normalize(baseUrl);
 
     _dio.options
       ..baseUrl = cleanedBaseUrl
@@ -293,10 +325,16 @@ class AsmApiClient {
     _dio.options.headers.addAll(jsonHeaders);
   }
 
-  /// Safe compile-time default for local development and tests only.
+  /// Flutter dart-define key used by live QA.
+  static const apiBaseUrlEnvironmentKey = AsmApiBaseUrl.environmentKey;
+
+  /// User-safe connection configuration message for apps.
+  static const connectionNotConfiguredMessage =
+      AsmApiBaseUrl.connectionNotConfiguredMessage;
+
+  /// Compile-time API base URL supplied with --dart-define.
   static const defaultBaseUrl = String.fromEnvironment(
-    'ASM_API_BASE_URL',
-    defaultValue: 'http://localhost:8000/api/',
+    apiBaseUrlEnvironmentKey,
   );
 
   static const jsonHeaders = <String, String>{
@@ -306,6 +344,8 @@ class AsmApiClient {
 
   final Dio _dio;
   final TokenProvider? _tokenProvider;
+
+  String get baseUrl => _dio.options.baseUrl;
 
   Future<ApiResponse<T>> get<T>(
     String path, {

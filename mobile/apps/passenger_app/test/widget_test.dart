@@ -7,6 +7,11 @@ import 'package:passenger_app/main.dart';
 import 'package:passenger_app/passenger_shell.dart';
 
 void main() {
+  test('Passenger auth endpoint contract paths remain stable', () {
+    expect(AuthService.tokenPath, '/api/auth/token/');
+    expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+  });
+
   testWidgets('Passenger phone PIN login stores tokens and opens home', (
     tester,
   ) async {
@@ -159,6 +164,43 @@ void main() {
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
   });
+
+  testWidgets(
+    'real sign-in without API base URL shows connection configuration error',
+    (tester) async {
+      if (AsmApiClient.defaultBaseUrl.trim().isNotEmpty) {
+        return;
+      }
+
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+
+      await tester.pumpWidget(
+        PassengerApp(showLoginShell: true, authTokenStore: store),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233551234567',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '1234',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('passenger-login-error')), findsOneWidget);
+      expect(
+        find.text(AsmApiClient.connectionNotConfiguredMessage),
+        findsOneWidget,
+      );
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.text('Map preview unavailable.'), findsNothing);
+    },
+  );
 
   testWidgets('navigates the simplified passenger shell', (tester) async {
     _useSurface(tester, const Size(430, 900));

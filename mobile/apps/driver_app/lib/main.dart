@@ -32,10 +32,11 @@ class DriverApp extends StatelessWidget {
     assert(AuthState.unauthenticated().status == AuthStatus.unauthenticated);
 
     final tokenStore = authTokenStore ?? SecureAuthTokenStore();
+    const apiBaseUrl = AsmApiClient.defaultBaseUrl;
     final service =
         authService ??
-        AuthService.withApiClient(
-          client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+        _authServiceFor(
+          baseUrl: apiBaseUrl,
           tokenStore: tokenStore,
           appContext: AuthAppContext.driver,
         );
@@ -344,12 +345,20 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   String _driverLoginErrorMessage(AuthException? error) {
-    if (error?.message == authAppContextErrorMessage) {
+    if (error == null) {
+      return 'Could not sign in. Please check your phone and PIN.';
+    }
+
+    if (error.message == authAppContextErrorMessage) {
       return authAppContextErrorMessage;
     }
 
-    if (error?.type == AuthExceptionType.validation) {
-      return error!.message;
+    if (error.message == AsmApiClient.connectionNotConfiguredMessage) {
+      return AsmApiClient.connectionNotConfiguredMessage;
+    }
+
+    if (error.type == AuthExceptionType.validation) {
+      return error.message;
     }
 
     return 'Could not sign in. Please check your phone and PIN.';
@@ -379,6 +388,43 @@ class _DriverLoginErrorPanel extends StatelessWidget {
           fontWeight: FontWeight.w700,
           height: 1.35,
         ),
+      ),
+    );
+  }
+}
+
+AuthService _authServiceFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  required AuthAppContext appContext,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return AuthService(
+      apiGateway: const _UnconfiguredAuthApiGateway(),
+      tokenStore: tokenStore,
+      appContext: appContext,
+    );
+  }
+
+  return AuthService.withApiClient(
+    client: AsmApiClient(baseUrl: baseUrl!),
+    tokenStore: tokenStore,
+    appContext: appContext,
+  );
+}
+
+class _UnconfiguredAuthApiGateway implements AuthApiGateway {
+  const _UnconfiguredAuthApiGateway();
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    return ApiResponse.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.badResponse,
+        message: AsmApiClient.connectionNotConfiguredMessage,
       ),
     );
   }

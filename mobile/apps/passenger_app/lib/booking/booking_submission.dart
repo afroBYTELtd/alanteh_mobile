@@ -20,28 +20,39 @@ class ApiPassengerRideRequestSubmitter
     this.client, {
     this.tokenStore,
     this.authService,
+    this.connectionConfigured = true,
   });
 
   factory ApiPassengerRideRequestSubmitter.withDefaultClient({
     AuthTokenStore? tokenStore,
+    String? baseUrl,
   }) {
     final store = tokenStore ?? SecureAuthTokenStore();
+    final connectionConfigured = AsmApiBaseUrl.isUsable(baseUrl);
+    final resolvedBaseUrl = connectionConfigured
+        ? baseUrl!.trim()
+        : 'http://127.0.0.1:8000';
+
     return ApiPassengerRideRequestSubmitter(
       AsmApiClient(
-        baseUrl: AsmApiClient.defaultBaseUrl,
+        baseUrl: resolvedBaseUrl,
         tokenProvider: _AuthTokenProvider(store),
       ),
       tokenStore: store,
-      authService: AuthService.withApiClient(
-        client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
-        tokenStore: store,
-      ),
+      authService: connectionConfigured
+          ? AuthService.withApiClient(
+              client: AsmApiClient(baseUrl: resolvedBaseUrl),
+              tokenStore: store,
+            )
+          : null,
+      connectionConfigured: connectionConfigured,
     );
   }
 
   final AsmApiClient client;
   final AuthTokenStore? tokenStore;
   final AuthService? authService;
+  final bool connectionConfigured;
 
   @override
   Future<PassengerRideRequestResult> submit(
@@ -52,6 +63,10 @@ class ApiPassengerRideRequestSubmitter
     if (tokenStore != null &&
         (storedAccessToken == null || storedAccessToken.isEmpty)) {
       throw const PassengerRideRequestSubmissionException.signInRequired();
+    }
+
+    if (!connectionConfigured) {
+      throw const PassengerRideRequestSubmissionException.connectionNotConfigured();
     }
 
     final response = await _submitRideRequest(
@@ -135,6 +150,10 @@ class PassengerRideRequestSubmissionException implements Exception {
   const PassengerRideRequestSubmissionException.signInRequired()
     : message = signInRequiredMessage,
       requiresSignIn = true;
+
+  const PassengerRideRequestSubmissionException.connectionNotConfigured()
+    : message = AsmApiClient.connectionNotConfiguredMessage,
+      requiresSignIn = false;
 
   static const signInRequiredMessage = 'Please sign in to request a ride.';
 

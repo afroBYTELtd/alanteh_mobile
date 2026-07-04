@@ -53,7 +53,7 @@ The client accepts a configurable base URL. A safe compile-time default is
 available for local development and tests only:
 
 ```bash
---dart-define=ASM_API_BASE_URL=http://localhost:8000/api/
+--dart-define=ASM_API_BASE_URL=https://your-control-center-domain.com
 ```
 
 Production apps must provide the correct Django Control Center API base URL at
@@ -293,3 +293,19 @@ M2D adds visible Passenger and Driver sign-out actions using the existing auth t
 ### M2E — Auth Session Restore and Expired Token Recovery
 
 M2E restores Passenger and Driver sessions on app startup using the existing stored auth tokens. Passenger ride request submission now handles one 401 response by refreshing the access token through `POST /api/auth/token/refresh/`, storing the new access token, and retrying the same ride request once with the same `Idempotency-Key`. Missing or failed refresh clears stored tokens and returns the Passenger to the sign-in-required path. No backend logout, live session validation, native, pubspec, package dependency, dispatch, GPS, maps, payment, WebSocket, wallet, or offline queue behavior change is included.
+
+### M2F — Mobile API Base URL Wiring and Live Smoke-Test Readiness
+
+M2F wires Passenger and Driver live API calls to the Flutter dart-define value `ASM_API_BASE_URL`. No production backend URL, secrets, tokens, or credentials are hardcoded in source.
+
+Passenger live QA example:
+
+    cd mobile/apps/passenger_app
+    flutter run -d "<simulator-id>" --dart-define=ASM_API_BASE_URL=https://your-control-center-domain.com
+
+Driver live QA example:
+
+    cd mobile/apps/driver_app
+    flutter run -d "<simulator-id>" --dart-define=ASM_API_BASE_URL=https://your-control-center-domain.com
+
+If the API base URL is missing or invalid during real sign-in or ride request submission, the apps show `Connection is not configured yet.` Continue without signing in remains local-only and does not require API configuration.
