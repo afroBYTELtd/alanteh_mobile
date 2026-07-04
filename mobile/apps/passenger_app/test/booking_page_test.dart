@@ -454,6 +454,149 @@ void main() {
     );
   });
 
+  test(
+    'api submitter refreshes once and retries with same idempotency key',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'expired-passenger-access',
+          refreshToken: 'stored-passenger-refresh',
+        ),
+      );
+      final client = _RecordingApiClient(
+        responses: <ApiResponse<PassengerRideRequestResult>>[
+          ApiResponse.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.authentication,
+              message: 'Authentication credentials were not provided.',
+              statusCode: 401,
+            ),
+          ),
+          ApiResponse.success(
+            const PassengerRideRequestResult(
+              requestReference: 'RR-APP-3A9F1C2B4E5D',
+              status: 'requested',
+              message: 'Ride request received by the Control Center.',
+            ),
+            statusCode: 201,
+          ),
+        ],
+      );
+      final authApi = _RecordingAuthApiGateway(
+        responseData: <String, Object?>{'access': 'new-passenger-access'},
+      );
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        tokenStore: store,
+        authService: AuthService(apiGateway: authApi, tokenStore: store),
+      );
+
+      final result = await submitter.submit(
+        _validDraft(),
+        idempotencyKey: 'APP-refresh-retry-same-key',
+      );
+
+      expect(result.requestReference, 'RR-APP-3A9F1C2B4E5D');
+      expect(authApi.paths, <String>[AuthService.refreshPath]);
+      expect(authApi.bodies.single, <String, Object?>{
+        'refresh': 'stored-passenger-refresh',
+      });
+      expect(await store.readAccessToken(), 'new-passenger-access');
+      expect(await store.readRefreshToken(), 'stored-passenger-refresh');
+      expect(client.submissions, hasLength(2));
+      expect(
+        client.submissions.map((submission) => submission.idempotencyKey),
+        ['APP-refresh-retry-same-key', 'APP-refresh-retry-same-key'],
+      );
+    },
+  );
+
+  test('api submitter clears tokens when 401 has no refresh token', () async {
+    final store = _MutableAuthTokenStore(accessToken: 'expired-access');
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.authentication,
+            message: 'Authentication credentials were not provided.',
+            statusCode: 401,
+          ),
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+      authService: AuthService(
+        apiGateway: _RecordingAuthApiGateway(),
+        tokenStore: store,
+      ),
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-missing-refresh'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>()
+            .having(
+              (error) => error.message,
+              'message',
+              PassengerRideRequestSubmissionException.signInRequiredMessage,
+            )
+            .having((error) => error.requiresSignIn, 'requiresSignIn', isTrue),
+      ),
+    );
+
+    expect(client.submissions, hasLength(1));
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+  });
+
+  test('api submitter clears tokens when refresh fails', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'expired-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.authentication,
+            message: 'Authentication credentials were not provided.',
+            statusCode: 401,
+          ),
+        ),
+      ],
+    );
+    final authApi = _RecordingAuthApiGateway(statusCode: 401);
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+      authService: AuthService(apiGateway: authApi, tokenStore: store),
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-refresh-fails'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>()
+            .having(
+              (error) => error.message,
+              'message',
+              PassengerRideRequestSubmissionException.signInRequiredMessage,
+            )
+            .having((error) => error.requiresSignIn, 'requiresSignIn', isTrue),
+      ),
+    );
+
+    expect(authApi.paths, <String>[AuthService.refreshPath]);
+    expect(client.submissions, hasLength(1));
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+  });
+
   testWidgets('blocked ride request shows sign-in path', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     var signInRequested = false;
@@ -699,10 +842,15 @@ BookingDraft _validDraft() {
 }
 
 class _RecordingApiClient extends AsmApiClient {
-  _RecordingApiClient() : super(baseUrl: 'https://control.example/api/');
+  _RecordingApiClient({
+    List<ApiResponse<PassengerRideRequestResult>>? responses,
+  }) : _responses = responses ?? <ApiResponse<PassengerRideRequestResult>>[],
+       super(baseUrl: 'https://control.example/api/');
 
+  final List<ApiResponse<PassengerRideRequestResult>> _responses;
   bool wasCalled = false;
   PassengerRideRequestSubmission? lastSubmission;
+  final submissions = <PassengerRideRequestSubmission>[];
 
   @override
   Future<ApiResponse<PassengerRideRequestResult>> submitPassengerRideRequest(
@@ -710,6 +858,10 @@ class _RecordingApiClient extends AsmApiClient {
   ) async {
     wasCalled = true;
     lastSubmission = submission;
+    submissions.add(submission);
+    if (_responses.isNotEmpty) {
+      return _responses.removeAt(0);
+    }
     return ApiResponse.success(
       const PassengerRideRequestResult(
         requestReference: 'RR-APP-3A9F1C2B4E5D',
@@ -718,6 +870,64 @@ class _RecordingApiClient extends AsmApiClient {
       ),
       statusCode: 201,
     );
+  }
+}
+
+class _RecordingAuthApiGateway implements AuthApiGateway {
+  _RecordingAuthApiGateway({
+    this.responseData = const <String, Object?>{'access': 'new-access'},
+    this.statusCode = 200,
+  });
+
+  final Map<String, Object?> responseData;
+  final int statusCode;
+  final paths = <String>[];
+  final bodies = <Map<String, Object?>>[];
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    paths.add(path);
+    bodies.add(Map<String, Object?>.of(body));
+
+    if (statusCode < 200 || statusCode >= 300) {
+      return ApiResponse.apiFailure(
+        AsmApiException(
+          type: AsmApiExceptionType.authentication,
+          message: 'Refresh failed.',
+          statusCode: statusCode,
+        ),
+      );
+    }
+
+    return ApiResponse.success(responseData, statusCode: statusCode);
+  }
+}
+
+class _MutableAuthTokenStore implements AuthTokenStore {
+  _MutableAuthTokenStore({this.accessToken});
+
+  String? accessToken;
+  String? refreshToken;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    accessToken = tokens.accessToken;
+    refreshToken = tokens.refreshToken;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => accessToken;
+
+  @override
+  Future<String?> readRefreshToken() async => refreshToken;
+
+  @override
+  Future<void> clearTokens() async {
+    accessToken = null;
+    refreshToken = null;
   }
 }
 

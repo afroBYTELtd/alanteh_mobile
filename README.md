@@ -289,3 +289,7 @@ M2C wires the Driver App login shell to the accepted CC4A phone/PIN auth contrac
 ### M2D — Authenticated Session Sign-Out and Token Clear
 
 M2D adds visible Passenger and Driver sign-out actions using the existing auth token store. Sign out clears stored access and refresh tokens, returns the user to the relevant login screen, keeps Driver local shift state reset by remounting the Driver shell, and preserves `Continue without signing in` as a separate token-free local QA path. No backend logout endpoint, token refresh behavior, live session validation, native, pubspec, package, dispatch, GPS, maps, payment, WebSocket, wallet, or offline queue behavior change is included.
+
+### M2E — Auth Session Restore and Expired Token Recovery
+
+M2E restores Passenger and Driver sessions on app startup using the existing stored auth tokens. Passenger ride request submission now handles one 401 response by refreshing the access token through `POST /api/auth/token/refresh/`, storing the new access token, and retrying the same ride request once with the same `Idempotency-Key`. Missing or failed refresh clears stored tokens and returns the Passenger to the sign-in-required path. No backend logout, live session validation, native, pubspec, package dependency, dispatch, GPS, maps, payment, WebSocket, wallet, or offline queue behavior change is included.

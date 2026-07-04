@@ -111,6 +111,28 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         ApiPassengerRideRequestSubmitter.withDefaultClient(
           tokenStore: _tokenStore,
         );
+    _restoreStoredSession();
+  }
+
+  Future<void> _restoreStoredSession() async {
+    final accessToken = (await _tokenStore.readAccessToken())?.trim();
+    if (!mounted || _signedIn) {
+      return;
+    }
+
+    if (accessToken == null || accessToken.isEmpty) {
+      setState(() {
+        _signedIn = false;
+        _isSigningIn = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _signedIn = true;
+      _isSigningIn = false;
+      _loginErrorMessage = null;
+    });
   }
 
   @override
