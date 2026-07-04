@@ -47,6 +47,7 @@ class _BookingPageState extends State<BookingPage> {
   String? _submissionErrorMessage;
   bool _submissionRequiresSignIn = false;
   String? _idempotencyKey;
+  String? _passengerCountErrorMessage;
 
   @override
   void initState() {
@@ -75,7 +76,16 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
+    if (_passengerCount < 1 || _passengerCount > 6) {
+      setState(() {
+        _passengerCountErrorMessage =
+            'Passenger count must be between 1 and 6.';
+      });
+      return;
+    }
+
     setState(() {
+      _passengerCountErrorMessage = null;
       _draft = BookingDraft(
         marketCode: widget.market.marketCode,
         serviceContext: _internalServiceContext,
@@ -95,6 +105,7 @@ class _BookingPageState extends State<BookingPage> {
       _submissionErrorMessage = null;
       _submissionRequiresSignIn = false;
       _idempotencyKey = null;
+      _passengerCountErrorMessage = null;
     });
   }
 
@@ -194,9 +205,13 @@ class _BookingPageState extends State<BookingPage> {
                 assistanceController: _assistanceController,
                 passengerCount: _passengerCount,
                 onPassengerCountChanged: (value) {
-                  setState(() => _passengerCount = value);
+                  setState(() {
+                    _passengerCount = value;
+                    _passengerCountErrorMessage = null;
+                  });
                 },
                 onReview: _reviewDraft,
+                passengerCountErrorMessage: _passengerCountErrorMessage,
               )
             : BookingReview(
                 draft: _draft!,

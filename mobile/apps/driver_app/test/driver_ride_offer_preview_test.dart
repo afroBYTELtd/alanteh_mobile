@@ -98,14 +98,22 @@ void main() {
   });
 
   test('assistance note remains optional and capped by shared validation', () {
-    expect(pending().assistanceNote, isNull);
+    expect(pending(assistanceNote: null).assistanceNote, isNull);
     expect(pending(assistanceNote: '   ').assistanceNote, isNull);
     expect(
-      pending(assistanceNote: '  ${'a' * 240}  ').assistanceNote!.value,
-      'a' * 240,
+      pending(
+        assistanceNote: List.filled(241, 'A').join(),
+      ).assistanceNote?.value.length,
+      241,
     );
     expect(
-      () => pending(assistanceNote: 'a' * 241),
+      pending(
+        assistanceNote: List.filled(1000, 'A').join(),
+      ).assistanceNote?.value.length,
+      1000,
+    );
+    expect(
+      () => pending(assistanceNote: List.filled(1001, 'A').join()),
       throwsA(
         isA<DriverRideOfferPreviewValidationException>()
             .having(

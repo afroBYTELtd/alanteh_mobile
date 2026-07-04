@@ -96,7 +96,7 @@ void main() {
     expect(find.text('Result: Accra Airport'), findsOneWidget);
   });
 
-  testWidgets('preserves initial text and limits input to 160 characters', (
+  testWidgets('preserves initial text and limits input to 240 characters', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -113,9 +113,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('location-description')),
-      List.filled(180, 'a').join(),
+      List.filled(260, 'a').join(),
     );
-    expect(field.controller!.text.length, 160);
+    expect(field.controller!.text.length, 240);
   });
 }
 
