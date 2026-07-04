@@ -33,7 +33,7 @@ class _DriverRideOfferPageState extends State<DriverRideOfferPage> {
 
   @override
   Widget build(BuildContext context) {
-    final marketLabel = '${widget.market.city}, ${widget.market.countryName}';
+    final marketLabel = widget.market.countryName;
 
     return Scaffold(
       appBar: AppBar(title: const Text('New trip')),

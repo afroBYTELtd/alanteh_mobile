@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
+    required this.isOnShift,
     required this.onOpenReadiness,
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
@@ -12,6 +13,7 @@ class DriverHome extends StatelessWidget {
   });
 
   final MarketConfig market;
+  final bool isOnShift;
   final VoidCallback onOpenReadiness;
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
@@ -19,7 +21,8 @@ class DriverHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final marketLabel = '${market.city}, ${market.countryName}';
+    final marketLabel = market.countryName;
+    final shiftLabel = isOnShift ? 'On shift' : 'Off shift';
 
     return AsmScreenSurface(
       scrollable: true,
@@ -60,9 +63,9 @@ class DriverHome extends StatelessWidget {
                 color: const Color(0xFF343026),
                 borderRadius: BorderRadius.circular(AsmRadii.radius6),
               ),
-              child: const Text(
-                'Off shift',
-                style: TextStyle(
+              child: Text(
+                shiftLabel,
+                style: const TextStyle(
                   color: Color(0xFFFFD968),
                   fontSize: 11,
                   fontWeight: FontWeight.w800,

@@ -111,7 +111,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('choose-destination')));
     await tester.pumpAndSettle();
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Ghana'), findsOneWidget);
     expect(
       find.text('Local description only. No map search is connected.'),
       findsOneWidget,

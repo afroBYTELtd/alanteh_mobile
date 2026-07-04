@@ -131,7 +131,7 @@ void main() {
     expect(find.text('Field workspace'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Off shift'), findsOneWidget);
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Ghana'), findsOneWidget);
     expect(find.text('Map coming soon'), findsOneWidget);
     expect(find.text('No trips yet'), findsOneWidget);
     expect(find.text('Start shift check'), findsOneWidget);
@@ -198,12 +198,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Shift check'), findsOneWidget);
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Ghana'), findsOneWidget);
     expect(find.text('Complete these checks before driving.'), findsOneWidget);
     for (final item in DriverReadinessItem.values) {
       expect(find.text(item.label), findsOneWidget);
     }
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+          .onPressed,
+      isNull,
+    );
 
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
     await tester.tap(find.byKey(const Key('readiness-vehicleExterior')));
@@ -215,6 +221,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('4 of 4 checks complete'), findsOneWidget);
     expect(find.text('Shift check complete'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+          .onPressed,
+      isNotNull,
+    );
     expect(
       find.text('Review your vehicle and route before starting work.'),
       findsOneWidget,
@@ -240,6 +252,48 @@ void main() {
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
+  testWidgets('ready button returns home and marks the driver on shift', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    await tester.pumpWidget(const DriverApp());
+    await _openDriverLocalDemo(tester);
+
+    expect(find.text('Off shift'), findsOneWidget);
+    expect(find.text('On shift'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+          .onPressed,
+      isNull,
+    );
+
+    for (final item in DriverReadinessItem.values) {
+      await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.text('4 of 4 checks complete'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+          .onPressed,
+      isNotNull,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('On shift'), findsOneWidget);
+    expect(find.text('Off shift'), findsNothing);
+  });
+
   testWidgets('validates, reviews, edits, closes, and resets a concern draft', (
     tester,
   ) async {
@@ -250,7 +304,7 @@ void main() {
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
     expect(find.text('Report an issue'), findsOneWidget);
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Ghana'), findsOneWidget);
     expect(
       find.text(
         'This report is not sent from the app yet. For emergencies, follow approved local safety procedures.',
@@ -273,7 +327,7 @@ void main() {
 
     await _completeConcernForm(tester, description: '  Loose mirror  ');
     expect(find.text('No issue report has been sent.'), findsOneWidget);
-    expect(find.text('Operating market'), findsOneWidget);
+    expect(find.text('Service area'), findsOneWidget);
     expect(find.byKey(const Key('concern-market')), findsOneWidget);
     expect(find.text('Vehicle'), findsOneWidget);
     expect(find.text('Urgent'), findsOneWidget);
@@ -544,7 +598,7 @@ void _expectNoOperationalActions() {
 
 void _expectPendingRideOffer() {
   expect(find.text('New trip'), findsWidgets);
-  expect(find.text('Accra, Ghana'), findsOneWidget);
+  expect(find.text('Ghana'), findsOneWidget);
   expect(find.text('Review the route before accepting.'), findsOneWidget);
   expect(find.text('Airport connection'), findsOneWidget);
   expect(find.text('Solar Hotel'), findsOneWidget);

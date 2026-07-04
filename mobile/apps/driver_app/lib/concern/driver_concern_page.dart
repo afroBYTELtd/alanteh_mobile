@@ -21,8 +21,7 @@ class _DriverConcernPageState extends State<DriverConcernPage> {
   DriverConcernAttentionLevel? _attentionLevel;
   DriverConcernDraft? _reviewDraft;
 
-  String get _marketLabel =>
-      '${widget.market.city}, ${widget.market.countryName}';
+  String get _marketLabel => widget.market.countryName;
 
   @override
   void dispose() {

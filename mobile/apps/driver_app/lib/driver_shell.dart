@@ -18,14 +18,24 @@ class DriverShell extends StatefulWidget {
 
 class _DriverShellState extends State<DriverShell> {
   int _selectedIndex = 0;
+  bool _isOnShift = false;
 
   Future<void> _openReadiness() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) =>
             DriverReadinessPage(market: widget.configuration.market),
       ),
     );
+
+    if (!mounted || completed != true) {
+      return;
+    }
+
+    setState(() {
+      _isOnShift = true;
+      _selectedIndex = 0;
+    });
   }
 
   Future<void> _openConcern() async {
@@ -49,6 +59,7 @@ class _DriverShellState extends State<DriverShell> {
     return switch (_selectedIndex) {
       0 => DriverHome(
         market: widget.configuration.market,
+        isOnShift: _isOnShift,
         onOpenReadiness: _openReadiness,
         onRecordConcern: _openConcern,
         onPreviewIncomingRequest: _openRideOfferPreview,

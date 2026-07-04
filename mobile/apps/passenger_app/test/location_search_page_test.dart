@@ -11,7 +11,7 @@ void main() {
 
     expect(find.text('Choose pickup'), findsWidgets);
     expect(find.byKey(const Key('location-market-context')), findsOneWidget);
-    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Ghana'), findsOneWidget);
     expect(find.byKey(const Key('location-description')), findsOneWidget);
     expect(find.text('Use this location description'), findsOneWidget);
     expect(
