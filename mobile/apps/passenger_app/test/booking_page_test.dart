@@ -218,12 +218,17 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-and-request')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.text('Ride request received'), findsOneWidget);
     expect(
-      find.text('Your request has been received by the Control Center.'),
+      find.text('Ride request received by the Control Center.'),
       findsOneWidget,
     );
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(find.text('Status: requested'), findsOneWidget);
+    expect(
+      find.text('Ride request received by the Control Center.'),
+      findsOneWidget,
+    );
     expect(submitter.submissions, hasLength(1));
     expect(submitter.submissions.single.pickupDescription.value, 'Solar Hotel');
     expect(
@@ -267,13 +272,25 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('ride-request-loading')), findsOneWidget);
-    expect(find.text('Sending ride request...'), findsOneWidget);
+    expect(
+      find.byKey(const Key('ride-request-loading-message')),
+      findsOneWidget,
+    );
+    expect(find.text('Sending request...'), findsWidgets);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('confirm-and-request')))
           .onPressed,
       isNull,
     );
+
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pump();
+
+    expect(submitter.submissions, hasLength(1));
+    expect(submitter.idempotencyKeys, [
+      'APP-11111111-2222-4333-8444-555555555555',
+    ]);
 
     submitter.completeSuccess(
       const PassengerRideRequestResult(
@@ -284,14 +301,19 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.text('Ride request received'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(find.text('Status: requested'), findsOneWidget);
+    expect(
+      find.text('Ride request received by the Control Center.'),
+      findsOneWidget,
+    );
     expect(submitter.idempotencyKeys, [
       'APP-11111111-2222-4333-8444-555555555555',
     ]);
   });
 
-  testWidgets('success does not invent a missing request reference', (
+  testWidgets('malformed success response does not show fake success', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
@@ -309,9 +331,14 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-and-request')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.text('Ride request received'), findsNothing);
     expect(find.byKey(const Key('ride-request-reference')), findsNothing);
     expect(find.textContaining('RR-APP'), findsNothing);
+    expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
+    expect(
+      find.text('Something went wrong. Please try again.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('network failure shows retry and reuses idempotency key', (
@@ -352,7 +379,7 @@ void main() {
     await tester.tap(find.byKey(const Key('retry-ride-request')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.text('Ride request received'), findsOneWidget);
     expect(submitter.idempotencyKeys, [
       'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -390,6 +417,42 @@ void main() {
     expect(
       client.lastSubmission?.toJson().containsKey('service_context'),
       isFalse,
+    );
+  });
+
+  test('api submitter rejects malformed successful receipt', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    final client = _RecordingApiClient(
+      responses: <ApiResponse<PassengerRideRequestResult>>[
+        ApiResponse.success(
+          const PassengerRideRequestResult(
+            status: 'requested',
+            message: 'Ride request received by the Control Center.',
+          ),
+          statusCode: 201,
+        ),
+      ],
+    );
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    await expectLater(
+      submitter.submit(_validDraft(), idempotencyKey: 'APP-malformed-success'),
+      throwsA(
+        isA<PassengerRideRequestSubmissionException>().having(
+          (error) => error.message,
+          'message',
+          PassengerRideRequestSubmissionException.unknownErrorMessage,
+        ),
+      ),
     );
   });
 
@@ -850,6 +913,62 @@ void main() {
 
     expect(signInRequested, isTrue);
   });
+
+  testWidgets(
+    'new request after completed success uses a new idempotency key',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success();
+      var keyIndex = 0;
+      final keys = <String>[
+        'APP-first1111-2222-4333-8444-555555555555',
+        'APP-second111-2222-4333-8444-555555555555',
+      ];
+
+      Future<void> completeRequest() async {
+        await _enterValidBooking(tester);
+        await tester.ensureVisible(find.byKey(const Key('request-ride')));
+        await tester.tap(find.byKey(const Key('request-ride')));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const Key('confirm-and-request')),
+        );
+        await tester.tap(find.byKey(const Key('confirm-and-request')));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.pumpWidget(
+        _bookingTestApp(
+          submitter: submitter,
+          idempotencyKeyFactory: () => keys[keyIndex++],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await completeRequest();
+
+      expect(find.text('Ride request received'), findsOneWidget);
+      expect(submitter.idempotencyKeys, <String>[keys.first]);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        _bookingTestApp(
+          submitter: submitter,
+          idempotencyKeyFactory: () => keys[keyIndex++],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+
+      await completeRequest();
+
+      expect(find.text('Ride request received'), findsOneWidget);
+      expect(submitter.idempotencyKeys, keys);
+    },
+  );
 
   testWidgets('clear route preserves session locations', (tester) async {
     _useSurface(tester, const Size(430, 1000));

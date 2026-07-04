@@ -34,8 +34,13 @@ class BookingReview extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final isSubmitting = submissionStatus == BookingSubmissionStatus.submitting;
-    final isSuccess = submissionStatus == BookingSubmissionStatus.success;
-    final isFailure = submissionStatus == BookingSubmissionStatus.failure;
+    final isSuccess =
+        submissionStatus == BookingSubmissionStatus.success &&
+        submissionResult != null;
+    final isFailure =
+        submissionStatus == BookingSubmissionStatus.failure ||
+        (submissionStatus == BookingSubmissionStatus.success &&
+            submissionResult == null);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(
@@ -89,14 +94,14 @@ class BookingReview extends StatelessWidget {
           const LinearProgressIndicator(key: Key('ride-request-loading')),
           const SizedBox(height: AsmSpacing.space12),
           const Text(
-            'Sending ride request...',
+            'Sending request...',
             key: Key('ride-request-loading-message'),
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AsmSpacing.space16),
         ],
         if (isSuccess) ...[
-          _SubmissionPanel.success(result: submissionResult),
+          _SubmissionPanel.success(result: submissionResult!),
           const SizedBox(height: AsmSpacing.space16),
           FilledButton.icon(
             key: const Key('finish-ride-request'),
@@ -147,7 +152,9 @@ class BookingReview extends StatelessWidget {
             key: const Key('confirm-and-request'),
             onPressed: isSubmitting ? null : onConfirm,
             icon: const Icon(Icons.check_circle_outline),
-            label: Text(isSubmitting ? 'Sending...' : 'Confirm and request'),
+            label: Text(
+              isSubmitting ? 'Sending request...' : 'Confirm and request',
+            ),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
             ),
@@ -164,18 +171,22 @@ class _SubmissionPanel extends StatelessWidget {
     required this.title,
     required this.message,
     this.reference,
+    this.status,
     required this.backgroundColor,
     required this.foregroundColor,
     required this.keyValue,
   }) : super(key: keyValue);
 
-  factory _SubmissionPanel.success({PassengerRideRequestResult? result}) {
+  factory _SubmissionPanel.success({
+    required PassengerRideRequestResult result,
+  }) {
     return _SubmissionPanel._(
       keyValue: const Key('ride-request-success'),
       icon: Icons.check_circle_outline,
-      title: 'Ride request sent',
-      message: 'Your request has been received by the Control Center.',
-      reference: result?.requestReference,
+      title: 'Ride request received',
+      message: result.message,
+      reference: result.requestReference!,
+      status: result.status,
       backgroundColor: const Color(0xFFE8F5E9),
       foregroundColor: const Color(0xFF1B5E20),
     );
@@ -185,7 +196,7 @@ class _SubmissionPanel extends StatelessWidget {
     return _SubmissionPanel._(
       keyValue: const Key('ride-request-error'),
       icon: Icons.error_outline,
-      title: 'Could not send ride request.',
+      title: 'Request not sent',
       message: _passengerErrorMessage(message),
       backgroundColor: const Color(0xFFFFF3E0),
       foregroundColor: const Color(0xFF8A4B00),
@@ -198,14 +209,6 @@ class _SubmissionPanel extends StatelessWidget {
       return 'Please check your connection and try again.';
     }
 
-    const titlePrefix = 'Could not send ride request.';
-    if (cleaned.startsWith(titlePrefix)) {
-      final passengerMessage = cleaned.substring(titlePrefix.length).trim();
-      if (passengerMessage.isNotEmpty) {
-        return passengerMessage;
-      }
-    }
-
     return cleaned;
   }
 
@@ -213,6 +216,7 @@ class _SubmissionPanel extends StatelessWidget {
   final String title;
   final String message;
   final String? reference;
+  final String? status;
   final Color backgroundColor;
   final Color foregroundColor;
   final Key keyValue;
@@ -244,6 +248,17 @@ class _SubmissionPanel extends StatelessWidget {
             Text(
               'Reference: $reference',
               key: const Key('ride-request-reference'),
+              style: TextStyle(
+                color: foregroundColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (status != null) ...[
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              'Status: $status',
+              key: const Key('ride-request-status'),
               style: TextStyle(
                 color: foregroundColor,
                 fontWeight: FontWeight.w700,

@@ -14,6 +14,18 @@ abstract interface class PassengerRideRequestSubmitter {
   });
 }
 
+final RegExp _passengerRideRequestReferencePattern = RegExp(
+  r'^RR-APP-[A-Z0-9]+$',
+);
+
+bool hasValidPassengerRideRequestReceipt(PassengerRideRequestResult result) {
+  final reference = result.requestReference?.trim();
+  return reference != null &&
+      _passengerRideRequestReferencePattern.hasMatch(reference) &&
+      result.status.trim().isNotEmpty &&
+      result.message.trim().isNotEmpty;
+}
+
 class ApiPassengerRideRequestSubmitter
     implements PassengerRideRequestSubmitter {
   const ApiPassengerRideRequestSubmitter(
@@ -75,7 +87,11 @@ class ApiPassengerRideRequestSubmitter
     );
 
     if (response.isSuccess && response.data != null) {
-      return response.data!;
+      final result = response.data!;
+      if (hasValidPassengerRideRequestReceipt(result)) {
+        return result;
+      }
+      throw const PassengerRideRequestSubmissionException.unknown();
     }
 
     if (response.statusCode == 401 && tokenStore != null) {
@@ -90,7 +106,11 @@ class ApiPassengerRideRequestSubmitter
       );
 
       if (retryResponse.isSuccess && retryResponse.data != null) {
-        return retryResponse.data!;
+        final result = retryResponse.data!;
+        if (hasValidPassengerRideRequestReceipt(result)) {
+          return result;
+        }
+        throw const PassengerRideRequestSubmissionException.unknown();
       }
 
       if (retryResponse.statusCode == 401) {
