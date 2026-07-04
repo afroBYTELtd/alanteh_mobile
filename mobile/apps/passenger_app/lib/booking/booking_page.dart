@@ -15,6 +15,7 @@ class BookingPage extends StatefulWidget {
     this.initialDestinationDescription = '',
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
+    this.onSignInRequired,
     super.key,
   });
 
@@ -23,6 +24,7 @@ class BookingPage extends StatefulWidget {
   final String initialDestinationDescription;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;
+  final VoidCallback? onSignInRequired;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -43,6 +45,7 @@ class _BookingPageState extends State<BookingPage> {
   BookingSubmissionStatus _submissionStatus = BookingSubmissionStatus.idle;
   PassengerRideRequestResult? _submissionResult;
   String? _submissionErrorMessage;
+  bool _submissionRequiresSignIn = false;
   String? _idempotencyKey;
 
   @override
@@ -90,6 +93,7 @@ class _BookingPageState extends State<BookingPage> {
       _submissionStatus = BookingSubmissionStatus.idle;
       _submissionResult = null;
       _submissionErrorMessage = null;
+      _submissionRequiresSignIn = false;
       _idempotencyKey = null;
     });
   }
@@ -111,6 +115,7 @@ class _BookingPageState extends State<BookingPage> {
       _submissionStatus = BookingSubmissionStatus.submitting;
       _submissionResult = null;
       _submissionErrorMessage = null;
+      _submissionRequiresSignIn = false;
     });
 
     try {
@@ -135,6 +140,7 @@ class _BookingPageState extends State<BookingPage> {
       setState(() {
         _submissionStatus = BookingSubmissionStatus.failure;
         _submissionErrorMessage = error.message;
+        _submissionRequiresSignIn = error.requiresSignIn;
       });
     } catch (_) {
       if (!mounted) {
@@ -145,12 +151,20 @@ class _BookingPageState extends State<BookingPage> {
         _submissionStatus = BookingSubmissionStatus.failure;
         _submissionErrorMessage =
             'Could not send ride request.\nPlease check your connection and try again.';
+        _submissionRequiresSignIn = false;
       });
     }
   }
 
   void _finishSuccess() {
     Navigator.of(context).pop(true);
+  }
+
+  void _returnToSignIn() {
+    widget.onSignInRequired?.call();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(false);
+    }
   }
 
   @override
@@ -177,9 +191,11 @@ class _BookingPageState extends State<BookingPage> {
                 submissionStatus: _submissionStatus,
                 submissionResult: _submissionResult,
                 submissionErrorMessage: _submissionErrorMessage,
+                submissionRequiresSignIn: _submissionRequiresSignIn,
                 onEdit: _editDraft,
                 onConfirm: _confirmRequest,
                 onFinish: _finishSuccess,
+                onSignInRequired: _returnToSignIn,
               ),
       ),
     );

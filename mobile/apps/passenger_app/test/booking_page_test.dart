@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/booking/booking_draft.dart';
@@ -350,6 +352,143 @@ void main() {
     ]);
   });
 
+  test('api submitter allows ride request when access token exists', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    final client = _RecordingApiClient();
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    final result = await submitter.submit(
+      _validDraft(),
+      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+    );
+
+    expect(result.requestReference, 'RR-APP-3A9F1C2B4E5D');
+    expect(client.wasCalled, isTrue);
+    expect(
+      client.lastSubmission?.idempotencyKey,
+      'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+    );
+    expect(client.lastSubmission?.pickupLocation, 'Osu');
+    expect(client.lastSubmission?.destination, 'Airport');
+    expect(client.lastSubmission?.passengerCount, 1);
+    expect(
+      client.lastSubmission?.toJson().containsKey('service_context'),
+      isFalse,
+    );
+  });
+
+  test(
+    'api submitter blocks ride request when no access token exists',
+    () async {
+      final store = MemoryAuthTokenStore();
+      final client = _RecordingApiClient();
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        tokenStore: store,
+      );
+
+      await expectLater(
+        submitter.submit(
+          _validDraft(),
+          idempotencyKey: 'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        ),
+        throwsA(
+          isA<PassengerRideRequestSubmissionException>()
+              .having(
+                (error) => error.message,
+                'message',
+                PassengerRideRequestSubmissionException.signInRequiredMessage,
+              )
+              .having(
+                (error) => error.requiresSignIn,
+                'requiresSignIn',
+                isTrue,
+              ),
+        ),
+      );
+
+      expect(client.wasCalled, isFalse);
+    },
+  );
+
+  test('api submitter allows ride request when access token exists', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    final client = _RecordingApiClient();
+    final submitter = ApiPassengerRideRequestSubmitter(
+      client,
+      tokenStore: store,
+    );
+
+    final result = await submitter.submit(
+      _validDraft(),
+      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+    );
+
+    expect(result.requestReference, 'RR-APP-3A9F1C2B4E5D');
+    expect(client.wasCalled, isTrue);
+    expect(
+      client.lastSubmission?.idempotencyKey,
+      'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+    );
+    expect(client.lastSubmission?.pickupLocation, 'Osu');
+    expect(client.lastSubmission?.destination, 'Airport');
+    expect(client.lastSubmission?.passengerCount, 1);
+    expect(
+      client.lastSubmission?.toJson().containsKey('service_context'),
+      isFalse,
+    );
+  });
+
+  testWidgets('blocked ride request shows sign-in path', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+    var signInRequested = false;
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: ApiPassengerRideRequestSubmitter.withDefaultClient(
+          tokenStore: MemoryAuthTokenStore(),
+        ),
+        idempotencyKeyFactory: () => 'APP-11111111-2222-4333-8444-555555555555',
+        onSignInRequired: () {
+          signInRequested = true;
+        },
+      ),
+    );
+
+    await _enterValidBooking(tester);
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
+    expect(
+      find.text(PassengerRideRequestSubmissionException.signInRequiredMessage),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('back-to-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('retry-ride-request')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('back-to-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(signInRequested, isTrue);
+  });
+
   testWidgets('clear route preserves session locations', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(const PassengerApp());
@@ -536,6 +675,7 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
 Widget _bookingTestApp({
   PassengerRideRequestSubmitter? submitter,
   String Function()? idempotencyKeyFactory,
+  VoidCallback? onSignInRequired,
 }) {
   return MaterialApp(
     theme: AsmThemes.passenger,
@@ -543,8 +683,42 @@ Widget _bookingTestApp({
       market: MarketConfig.ghanaAccra,
       rideRequestSubmitter: submitter,
       idempotencyKeyFactory: idempotencyKeyFactory,
+      onSignInRequired: onSignInRequired,
     ),
   );
+}
+
+BookingDraft _validDraft() {
+  return BookingDraft(
+    marketCode: MarketConfig.ghanaAccra.marketCode,
+    serviceContext: RideServiceContextCode.otherApprovedRequest,
+    pickupDescription: 'Osu',
+    destinationDescription: 'Airport',
+    passengerCount: 1,
+  );
+}
+
+class _RecordingApiClient extends AsmApiClient {
+  _RecordingApiClient() : super(baseUrl: 'https://control.example/api/');
+
+  bool wasCalled = false;
+  PassengerRideRequestSubmission? lastSubmission;
+
+  @override
+  Future<ApiResponse<PassengerRideRequestResult>> submitPassengerRideRequest(
+    PassengerRideRequestSubmission submission,
+  ) async {
+    wasCalled = true;
+    lastSubmission = submission;
+    return ApiResponse.success(
+      const PassengerRideRequestResult(
+        requestReference: 'RR-APP-3A9F1C2B4E5D',
+        status: 'requested',
+        message: 'Ride request received by the Control Center.',
+      ),
+      statusCode: 201,
+    );
+  }
 }
 
 void _useSurface(WidgetTester tester, Size size) {

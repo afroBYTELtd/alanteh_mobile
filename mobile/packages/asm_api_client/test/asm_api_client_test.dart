@@ -8,10 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('DisabledMobileApiGuard', () {
-    test('keeps CC4A mobile auth API unavailable', () {
+    test('exposes CC4A mobile auth API after accepted handoff', () {
       const guard = DisabledMobileApiGuard();
 
-      expect(guard.mobileAuthApiAvailable, isFalse);
+      expect(guard.mobileAuthApiAvailable, isTrue);
     });
 
     test('exposes CC4B ride request API after accepted handoff', () {
@@ -20,18 +20,12 @@ void main() {
       expect(guard.rideRequestApiAvailable, isTrue);
     });
 
-    test('requires CC4A with the disabled handoff message', () {
+    test('allows CC4A after accepted auth handoff', () {
       const guard = DisabledMobileApiGuard();
 
       expect(
         () => guard.requireFeature(MobileApiFeature.cc4aMobileAuthApi),
-        throwsA(
-          isA<DisabledMobileApiException>().having(
-            (error) => error.message,
-            'message',
-            'CC4A Mobile auth API is disabled pending Control Center handoff',
-          ),
-        ),
+        returnsNormally,
       );
     });
 

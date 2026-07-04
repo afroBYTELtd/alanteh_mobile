@@ -1,3 +1,4 @@
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
@@ -16,16 +17,34 @@ class PassengerApp extends StatelessWidget {
     this.configuration = AsmAppConfig.localGhana,
     this.showLoginShell = false,
     this.rideRequestSubmitter,
+    this.authService,
+    this.authTokenStore,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final bool showLoginShell;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final AuthService? authService;
+  final AuthTokenStore? authTokenStore;
 
   @override
   Widget build(BuildContext context) {
     assert(AuthState.unauthenticated().status == AuthStatus.unauthenticated);
+    final tokenStore = authTokenStore ?? SecureAuthTokenStore();
+    final resolvedRideRequestSubmitter =
+        rideRequestSubmitter ??
+        ApiPassengerRideRequestSubmitter.withDefaultClient(
+          tokenStore: tokenStore,
+        );
+    final resolvedAuthService =
+        authService ??
+        AuthService.withApiClient(
+          client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+          tokenStore: tokenStore,
+          appContext: AuthAppContext.passenger,
+        );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Passenger',
@@ -33,11 +52,13 @@ class PassengerApp extends StatelessWidget {
       home: showLoginShell
           ? PassengerLoginShell(
               configuration: configuration,
-              rideRequestSubmitter: rideRequestSubmitter,
+              authService: resolvedAuthService,
+              authTokenStore: tokenStore,
+              rideRequestSubmitter: resolvedRideRequestSubmitter,
             )
           : PassengerShell(
               configuration: configuration,
-              rideRequestSubmitter: rideRequestSubmitter,
+              rideRequestSubmitter: resolvedRideRequestSubmitter,
             ),
     );
   }
@@ -46,11 +67,15 @@ class PassengerApp extends StatelessWidget {
 class PassengerLoginShell extends StatefulWidget {
   const PassengerLoginShell({
     this.configuration = AsmAppConfig.localGhana,
+    this.authService,
+    this.authTokenStore,
     this.rideRequestSubmitter,
     super.key,
   });
 
   final AsmAppConfig configuration;
+  final AuthService? authService;
+  final AuthTokenStore? authTokenStore;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
 
   @override
@@ -61,7 +86,32 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   final _pinController = TextEditingController();
-  bool _localDemoOpened = false;
+
+  late final AuthTokenStore _tokenStore;
+  late final AuthService _authService;
+  late final PassengerRideRequestSubmitter _rideRequestSubmitter;
+
+  bool _signedIn = false;
+  bool _isSigningIn = false;
+  String? _loginErrorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _tokenStore = widget.authTokenStore ?? SecureAuthTokenStore();
+    _authService =
+        widget.authService ??
+        AuthService.withApiClient(
+          client: AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+          tokenStore: _tokenStore,
+          appContext: AuthAppContext.passenger,
+        );
+    _rideRequestSubmitter =
+        widget.rideRequestSubmitter ??
+        ApiPassengerRideRequestSubmitter.withDefaultClient(
+          tokenStore: _tokenStore,
+        );
+  }
 
   @override
   void dispose() {
@@ -70,14 +120,67 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     super.dispose();
   }
 
-  void _continueLocalDemo() {
+  Future<void> _signIn() async {
     final form = _formKey.currentState;
-    if (form == null || !form.validate()) {
+    if (form == null || !form.validate() || _isSigningIn) {
       return;
     }
 
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _localDemoOpened = true);
+    setState(() {
+      _isSigningIn = true;
+      _loginErrorMessage = null;
+    });
+
+    try {
+      final state = await _authService.login(
+        _phoneController.text,
+        _pinController.text,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (state.isAuthenticated &&
+          state.session?.accountType == AuthAccountType.passenger) {
+        _phoneController.clear();
+        _pinController.clear();
+        setState(() {
+          _signedIn = true;
+          _isSigningIn = false;
+          _loginErrorMessage = null;
+        });
+        return;
+      }
+
+      _pinController.clear();
+      setState(() {
+        _isSigningIn = false;
+        _loginErrorMessage = _passengerLoginErrorMessage(state.error);
+      });
+    } on AuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _pinController.clear();
+      setState(() {
+        _isSigningIn = false;
+        _loginErrorMessage = _passengerLoginErrorMessage(error);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      _pinController.clear();
+      setState(() {
+        _isSigningIn = false;
+        _loginErrorMessage =
+            'Could not sign in. Please check your phone and PIN.';
+      });
+    }
   }
 
   void _clearForm() {
@@ -85,15 +188,48 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     _phoneController.clear();
     _pinController.clear();
     _formKey.currentState?.reset();
-    setState(() {});
+    setState(() {
+      _loginErrorMessage = null;
+    });
+  }
+
+  Future<void> _returnToSignIn() async {
+    await _tokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _signedIn = false;
+      _isSigningIn = false;
+      _loginErrorMessage =
+          PassengerRideRequestSubmissionException.signInRequiredMessage;
+    });
+  }
+
+  String _passengerLoginErrorMessage(AuthException? error) {
+    if (error == null) {
+      return 'Could not sign in. Please check your phone and PIN.';
+    }
+
+    if (error.message == authAppContextErrorMessage) {
+      return authAppContextErrorMessage;
+    }
+
+    if (error.type == AuthExceptionType.validation) {
+      return error.message;
+    }
+
+    return 'Could not sign in. Please check your phone and PIN.';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_localDemoOpened) {
+    if (_signedIn) {
       return PassengerShell(
         configuration: widget.configuration,
-        rideRequestSubmitter: widget.rideRequestSubmitter,
+        rideRequestSubmitter: _rideRequestSubmitter,
+        onSignInRequired: _returnToSignIn,
       );
     }
 
@@ -130,12 +266,16 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
                 decoration: const InputDecoration(
-                  labelText: 'phone number',
+                  labelText: 'Phone number',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
+                  final phone = (value ?? '').trim();
+                  if (phone.isEmpty) {
                     return 'Phone number cannot be blank.';
+                  }
+                  if (!isValidGhanaPhoneNumber(phone)) {
+                    return 'Phone must use +233 followed by 9 digits.';
                   }
                   return null;
                 },
@@ -147,29 +287,37 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                 obscureText: true,
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _continueLocalDemo(),
+                onFieldSubmitted: (_) => _signIn(),
                 decoration: const InputDecoration(
                   labelText: 'PIN',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
+                  final pin = (value ?? '').trim();
+                  if (pin.isEmpty) {
                     return 'PIN cannot be blank.';
+                  }
+                  if (!isValidPin(pin)) {
+                    return 'PIN must be exactly 4 numeric digits.';
                   }
                   return null;
                 },
               ),
+              if (_loginErrorMessage != null) ...[
+                const SizedBox(height: AsmSpacing.space12),
+                _LoginErrorPanel(message: _loginErrorMessage!),
+              ],
               const SizedBox(height: AsmSpacing.space20),
               AsmPrimaryActionButton(
-                key: const Key('passenger-continue-local-demo'),
-                onPressed: _continueLocalDemo,
-                icon: Icons.play_arrow_outlined,
-                label: 'Continue',
+                key: const Key('passenger-sign-in'),
+                onPressed: _isSigningIn ? null : _signIn,
+                icon: Icons.login_outlined,
+                label: _isSigningIn ? 'Signing in...' : 'Sign in',
               ),
               const SizedBox(height: AsmSpacing.space8),
               AsmPrimaryActionButton(
                 key: const Key('passenger-clear-form'),
-                onPressed: _clearForm,
+                onPressed: _isSigningIn ? null : _clearForm,
                 variant: AsmActionButtonVariant.text,
                 icon: Icons.clear_outlined,
                 label: 'Clear form',
@@ -177,12 +325,40 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
               ),
               const SizedBox(height: AsmSpacing.space20),
               const AsmPilotNoticeBanner(
-                message:
-                    'This screen checks the phone and PIN format before '
-                    'opening the passenger app.',
+                message: 'Use your passenger phone and PIN to sign in.',
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginErrorPanel extends StatelessWidget {
+  const _LoginErrorPanel({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    const backgroundColor = Color(0xFFFFF3E0);
+    const foregroundColor = Color(0xFF8A4B00);
+
+    return Container(
+      key: const Key('passenger-login-error'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AsmSpacing.space12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(AsmRadii.radius8),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          color: foregroundColor,
+          fontWeight: FontWeight.w700,
+          height: 1.35,
         ),
       ),
     );

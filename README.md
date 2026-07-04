@@ -275,3 +275,9 @@ M1BK does not add city auto-detection. M1BK does not add GPS, geolocation permis
 M2A wires the Passenger booking confirmation path to the accepted CC4B backend contract only: `POST /api/rides/request/` with the existing CC4A bearer-token direction and an `Idempotency-Key` header. The mobile request payload sends only `pickup_location`, `destination`, `passenger_count`, and optional `assistance_note`; it omits `service_context` and does not send payment, GPS, driver, status, or request_reference fields.
 
 M2A does not add Driver dispatch, assignment, trip polling, payment processing, MTN MoMo API, Paystack, GPS, maps, geolocation, reverse geocoding, WebSocket, wallet, push notification, backend/Django, native, pubspec, new package, or Passenger offline queue behavior.
+
+### M2B — Passenger Phone/PIN Login Token Wiring
+
+M2B wires the Passenger App login screen to the accepted CC4A phone/PIN token contract. Passenger login uses `POST /api/auth/token/` with `phone` and `pin`, accepts only `account_type: passenger`, stores returned access/refresh tokens through the existing mobile auth token store, and lets M2A ride request submission use the stored Passenger access token. Ride request submission is blocked before POST when no Passenger access token exists, with the passenger-safe message `Please sign in to request a ride.`
+
+M2B does not add Driver login integration, dispatch, trip polling, payment processing, GPS, maps, WebSocket, Passenger offline queue behavior, backend/Django files, native Android/iOS files, pubspec changes, or new packages.

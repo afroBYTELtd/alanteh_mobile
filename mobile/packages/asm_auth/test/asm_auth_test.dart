@@ -5,25 +5,16 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('CC4A disabled mobile auth guard', () {
-    test('mobile auth availability is false', () {
-      expect(mobileAuthAvailable, isFalse);
+  group('CC4A accepted mobile auth guard', () {
+    test('mobile auth availability is true', () {
+      expect(mobileAuthAvailable, isTrue);
     });
 
-    test('requiring mobile auth throws the disabled handoff message', () {
-      expect(
-        requireMobileAuth,
-        throwsA(
-          isA<MobileAuthDisabledException>().having(
-            (error) => error.message,
-            'message',
-            cc4aMobileAuthDisabledMessage,
-          ),
-        ),
-      );
+    test('requiring mobile auth returns normally after handoff', () {
+      expect(requireMobileAuth, returnsNormally);
     });
 
-    test('disabled guard exposes no live auth surface', () {
+    test('availability guard exposes no endpoint URLs, tokens, or secrets', () {
       final exposedText = <String>[
         mobileAuthAvailable.toString(),
         cc4aMobileAuthDisabledMessage,
@@ -38,7 +29,7 @@ void main() {
       expect(exposedText, isNot(contains('credential')));
     });
 
-    test('no CC4A credential submission method is added', () {
+    test('no duplicate CC4A credential submission method is added', () {
       final source = File('lib/asm_auth.dart').readAsStringSync();
 
       expect(source, isNot(contains('submitCc4aCredentials')));

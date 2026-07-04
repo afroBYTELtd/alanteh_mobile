@@ -12,9 +12,11 @@ class BookingReview extends StatelessWidget {
     required this.submissionStatus,
     required this.submissionResult,
     required this.submissionErrorMessage,
+    required this.submissionRequiresSignIn,
     required this.onEdit,
     required this.onConfirm,
     required this.onFinish,
+    this.onSignInRequired,
     super.key,
   });
 
@@ -22,9 +24,11 @@ class BookingReview extends StatelessWidget {
   final BookingSubmissionStatus submissionStatus;
   final PassengerRideRequestResult? submissionResult;
   final String? submissionErrorMessage;
+  final bool submissionRequiresSignIn;
   final VoidCallback onEdit;
   final VoidCallback onConfirm;
   final VoidCallback onFinish;
+  final VoidCallback? onSignInRequired;
 
   @override
   Widget build(BuildContext context) {
@@ -107,15 +111,26 @@ class BookingReview extends StatelessWidget {
           if (isFailure) ...[
             _SubmissionPanel.error(message: submissionErrorMessage),
             const SizedBox(height: AsmSpacing.space12),
-            OutlinedButton.icon(
-              key: const Key('retry-ride-request'),
-              onPressed: onConfirm,
-              icon: const Icon(Icons.refresh_outlined),
-              label: const Text('Try again'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+            if (submissionRequiresSignIn && onSignInRequired != null)
+              FilledButton.icon(
+                key: const Key('back-to-sign-in'),
+                onPressed: onSignInRequired,
+                icon: const Icon(Icons.login_outlined),
+                label: const Text('Back to sign in'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                key: const Key('retry-ride-request'),
+                onPressed: onConfirm,
+                icon: const Icon(Icons.refresh_outlined),
+                label: const Text('Try again'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
               ),
-            ),
             const SizedBox(height: AsmSpacing.space12),
           ],
           OutlinedButton.icon(

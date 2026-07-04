@@ -12,11 +12,13 @@ class PassengerShell extends StatefulWidget {
   const PassengerShell({
     this.configuration = AsmAppConfig.localGhana,
     this.rideRequestSubmitter,
+    this.onSignInRequired,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final VoidCallback? onSignInRequired;
 
   @override
   State<PassengerShell> createState() => _PassengerShellState();
@@ -113,6 +115,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialPickupDescription: _pickupDescription!,
           initialDestinationDescription: _destinationDescription!,
           rideRequestSubmitter: widget.rideRequestSubmitter,
+          onSignInRequired: widget.onSignInRequired,
         ),
       ),
     );
