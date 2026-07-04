@@ -16,6 +16,7 @@ class BookingReview extends StatelessWidget {
     required this.onEdit,
     required this.onConfirm,
     required this.onFinish,
+    required this.onStartNewRequest,
     this.onSignInRequired,
     super.key,
   });
@@ -28,6 +29,7 @@ class BookingReview extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onConfirm;
   final VoidCallback onFinish;
+  final VoidCallback onStartNewRequest;
   final VoidCallback? onSignInRequired;
 
   @override
@@ -104,11 +106,21 @@ class BookingReview extends StatelessWidget {
           _SubmissionPanel.success(result: submissionResult!),
           const SizedBox(height: AsmSpacing.space16),
           FilledButton.icon(
+            key: const Key('start-new-request'),
+            onPressed: onStartNewRequest,
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text('Start new request'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+            ),
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          OutlinedButton.icon(
             key: const Key('finish-ride-request'),
             onPressed: onFinish,
             icon: const Icon(Icons.home_outlined),
             label: const Text('Back to home'),
-            style: FilledButton.styleFrom(
+            style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
             ),
           ),
