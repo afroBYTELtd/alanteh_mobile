@@ -11,6 +11,7 @@ class BookingForm extends StatelessWidget {
     required this.passengerCount,
     required this.onPassengerCountChanged,
     required this.onReview,
+    this.passengerCountErrorMessage,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class BookingForm extends StatelessWidget {
   final int passengerCount;
   final ValueChanged<int> onPassengerCountChanged;
   final VoidCallback onReview;
+  final String? passengerCountErrorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -63,11 +65,16 @@ class BookingForm extends StatelessWidget {
               hintText: 'Pickup address or landmark',
               border: OutlineInputBorder(),
             ),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? 'Enter where you are.'
-                : value.trim().length > 160
-                ? 'Pickup must be 160 characters or fewer.'
-                : null,
+            validator: (value) {
+              final pickup = value?.trim() ?? '';
+              if (pickup.isEmpty) {
+                return 'Enter pickup location.';
+              }
+              if (pickup.length > 240) {
+                return 'Pickup location is too long.';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: AsmSpacing.space16),
           TextFormField(
@@ -83,10 +90,10 @@ class BookingForm extends StatelessWidget {
             validator: (value) {
               final destination = value?.trim() ?? '';
               if (destination.isEmpty) {
-                return 'Enter where to.';
+                return 'Enter destination.';
               }
-              if (destination.length > 160) {
-                return 'Destination must be 160 characters or fewer.';
+              if (destination.length > 240) {
+                return 'Destination is too long.';
               }
               if (destination.toLowerCase() ==
                   pickupController.text.trim().toLowerCase()) {
@@ -137,14 +144,22 @@ class BookingForm extends StatelessWidget {
               ),
             ],
           ),
+          if (passengerCountErrorMessage case final message?) ...[
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              message,
+              key: const Key('booking-passenger-count-error'),
+              style: textTheme.bodySmall?.copyWith(color: colors.error),
+            ),
+          ],
           const SizedBox(height: AsmSpacing.space20),
           TextFormField(
             key: const Key('booking-assistance'),
             controller: assistanceController,
             minLines: 2,
             maxLines: 3,
-            maxLength: 240,
-            inputFormatters: [LengthLimitingTextInputFormatter(240)],
+            maxLength: 1000,
+            maxLengthEnforcement: MaxLengthEnforcement.none,
             textInputAction: TextInputAction.done,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
@@ -152,6 +167,13 @@ class BookingForm extends StatelessWidget {
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
             ),
+            validator: (value) {
+              final note = value?.trim() ?? '';
+              if (note.length > 1000) {
+                return 'Special request is too long.';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: AsmSpacing.space24),
           FilledButton.icon(

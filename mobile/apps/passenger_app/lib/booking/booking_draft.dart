@@ -130,14 +130,14 @@ String _messageForRideValidation(
     'marketCode' => 'Enter a market code.',
     'pickupDescription' =>
       error.code == RideValidationCode.tooLong
-          ? 'Pickup description must be 160 characters or fewer.'
-          : 'Enter a pickup description.',
+          ? 'Pickup location is too long.'
+          : 'Enter pickup location.',
     'destinationDescription' =>
       error.code == RideValidationCode.tooLong
-          ? 'Destination description must be 160 characters or fewer.'
-          : 'Enter a destination description.',
+          ? 'Destination is too long.'
+          : 'Enter destination.',
     'passengerCount' => 'Passenger count must be between 1 and 6.',
-    'assistanceNote' => 'Assistance note must be 240 characters or fewer.',
+    'assistanceNote' => 'Special request is too long.',
     'draftIdentity' => 'Enter a draft identity.',
     _ => 'Enter a valid ride detail.',
   };

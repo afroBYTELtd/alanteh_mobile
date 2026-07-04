@@ -139,7 +139,7 @@ void main() {
       );
     });
 
-    test('locations trim, reject blanks, and enforce 160 characters', () {
+    test('locations trim, reject blanks, and enforce 240 characters', () {
       expect(RideLocationDescription('  Local place  ').value, 'Local place');
       expect(
         () => RideLocationDescription('  '),
@@ -148,9 +148,10 @@ void main() {
           RideValidationCode.blank,
         ),
       );
-      expect(RideLocationDescription(repeatedText(160)).value.length, 160);
+      expect(RideLocationDescription(repeatedText(161)).value.length, 161);
+      expect(RideLocationDescription(repeatedText(240)).value.length, 240);
       expect(
-        () => RideLocationDescription(repeatedText(161)),
+        () => RideLocationDescription(repeatedText(241)),
         throwsValidation(
           RideValidationField.locationDescription,
           RideValidationCode.tooLong,
@@ -193,14 +194,18 @@ void main() {
       expect(RideAssistanceNote.optional('   '), isNull);
     });
 
-    test('assistance trims and enforces 240 characters', () {
+    test('assistance trims and enforces 1000 characters', () {
       expect(
         RideAssistanceNote.optional('  Local help  ')?.value,
         'Local help',
       );
-      expect(RideAssistanceNote.optional(repeatedText(240))?.value.length, 240);
+      expect(RideAssistanceNote.optional(repeatedText(241))?.value.length, 241);
       expect(
-        () => RideAssistanceNote.optional(repeatedText(241)),
+        RideAssistanceNote.optional(repeatedText(1000))?.value.length,
+        1000,
+      );
+      expect(
+        () => RideAssistanceNote.optional(repeatedText(1001)),
         throwsValidation(
           RideValidationField.assistanceNote,
           RideValidationCode.tooLong,

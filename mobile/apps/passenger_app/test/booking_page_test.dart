@@ -64,11 +64,215 @@ void main() {
     await tester.tap(find.byKey(const Key('request-ride')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter where you are.'), findsOneWidget);
-    expect(find.text('Enter where to.'), findsOneWidget);
+    expect(find.text('Enter pickup location.'), findsOneWidget);
+    expect(find.text('Enter destination.'), findsOneWidget);
     expect(find.text('Choose an approved service context.'), findsNothing);
     expect(find.text('No ride request has been sent.'), findsNothing);
   });
+
+  test('booking draft rejects passenger counts outside accepted range', () {
+    for (final passengerCount in <int>[0, 7]) {
+      expect(
+        () => BookingDraft(
+          marketCode: MarketConfig.ghanaAccra.marketCode,
+          serviceContext: RideServiceContextCode.otherApprovedRequest,
+          pickupDescription: 'Osu',
+          destinationDescription: 'Airport',
+          passengerCount: passengerCount,
+        ),
+        throwsA(
+          isA<BookingDraftValidationException>().having(
+            (error) => error.message,
+            'message',
+            'Passenger count must be between 1 and 6.',
+          ),
+        ),
+      );
+    }
+  });
+
+  testWidgets(
+    'local validation blocks invalid ride request before network request',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success();
+      await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter pickup location.'), findsOneWidget);
+      expect(find.text('Enter destination.'), findsOneWidget);
+      expect(submitter.submissions, isEmpty);
+      expect(find.text('Ride request received'), findsNothing);
+
+      final tooLongPickup = _repeatedText(241, 'P');
+      await tester.enterText(
+        find.byKey(const Key('booking-pickup')),
+        tooLongPickup,
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        'Airport',
+      );
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pickup location is too long.'), findsOneWidget);
+      expect(submitter.submissions, isEmpty);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+            .controller!
+            .text,
+        tooLongPickup,
+      );
+
+      final tooLongDestination = _repeatedText(241, 'D');
+      await tester.enterText(find.byKey(const Key('booking-pickup')), 'Osu');
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        tooLongDestination,
+      );
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Destination is too long.'), findsOneWidget);
+      expect(submitter.submissions, isEmpty);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+            .controller!
+            .text,
+        tooLongDestination,
+      );
+
+      final tooLongAssistance = _repeatedText(1001, 'A');
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        'Airport',
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-assistance')),
+        tooLongAssistance,
+      );
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Special request is too long.'), findsOneWidget);
+      expect(submitter.submissions, isEmpty);
+      expect(find.text('Ride request received'), findsNothing);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-assistance')))
+            .controller!
+            .text,
+        tooLongAssistance,
+      );
+    },
+  );
+
+  testWidgets('accepts values above old caps and opens review', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.success();
+    final pickup = _repeatedText(161, 'P');
+    final destination = _repeatedText(161, 'D');
+    final assistance = _repeatedText(241, 'A');
+
+    await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+
+    await tester.enterText(
+      find.byKey(const Key('booking-pickup')),
+      '  $pickup  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      '  $destination  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-assistance')),
+      '  $assistance  ',
+    );
+    await tester.ensureVisible(find.byKey(const Key('request-ride')));
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pickup location is too long.'), findsNothing);
+    expect(find.text('Destination is too long.'), findsNothing);
+    expect(find.text('Special request is too long.'), findsNothing);
+    expect(find.text('Confirm your ride'), findsWidgets);
+    expect(find.text('Pickup'), findsOneWidget);
+    expect(find.text('Destination'), findsOneWidget);
+    expect(find.text('Passenger count'), findsOneWidget);
+    expect(submitter.submissions, isEmpty);
+  });
+
+  test(
+    'api submitter sends CC4B request fields and never service context',
+    () async {
+      final client = _RecordingApiClient();
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        connectionConfigured: true,
+      );
+      final pickup = _repeatedText(240, 'P');
+      final destination = _repeatedText(240, 'D');
+      final assistance = _repeatedText(1000, 'A');
+
+      await submitter.submit(
+        BookingDraft(
+          marketCode: MarketConfig.ghanaAccra.marketCode,
+          serviceContext: RideServiceContextCode.otherApprovedRequest,
+          pickupDescription: '  $pickup  ',
+          destinationDescription: '  $destination  ',
+          passengerCount: 6,
+          assistanceNote: '  $assistance  ',
+        ),
+        idempotencyKey: 'APP-11111111-2222-4333-8444-555555555555',
+      );
+
+      final body = client.lastSubmission!.toJson();
+      expect(body['pickup_location'], pickup);
+      expect(body['destination'], destination);
+      expect(body['passenger_count'], 6);
+      expect(body['assistance_note'], assistance);
+      expect(body.containsKey('service_context'), isFalse);
+    },
+  );
+
+  test(
+    'api submitter omits empty assistance note and service context',
+    () async {
+      final client = _RecordingApiClient();
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        connectionConfigured: true,
+      );
+
+      await submitter.submit(
+        BookingDraft(
+          marketCode: MarketConfig.ghanaAccra.marketCode,
+          serviceContext: RideServiceContextCode.otherApprovedRequest,
+          pickupDescription: 'Osu',
+          destinationDescription: 'Airport',
+          passengerCount: 1,
+          assistanceNote: '   ',
+        ),
+        idempotencyKey: 'APP-22222222-3333-4333-8444-555555555555',
+      );
+
+      final body = client.lastSubmission!.toJson();
+      expect(body['pickup_location'], 'Osu');
+      expect(body['destination'], 'Airport');
+      expect(body['passenger_count'], 1);
+      expect(body.containsKey('assistance_note'), isFalse);
+      expect(body.containsKey('service_context'), isFalse);
+    },
+  );
 
   testWidgets('validates locations and completes simplified booking flow', (
     tester,
@@ -1066,6 +1270,10 @@ const _noLiveFeatureTexts = [
   'GoogleMap',
   'WebSocket',
 ];
+
+String _repeatedText(int length, String character) {
+  return List<String>.filled(length, character).join();
+}
 
 Future<void> _selectLocation(
   WidgetTester tester, {

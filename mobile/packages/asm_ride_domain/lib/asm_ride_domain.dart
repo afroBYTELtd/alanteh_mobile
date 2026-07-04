@@ -238,7 +238,7 @@ final class RideLocationDescription {
         field: RideValidationField.locationDescription,
       );
     }
-    if (normalized.length > 160) {
+    if (normalized.length > 240) {
       throw const RideDomainValidationException(
         code: RideValidationCode.tooLong,
         field: RideValidationField.locationDescription,
@@ -274,7 +274,7 @@ final class RideAssistanceNote {
     if (normalized == null || normalized.isEmpty) {
       return null;
     }
-    if (normalized.length > 240) {
+    if (normalized.length > 1000) {
       throw const RideDomainValidationException(
         code: RideValidationCode.tooLong,
         field: RideValidationField.assistanceNote,

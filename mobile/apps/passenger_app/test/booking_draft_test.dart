@@ -129,25 +129,77 @@ void main() {
       );
     });
 
-    test('validates shared domain length limits', () {
+    test('validates CC4B field length limits', () {
       expect(
-        () => _validDraft(pickupDescription: List.filled(161, 'A').join()),
+        _validDraft(
+          pickupDescription: List.filled(161, 'A').join(),
+        ).pickupDescription.value.length,
+        161,
+      );
+      expect(
+        _validDraft(
+          destinationDescription: List.filled(161, 'A').join(),
+        ).destinationDescription.value.length,
+        161,
+      );
+      expect(
+        _validDraft(
+          assistanceNote: List.filled(241, 'A').join(),
+        ).assistanceNote?.value.length,
+        241,
+      );
+      expect(
+        _validDraft(
+          pickupDescription: List.filled(240, 'A').join(),
+        ).pickupDescription.value.length,
+        240,
+      );
+      expect(
+        _validDraft(
+          destinationDescription: List.filled(240, 'A').join(),
+        ).destinationDescription.value.length,
+        240,
+      );
+      expect(
+        _validDraft(
+          assistanceNote: List.filled(1000, 'A').join(),
+        ).assistanceNote?.value.length,
+        1000,
+      );
+      expect(
+        () => _validDraft(pickupDescription: List.filled(241, 'A').join()),
         throwsA(
-          isA<BookingDraftValidationException>().having(
-            (error) => error.field,
-            'field',
-            'pickupDescription',
-          ),
+          isA<BookingDraftValidationException>()
+              .having((error) => error.field, 'field', 'pickupDescription')
+              .having(
+                (error) => error.message,
+                'message',
+                'Pickup location is too long.',
+              ),
         ),
       );
       expect(
-        () => _validDraft(assistanceNote: List.filled(241, 'A').join()),
+        () => _validDraft(destinationDescription: List.filled(241, 'A').join()),
         throwsA(
-          isA<BookingDraftValidationException>().having(
-            (error) => error.field,
-            'field',
-            'assistanceNote',
-          ),
+          isA<BookingDraftValidationException>()
+              .having((error) => error.field, 'field', 'destinationDescription')
+              .having(
+                (error) => error.message,
+                'message',
+                'Destination is too long.',
+              ),
+        ),
+      );
+      expect(
+        () => _validDraft(assistanceNote: List.filled(1001, 'A').join()),
+        throwsA(
+          isA<BookingDraftValidationException>()
+              .having((error) => error.field, 'field', 'assistanceNote')
+              .having(
+                (error) => error.message,
+                'message',
+                'Special request is too long.',
+              ),
         ),
       );
     });
