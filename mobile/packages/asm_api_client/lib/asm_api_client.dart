@@ -53,9 +53,13 @@ final class DisabledMobileApiGuard {
       'CC4B Ride request API is disabled pending Control Center handoff';
 
   bool get mobileAuthApiAvailable => false;
-  bool get rideRequestApiAvailable => false;
+  bool get rideRequestApiAvailable => true;
 
-  Never requireFeature(MobileApiFeature feature) {
+  void requireFeature(MobileApiFeature feature) {
+    if (feature == MobileApiFeature.cc4bRideRequestApi) {
+      return;
+    }
+
     throw DisabledMobileApiException(disabledMessageFor(feature));
   }
 
@@ -131,6 +135,142 @@ class ApiResponse<T> {
   bool get isClientException => kind == ApiResponseKind.clientException;
 }
 
+/// Request payload for the accepted CC4B Passenger Ride Request endpoint.
+final class PassengerRideRequestSubmission {
+  PassengerRideRequestSubmission({
+    required String idempotencyKey,
+    required String pickupLocation,
+    required String destination,
+    required int passengerCount,
+    String? assistanceNote,
+  }) : idempotencyKey = _requiredString(
+         idempotencyKey,
+         'idempotencyKey',
+         maxLength: 160,
+       ),
+       pickupLocation = _requiredString(
+         pickupLocation,
+         'pickupLocation',
+         maxLength: 240,
+       ),
+       destination = _requiredString(
+         destination,
+         'destination',
+         maxLength: 240,
+       ),
+       passengerCount = _validatePassengerCount(passengerCount),
+       assistanceNote = _optionalString(
+         assistanceNote,
+         'assistanceNote',
+         maxLength: 1000,
+       );
+
+  final String idempotencyKey;
+  final String pickupLocation;
+  final String destination;
+  final int passengerCount;
+  final String? assistanceNote;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'pickup_location': pickupLocation,
+      'destination': destination,
+      'passenger_count': passengerCount,
+      if (assistanceNote != null) 'assistance_note': assistanceNote,
+    };
+  }
+
+  static String _requiredString(
+    String value,
+    String fieldName, {
+    required int maxLength,
+  }) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(value, fieldName, 'must not be empty');
+    }
+    if (trimmed.length > maxLength) {
+      throw ArgumentError.value(
+        value,
+        fieldName,
+        'must be $maxLength characters or fewer',
+      );
+    }
+    return trimmed;
+  }
+
+  static String? _optionalString(
+    String? value,
+    String fieldName, {
+    required int maxLength,
+  }) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    if (trimmed.length > maxLength) {
+      throw ArgumentError.value(
+        value,
+        fieldName,
+        'must be $maxLength characters or fewer',
+      );
+    }
+    return trimmed;
+  }
+
+  static int _validatePassengerCount(int value) {
+    if (value < 1 || value > 6) {
+      throw ArgumentError.value(
+        value,
+        'passengerCount',
+        'must be between 1 and 6',
+      );
+    }
+    return value;
+  }
+}
+
+/// Accepted response for Passenger Ride Request submission.
+final class PassengerRideRequestResult {
+  const PassengerRideRequestResult({
+    this.requestReference,
+    required this.status,
+    required this.message,
+  });
+
+  final String? requestReference;
+  final String status;
+  final String message;
+
+  static PassengerRideRequestResult fromJson(Object? json) {
+    if (json is! Map) {
+      throw const FormatException(
+        'Ride request response was not a JSON object.',
+      );
+    }
+
+    final requestReference = json['request_reference'];
+    final status = json['status'];
+    final message = json['message'];
+
+    if (status is! String || status.trim().isEmpty) {
+      throw const FormatException('Ride request response status is missing.');
+    }
+    if (message is! String || message.trim().isEmpty) {
+      throw const FormatException('Ride request response message is missing.');
+    }
+
+    return PassengerRideRequestResult(
+      requestReference:
+          requestReference is String && requestReference.trim().isNotEmpty
+          ? requestReference.trim()
+          : null,
+      status: status.trim(),
+      message: message.trim(),
+    );
+  }
+}
+
 /// Shared HTTP client foundation for future Django Control Center API calls.
 class AsmApiClient {
   AsmApiClient({
@@ -188,6 +328,7 @@ class AsmApiClient {
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
     JsonDecoder<T>? decoder,
   }) {
     return request<T>(
@@ -195,7 +336,19 @@ class AsmApiClient {
       path: path,
       data: data,
       queryParameters: queryParameters,
+      headers: headers,
       decoder: decoder,
+    );
+  }
+
+  Future<ApiResponse<PassengerRideRequestResult>> submitPassengerRideRequest(
+    PassengerRideRequestSubmission submission,
+  ) {
+    return post<PassengerRideRequestResult>(
+      '/api/rides/request/',
+      data: submission.toJson(),
+      headers: <String, String>{'Idempotency-Key': submission.idempotencyKey},
+      decoder: PassengerRideRequestResult.fromJson,
     );
   }
 
@@ -204,15 +357,16 @@ class AsmApiClient {
     required String path,
     Object? data,
     Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
     JsonDecoder<T>? decoder,
   }) async {
     try {
-      final headers = await _requestHeaders();
+      final requestHeaders = await _requestHeaders(additionalHeaders: headers);
       final response = await _dio.request<Object?>(
         path,
         data: data,
         queryParameters: queryParameters,
-        options: Options(method: method, headers: headers),
+        options: Options(method: method, headers: requestHeaders),
       );
       return _mapResponse(response, decoder);
     } on DioException catch (error) {
@@ -236,11 +390,16 @@ class AsmApiClient {
     }
   }
 
-  Future<Map<String, String>> _requestHeaders() async {
+  Future<Map<String, String>> _requestHeaders({
+    Map<String, String>? additionalHeaders,
+  }) async {
     final headers = Map<String, String>.of(jsonHeaders);
     final token = await _tokenProvider?.getAccessToken();
     if (token != null && token.trim().isNotEmpty) {
       headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+    if (additionalHeaders != null) {
+      headers.addAll(additionalHeaders);
     }
     return headers;
   }

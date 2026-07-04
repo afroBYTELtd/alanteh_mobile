@@ -3,6 +3,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'booking/booking_page.dart';
+import 'booking/booking_submission.dart';
 import 'location/location_search_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
@@ -10,10 +11,12 @@ import 'passenger_home.dart';
 class PassengerShell extends StatefulWidget {
   const PassengerShell({
     this.configuration = AsmAppConfig.localGhana,
+    this.rideRequestSubmitter,
     super.key,
   });
 
   final AsmAppConfig configuration;
+  final PassengerRideRequestSubmitter? rideRequestSubmitter;
 
   @override
   State<PassengerShell> createState() => _PassengerShellState();
@@ -109,6 +112,7 @@ class _PassengerShellState extends State<PassengerShell> {
           market: widget.configuration.market,
           initialPickupDescription: _pickupDescription!,
           initialDestinationDescription: _destinationDescription!,
+          rideRequestSubmitter: widget.rideRequestSubmitter,
         ),
       ),
     );

@@ -1,3 +1,4 @@
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
@@ -5,18 +6,23 @@ import 'package:flutter/material.dart';
 import 'booking_draft.dart';
 import 'booking_form.dart';
 import 'booking_review.dart';
+import 'booking_submission.dart';
 
 class BookingPage extends StatefulWidget {
   const BookingPage({
     required this.market,
     this.initialPickupDescription = '',
     this.initialDestinationDescription = '',
+    this.rideRequestSubmitter,
+    this.idempotencyKeyFactory,
     super.key,
   });
 
   final MarketConfig market;
   final String initialPickupDescription;
   final String initialDestinationDescription;
+  final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final String Function()? idempotencyKeyFactory;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -33,6 +39,11 @@ class _BookingPageState extends State<BookingPage> {
 
   int _passengerCount = 1;
   BookingDraft? _draft;
+  late final PassengerRideRequestSubmitter _rideRequestSubmitter;
+  BookingSubmissionStatus _submissionStatus = BookingSubmissionStatus.idle;
+  PassengerRideRequestResult? _submissionResult;
+  String? _submissionErrorMessage;
+  String? _idempotencyKey;
 
   @override
   void initState() {
@@ -43,6 +54,9 @@ class _BookingPageState extends State<BookingPage> {
     _destinationController = TextEditingController(
       text: widget.initialDestinationDescription,
     );
+    _rideRequestSubmitter =
+        widget.rideRequestSubmitter ??
+        ApiPassengerRideRequestSubmitter.withDefaultClient();
   }
 
   @override
@@ -71,10 +85,71 @@ class _BookingPageState extends State<BookingPage> {
   }
 
   void _editDraft() {
-    setState(() => _draft = null);
+    setState(() {
+      _draft = null;
+      _submissionStatus = BookingSubmissionStatus.idle;
+      _submissionResult = null;
+      _submissionErrorMessage = null;
+      _idempotencyKey = null;
+    });
   }
 
-  void _confirmRequest() {
+  Future<void> _confirmRequest() async {
+    final draft = _draft;
+    if (draft == null ||
+        _submissionStatus == BookingSubmissionStatus.submitting) {
+      return;
+    }
+
+    final key =
+        _idempotencyKey ??
+        (widget.idempotencyKeyFactory ??
+            PassengerRideRequestIdempotencyKey.generate)();
+
+    setState(() {
+      _idempotencyKey = key;
+      _submissionStatus = BookingSubmissionStatus.submitting;
+      _submissionResult = null;
+      _submissionErrorMessage = null;
+    });
+
+    try {
+      final result = await _rideRequestSubmitter.submit(
+        draft,
+        idempotencyKey: key,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _submissionStatus = BookingSubmissionStatus.success;
+        _submissionResult = result;
+      });
+    } on PassengerRideRequestSubmissionException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _submissionStatus = BookingSubmissionStatus.failure;
+        _submissionErrorMessage = error.message;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _submissionStatus = BookingSubmissionStatus.failure;
+        _submissionErrorMessage =
+            'Could not send ride request.\nPlease check your connection and try again.';
+      });
+    }
+  }
+
+  void _finishSuccess() {
     Navigator.of(context).pop(true);
   }
 
@@ -99,8 +174,12 @@ class _BookingPageState extends State<BookingPage> {
               )
             : BookingReview(
                 draft: _draft!,
+                submissionStatus: _submissionStatus,
+                submissionResult: _submissionResult,
+                submissionErrorMessage: _submissionErrorMessage,
                 onEdit: _editDraft,
                 onConfirm: _confirmRequest,
+                onFinish: _finishSuccess,
               ),
       ),
     );

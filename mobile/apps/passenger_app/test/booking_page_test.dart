@@ -1,8 +1,13 @@
+import 'dart:async';
+
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_page.dart';
+import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/main.dart';
 
 void main() {
@@ -67,7 +72,8 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const PassengerApp());
+    final submitter = _FakeRideRequestSubmitter.success();
+    await tester.pumpWidget(PassengerApp(rideRequestSubmitter: submitter));
 
     FilledButton continueButton() => tester.widget<FilledButton>(
       find.byKey(const Key('continue-local-draft')),
@@ -210,12 +216,138 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-and-request')));
     await tester.pumpAndSettle();
 
+    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(
+      find.text('Your request has been received by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(submitter.submissions, hasLength(1));
+    expect(submitter.submissions.single.pickupDescription.value, 'Solar Hotel');
+    expect(
+      submitter.submissions.single.destinationDescription.value,
+      'Accra Airport',
+    );
+    expect(submitter.submissions.single.passengerCount.value, 2);
+    expect(
+      submitter.submissions.single.assistanceNote?.value,
+      'Step-free access',
+    );
+    expect(submitter.idempotencyKeys.single.startsWith('APP-'), isTrue);
+
+    await tester.tap(find.byKey(const Key('finish-ride-request')));
+    await tester.pumpAndSettle();
+
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(find.text('Where are you?'), findsOneWidget);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.text('Solar Hotel'), findsNothing);
     expect(find.text('Accra Airport'), findsNothing);
+  });
+
+  testWidgets('confirm and request shows loading then success', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.pending();
+
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: submitter,
+        idempotencyKeyFactory: () => 'APP-11111111-2222-4333-8444-555555555555',
+      ),
+    );
+
+    await _enterValidBooking(tester);
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('ride-request-loading')), findsOneWidget);
+    expect(find.text('Sending ride request...'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('confirm-and-request')))
+          .onPressed,
+      isNull,
+    );
+
+    submitter.completeSuccess(
+      const PassengerRideRequestResult(
+        requestReference: 'RR-APP-3A9F1C2B4E5D',
+        status: 'requested',
+        message: 'Ride request received by the Control Center.',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(submitter.idempotencyKeys, [
+      'APP-11111111-2222-4333-8444-555555555555',
+    ]);
+  });
+
+  testWidgets('success does not invent a missing request reference', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.success(
+      result: const PassengerRideRequestResult(
+        status: 'requested',
+        message: 'Ride request received by the Control Center.',
+      ),
+    );
+
+    await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+    await _enterValidBooking(tester);
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(find.byKey(const Key('ride-request-reference')), findsNothing);
+    expect(find.textContaining('RR-APP'), findsNothing);
+  });
+
+  testWidgets('network failure shows retry and reuses idempotency key', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.failThenSucceed();
+
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: submitter,
+        idempotencyKeyFactory: () => 'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      ),
+    );
+
+    await _enterValidBooking(tester);
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
+    expect(find.text('Could not send ride request.'), findsOneWidget);
+    expect(
+      find.text('Please check your connection and try again.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('retry-ride-request')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('retry-ride-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request sent'), findsOneWidget);
+    expect(submitter.idempotencyKeys, [
+      'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    ]);
   });
 
   testWidgets('clear route preserves session locations', (tester) async {
@@ -330,10 +462,88 @@ Future<void> _selectLocation(
   await tester.pumpAndSettle();
 }
 
-Widget _bookingTestApp() {
+Future<void> _enterValidBooking(WidgetTester tester) async {
+  await tester.enterText(find.byKey(const Key('booking-pickup')), 'Osu');
+  await tester.enterText(
+    find.byKey(const Key('booking-destination')),
+    'Airport',
+  );
+}
+
+class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
+  _FakeRideRequestSubmitter._({
+    this.result = const PassengerRideRequestResult(
+      requestReference: 'RR-APP-3A9F1C2B4E5D',
+      status: 'requested',
+      message: 'Ride request received by the Control Center.',
+    ),
+    this.failFirst = false,
+    this.pending = false,
+  });
+
+  factory _FakeRideRequestSubmitter.success({
+    PassengerRideRequestResult result = const PassengerRideRequestResult(
+      requestReference: 'RR-APP-3A9F1C2B4E5D',
+      status: 'requested',
+      message: 'Ride request received by the Control Center.',
+    ),
+  }) {
+    return _FakeRideRequestSubmitter._(result: result);
+  }
+
+  factory _FakeRideRequestSubmitter.pending() {
+    return _FakeRideRequestSubmitter._(pending: true);
+  }
+
+  factory _FakeRideRequestSubmitter.failThenSucceed() {
+    return _FakeRideRequestSubmitter._(failFirst: true);
+  }
+
+  final PassengerRideRequestResult result;
+  final bool failFirst;
+  final bool pending;
+  final submissions = <BookingDraft>[];
+  final idempotencyKeys = <String>[];
+  Completer<PassengerRideRequestResult>? _completer;
+
+  @override
+  Future<PassengerRideRequestResult> submit(
+    BookingDraft draft, {
+    required String idempotencyKey,
+  }) {
+    submissions.add(draft);
+    idempotencyKeys.add(idempotencyKey);
+
+    if (pending) {
+      _completer ??= Completer<PassengerRideRequestResult>();
+      return _completer!.future;
+    }
+
+    if (failFirst && submissions.length == 1) {
+      throw const PassengerRideRequestSubmissionException(
+        'Could not send ride request.\nPlease check your connection and try again.',
+      );
+    }
+
+    return Future<PassengerRideRequestResult>.value(result);
+  }
+
+  void completeSuccess(PassengerRideRequestResult value) {
+    _completer?.complete(value);
+  }
+}
+
+Widget _bookingTestApp({
+  PassengerRideRequestSubmitter? submitter,
+  String Function()? idempotencyKeyFactory,
+}) {
   return MaterialApp(
     theme: AsmThemes.passenger,
-    home: const BookingPage(market: MarketConfig.ghanaAccra),
+    home: BookingPage(
+      market: MarketConfig.ghanaAccra,
+      rideRequestSubmitter: submitter,
+      idempotencyKeyFactory: idempotencyKeyFactory,
+    ),
   );
 }
 

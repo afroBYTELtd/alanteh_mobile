@@ -269,3 +269,9 @@ No backend/API call, live booking, live trip acceptance, payment integration, GP
 Future location task: the app should detect or receive the active Ghana city/service area dynamically, for example Accra, Kumasi, Tamale, Takoradi, Cape Coast, or another approved service city. This must be handled in a separate approved location/GPS/backend/service-area task.
 
 M1BK does not add city auto-detection. M1BK does not add GPS, geolocation permissions, reverse geocoding, maps, backend lookup, or new packages.
+
+### M2A Passenger ride request submission wiring
+
+M2A wires the Passenger booking confirmation path to the accepted CC4B backend contract only: `POST /api/rides/request/` with the existing CC4A bearer-token direction and an `Idempotency-Key` header. The mobile request payload sends only `pickup_location`, `destination`, `passenger_count`, and optional `assistance_note`; it omits `service_context` and does not send payment, GPS, driver, status, or request_reference fields.
+
+M2A does not add Driver dispatch, assignment, trip polling, payment processing, MTN MoMo API, Paystack, GPS, maps, geolocation, reverse geocoding, WebSocket, wallet, push notification, backend/Django, native, pubspec, new package, or Passenger offline queue behavior.
