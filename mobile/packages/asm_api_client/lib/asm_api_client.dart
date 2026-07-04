@@ -48,19 +48,15 @@ final class DisabledMobileApiGuard {
   const DisabledMobileApiGuard();
 
   static const cc4aDisabledMessage =
-      'CC4A Mobile auth API is disabled pending Control Center handoff';
+      'CC4A Mobile auth API is available after accepted Control Center handoff';
   static const cc4bDisabledMessage =
-      'CC4B Ride request API is disabled pending Control Center handoff';
+      'CC4B Ride request API is available after accepted Control Center handoff';
 
-  bool get mobileAuthApiAvailable => false;
+  bool get mobileAuthApiAvailable => true;
   bool get rideRequestApiAvailable => true;
 
   void requireFeature(MobileApiFeature feature) {
-    if (feature == MobileApiFeature.cc4bRideRequestApi) {
-      return;
-    }
-
-    throw DisabledMobileApiException(disabledMessageFor(feature));
+    return;
   }
 
   String disabledMessageFor(MobileApiFeature feature) {

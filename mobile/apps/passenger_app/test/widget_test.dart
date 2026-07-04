@@ -1,3 +1,5 @@
+import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,26 +7,26 @@ import 'package:passenger_app/main.dart';
 import 'package:passenger_app/passenger_shell.dart';
 
 void main() {
-  testWidgets('renders and validates the Passenger phone PIN shell', (
+  testWidgets('Passenger phone PIN login stores tokens and opens home', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
-    await tester.pumpWidget(const PassengerApp(showLoginShell: true));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
     expect(find.text('ALANTEH'), findsOneWidget);
     expect(find.text('Passenger access'), findsOneWidget);
     expect(find.text('Sign in to ride'), findsOneWidget);
     expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
-    expect(find.text('phone number'), findsOneWidget);
+    expect(find.text('Phone number'), findsOneWidget);
     expect(find.byKey(const Key('passenger-pin-field')), findsOneWidget);
     expect(find.text('PIN'), findsOneWidget);
-    expect(find.text('Pilot access'), findsNothing);
-    expect(
-      find.text('Enter your phone number and PIN to continue.'),
-      findsOneWidget,
-    );
-    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Clear form'), findsOneWidget);
+    expect(find.text('Continue'), findsNothing);
+    expect(find.text('Pilot access'), findsNothing);
+    expect(find.text('LOCAL DEMO'), findsNothing);
     expect(find.text('Create account'), findsNothing);
     expect(find.text('Open public account'), findsNothing);
     expect(find.text('Email'), findsNothing);
@@ -32,7 +34,7 @@ void main() {
     expect(find.text('Password'), findsNothing);
     expect(find.text('password'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('passenger-continue-local-demo')));
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
     expect(find.text('Phone number cannot be blank.'), findsOneWidget);
     expect(find.text('PIN cannot be blank.'), findsOneWidget);
@@ -41,16 +43,17 @@ void main() {
       find.byKey(const Key('passenger-phone-field')),
       '0550000000',
     );
-    await tester.enterText(
-      find.byKey(const Key('passenger-pin-field')),
-      '1234',
+    await tester.enterText(find.byKey(const Key('passenger-pin-field')), '12');
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Phone must use +233 followed by 9 digits.'),
+      findsOneWidget,
     );
+    expect(find.text('PIN must be exactly 4 numeric digits.'), findsOneWidget);
+
     await tester.tap(find.byKey(const Key('passenger-clear-form')));
     await tester.pumpAndSettle();
-    expect(find.text('0550000000'), findsNothing);
-    expect(find.text('1234'), findsNothing);
-    expect(find.text('Phone number cannot be blank.'), findsNothing);
-    expect(find.text('PIN cannot be blank.'), findsNothing);
     expect(
       tester
           .widget<TextFormField>(find.byKey(const Key('passenger-phone-field')))
@@ -68,16 +71,27 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '0550000000',
+      ' +233551234567 ',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      ' 1234 ',
     );
-    await tester.tap(find.byKey(const Key('passenger-continue-local-demo')));
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
 
-    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(api.paths, <String>[AuthService.tokenPath]);
+    expect(api.bodies.single, <String, Object?>{
+      'phone': '+233551234567',
+      'pin': '1234',
+    });
+    expect(api.bodies.single.keys, isNot(contains('password')));
+    expect(api.bodies.single.keys, isNot(contains('email')));
+    expect(await store.readAccessToken(), 'passenger-access-token');
+    expect(await store.readRefreshToken(), 'passenger-refresh-token');
+    expect(await store.readAccessToken(), isNot('1234'));
+    expect(await store.readRefreshToken(), isNot('1234'));
+
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(find.text('Where are you?'), findsOneWidget);
@@ -85,22 +99,65 @@ void main() {
     expect(find.text('LOCAL DEMO'), findsNothing);
   });
 
-  testWidgets('confirms Passenger login controls do not submit live auth', (
+  testWidgets('Passenger login rejects non-passenger account types', (
+    tester,
+  ) async {
+    for (final accountType in <Object?>['driver', 'staff', 'unknown', null]) {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      final api = _FakeAuthApiGateway(
+        responseData: _loginResponse(accountType: accountType),
+      );
+      await tester.pumpWidget(_loginTestApp(api: api, store: store));
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233551234567',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '1234',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('passenger-login-error')), findsOneWidget);
+      expect(find.text(authAppContextErrorMessage), findsOneWidget);
+      expect(find.text('Map preview unavailable.'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('failed Passenger login shows clear error and stores no token', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
-    await tester.pumpWidget(const PassengerApp(showLoginShell: true));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(statusCode: 401);
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
-    expect(find.text('Passenger access'), findsOneWidget);
-    expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
-    expect(find.byKey(const Key('passenger-pin-field')), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-    expect(find.text('Clear form'), findsOneWidget);
-    expect(find.text('Submit credentials'), findsNothing);
-    expect(find.text('Login'), findsNothing);
-    expect(find.text('Request ride'), findsNothing);
-    expect(find.textContaining('api/auth'), findsNothing);
-    expect(find.textContaining('token'), findsNothing);
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233551234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '1234',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-login-error')), findsOneWidget);
+    expect(
+      find.text('Could not sign in. Please check your phone and PIN.'),
+      findsOneWidget,
+    );
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
   });
 
   testWidgets('navigates the simplified passenger shell', (tester) async {
@@ -194,6 +251,67 @@ void main() {
   });
 }
 
+Widget _loginTestApp({
+  required _FakeAuthApiGateway api,
+  required AuthTokenStore store,
+}) {
+  return PassengerApp(
+    showLoginShell: true,
+    authTokenStore: store,
+    authService: AuthService(
+      apiGateway: api,
+      tokenStore: store,
+      appContext: AuthAppContext.passenger,
+    ),
+  );
+}
+
+Map<String, Object?> _loginResponse({Object? accountType = 'passenger'}) {
+  final response = <String, Object?>{
+    'access': 'passenger-access-token',
+    'refresh': 'passenger-refresh-token',
+    'account': <String, Object?>{},
+  };
+  if (accountType != null) {
+    response['account_type'] = accountType;
+  }
+  return response;
+}
+
+class _FakeAuthApiGateway implements AuthApiGateway {
+  _FakeAuthApiGateway({this.responseData, this.statusCode = 200});
+
+  final Map<String, Object?>? responseData;
+  final int statusCode;
+
+  final paths = <String>[];
+  final bodies = <Map<String, Object?>>[];
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    paths.add(path);
+    bodies.add(body);
+
+    if (statusCode >= 200 && statusCode < 300 && responseData != null) {
+      return ApiResponse.success(responseData!, statusCode: statusCode);
+    }
+
+    return ApiResponse.apiFailure(
+      AsmApiException(
+        type: statusCode == 401
+            ? AsmApiExceptionType.authentication
+            : AsmApiExceptionType.badResponse,
+        message: 'Authentication failed.',
+        statusCode: statusCode,
+        cause: const <String, Object?>{'detail': 'Invalid credentials.'},
+      ),
+    );
+  }
+}
+
 const _removedPassengerTexts = [
   'ASM PASSENGER',
   'ASM DRIVER',
@@ -229,10 +347,10 @@ Future<void> _openPassengerAccess(WidgetTester tester) async {
 
   await tester.enterText(
     find.byKey(const Key('passenger-phone-field')),
-    '0550000000',
+    '+233551234567',
   );
   await tester.enterText(find.byKey(const Key('passenger-pin-field')), '1234');
-  await tester.tap(find.byKey(const Key('passenger-continue-local-demo')));
+  await tester.tap(find.byKey(const Key('passenger-sign-in')));
   await tester.pumpAndSettle();
 }
 

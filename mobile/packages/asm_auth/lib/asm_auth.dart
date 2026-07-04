@@ -1,12 +1,12 @@
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Required disabled handoff message for future CC4A mobile auth.
+/// Required handoff message for accepted CC4A mobile auth.
 const cc4aMobileAuthDisabledMessage =
-    'CC4A Mobile auth API is disabled pending Control Center handoff';
+    'CC4A Mobile auth API is available after accepted Control Center handoff';
 
-/// CC4A mobile auth remains unavailable until Control Center handoff.
-bool get mobileAuthAvailable => false;
+/// CC4A mobile auth is available after accepted Control Center handoff.
+bool get mobileAuthAvailable => true;
 
 /// Exception thrown when code tries to require disabled CC4A mobile auth.
 class MobileAuthDisabledException implements Exception {
@@ -20,10 +20,8 @@ class MobileAuthDisabledException implements Exception {
   String toString() => message;
 }
 
-/// Guardrail for future CC4A mobile auth access.
-void requireMobileAuth() {
-  throw const MobileAuthDisabledException();
-}
+/// Guardrail for accepted CC4A mobile auth access.
+void requireMobileAuth() {}
 
 /// Minimum authentication states needed by the Passenger and Driver apps.
 enum AuthStatus { loading, authenticated, unauthenticated }

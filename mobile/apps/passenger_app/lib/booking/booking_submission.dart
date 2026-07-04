@@ -16,7 +16,7 @@ abstract interface class PassengerRideRequestSubmitter {
 
 class ApiPassengerRideRequestSubmitter
     implements PassengerRideRequestSubmitter {
-  const ApiPassengerRideRequestSubmitter(this.client);
+  const ApiPassengerRideRequestSubmitter(this.client, {this.tokenStore});
 
   factory ApiPassengerRideRequestSubmitter.withDefaultClient({
     AuthTokenStore? tokenStore,
@@ -27,16 +27,24 @@ class ApiPassengerRideRequestSubmitter
         baseUrl: AsmApiClient.defaultBaseUrl,
         tokenProvider: _AuthTokenProvider(store),
       ),
+      tokenStore: store,
     );
   }
 
   final AsmApiClient client;
+  final AuthTokenStore? tokenStore;
 
   @override
   Future<PassengerRideRequestResult> submit(
     BookingDraft draft, {
     required String idempotencyKey,
   }) async {
+    final storedAccessToken = (await tokenStore?.readAccessToken())?.trim();
+    if (tokenStore != null &&
+        (storedAccessToken == null || storedAccessToken.isEmpty)) {
+      throw const PassengerRideRequestSubmissionException.signInRequired();
+    }
+
     final response = await client.submitPassengerRideRequest(
       PassengerRideRequestSubmission(
         idempotencyKey: idempotencyKey,
@@ -56,9 +64,19 @@ class ApiPassengerRideRequestSubmitter
 }
 
 class PassengerRideRequestSubmissionException implements Exception {
-  const PassengerRideRequestSubmissionException(this.message);
+  const PassengerRideRequestSubmissionException(
+    this.message, {
+    this.requiresSignIn = false,
+  });
+
+  const PassengerRideRequestSubmissionException.signInRequired()
+    : message = signInRequiredMessage,
+      requiresSignIn = true;
+
+  static const signInRequiredMessage = 'Please sign in to request a ride.';
 
   final String message;
+  final bool requiresSignIn;
 
   factory PassengerRideRequestSubmissionException.fromResponse(
     ApiResponse<PassengerRideRequestResult> response,
@@ -71,6 +89,10 @@ class PassengerRideRequestSubmissionException implements Exception {
       return const PassengerRideRequestSubmissionException(
         'Could not send ride request.\nPlease check your connection and try again.',
       );
+    }
+
+    if (statusCode == 401) {
+      return const PassengerRideRequestSubmissionException.signInRequired();
     }
 
     if (statusCode == 403) {
