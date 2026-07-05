@@ -183,6 +183,22 @@ class _BookingPageState extends State<BookingPage> {
     Navigator.of(context).pop(true);
   }
 
+  void _startNewRequest() {
+    setState(() {
+      _pickupController.clear();
+      _destinationController.clear();
+      _assistanceController.clear();
+      _passengerCount = 1;
+      _draft = null;
+      _submissionStatus = BookingSubmissionStatus.idle;
+      _submissionResult = null;
+      _submissionErrorMessage = null;
+      _submissionRequiresSignIn = false;
+      _idempotencyKey = null;
+      _passengerCountErrorMessage = null;
+    });
+  }
+
   void _returnToSignIn() {
     widget.onSignInRequired?.call();
     if (Navigator.of(context).canPop()) {
@@ -222,6 +238,7 @@ class _BookingPageState extends State<BookingPage> {
                 onEdit: _editDraft,
                 onConfirm: _confirmRequest,
                 onFinish: _finishSuccess,
+                onStartNewRequest: _startNewRequest,
                 onSignInRequired: _returnToSignIn,
               ),
       ),

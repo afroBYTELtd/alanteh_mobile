@@ -211,6 +211,231 @@ void main() {
     expect(submitter.submissions, isEmpty);
   });
 
+  testWidgets('successful request shows start new request and resets form', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.success();
+    final keys = <String>['APP-M2J-FIRST', 'APP-M2J-SECOND'];
+    var keyIndex = 0;
+
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: submitter,
+        idempotencyKeyFactory: () => keys[keyIndex++],
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('booking-pickup')),
+      '  Osu pickup point  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      '  Accra Mall  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-assistance')),
+      '  Please call on arrival.  ',
+    );
+
+    final dynamic firstForm = tester.widget(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == 'BookingForm',
+      ),
+    );
+    firstForm.onPassengerCountChanged(3);
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('request-ride')));
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request received'), findsOneWidget);
+    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(find.text('Status: requested'), findsOneWidget);
+    expect(
+      find.text('Ride request received by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('start-new-request')), findsOneWidget);
+    expect(find.byKey(const Key('confirm-and-request')), findsNothing);
+    expect(submitter.submissions, hasLength(1));
+    expect(submitter.submissions.single.passengerCount.value, 3);
+    expect(submitter.idempotencyKeys, <String>['APP-M2J-FIRST']);
+
+    await tester.tap(find.byKey(const Key('ride-request-success')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.submissions, hasLength(1));
+    expect(submitter.idempotencyKeys, <String>['APP-M2J-FIRST']);
+
+    await tester.ensureVisible(find.byKey(const Key('start-new-request')));
+    await tester.tap(find.byKey(const Key('start-new-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request received'), findsNothing);
+    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsNothing);
+    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+          .controller!
+          .text,
+      '',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+          .controller!
+          .text,
+      '',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-assistance')))
+          .controller!
+          .text,
+      '',
+    );
+
+    final dynamic resetForm = tester.widget(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == 'BookingForm',
+      ),
+    );
+    expect(resetForm.passengerCount, 1);
+
+    await tester.enterText(
+      find.byKey(const Key('booking-pickup')),
+      'Cantonments',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      'Labadi',
+    );
+    await tester.ensureVisible(find.byKey(const Key('request-ride')));
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request received'), findsOneWidget);
+    expect(submitter.submissions, hasLength(2));
+    expect(submitter.submissions.last.pickupDescription.value, 'Cantonments');
+    expect(submitter.submissions.last.destinationDescription.value, 'Labadi');
+    expect(submitter.submissions.last.passengerCount.value, 1);
+    expect(submitter.submissions.last.assistanceNote, isNull);
+    expect(submitter.idempotencyKeys, <String>[
+      'APP-M2J-FIRST',
+      'APP-M2J-SECOND',
+    ]);
+  });
+
+  for (final safeErrorCase
+      in <MapEntry<String, PassengerRideRequestSubmissionException>>[
+        MapEntry<String, PassengerRideRequestSubmissionException>(
+          '403',
+          const PassengerRideRequestSubmissionException(
+            PassengerRideRequestSubmissionException.passengerRequiredMessage,
+          ),
+        ),
+        MapEntry<String, PassengerRideRequestSubmissionException>(
+          '409',
+          const PassengerRideRequestSubmissionException(
+            PassengerRideRequestSubmissionException.idempotencyConflictMessage,
+          ),
+        ),
+        MapEntry<String, PassengerRideRequestSubmissionException>(
+          '503',
+          const PassengerRideRequestSubmissionException.serverUnavailable(),
+        ),
+        MapEntry<String, PassengerRideRequestSubmissionException>(
+          'unknown',
+          const PassengerRideRequestSubmissionException.unknown(),
+        ),
+      ]) {
+    testWidgets('\${safeErrorCase.key} safe error keeps entered ride details', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.failure(safeErrorCase.value);
+
+      await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+      await tester.enterText(
+        find.byKey(const Key('booking-pickup')),
+        'Makola Market',
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        'Labadi Beach',
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-assistance')),
+        'Keep the boot clear.',
+      );
+
+      final dynamic form = tester.widget(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == 'BookingForm',
+        ),
+      );
+      form.onPassengerCountChanged(4);
+      await tester.pump();
+
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
+      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
+      expect(find.text(safeErrorCase.value.message), findsOneWidget);
+      expect(find.text('Makola Market'), findsOneWidget);
+      expect(find.text('Labadi Beach'), findsOneWidget);
+      expect(find.text('Keep the boot clear.'), findsOneWidget);
+      expect(submitter.submissions, hasLength(1));
+
+      await tester.ensureVisible(find.byKey(const Key('edit-booking-details')));
+      await tester.tap(find.byKey(const Key('edit-booking-details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+            .controller!
+            .text,
+        'Makola Market',
+      );
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+            .controller!
+            .text,
+        'Labadi Beach',
+      );
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-assistance')))
+            .controller!
+            .text,
+        'Keep the boot clear.',
+      );
+
+      final dynamic editedForm = tester.widget(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == 'BookingForm',
+        ),
+      );
+      expect(editedForm.passengerCount, 4);
+    });
+  }
+
   test(
     'api submitter sends CC4B request fields and never service context',
     () async {
@@ -1307,6 +1532,7 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     ),
     this.failFirst = false,
     this.pending = false,
+    this.failure,
   });
 
   factory _FakeRideRequestSubmitter.success({
@@ -1327,9 +1553,16 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     return _FakeRideRequestSubmitter._(failFirst: true);
   }
 
+  factory _FakeRideRequestSubmitter.failure(
+    PassengerRideRequestSubmissionException failure,
+  ) {
+    return _FakeRideRequestSubmitter._(failure: failure);
+  }
+
   final PassengerRideRequestResult result;
   final bool failFirst;
   final bool pending;
+  final PassengerRideRequestSubmissionException? failure;
   final submissions = <BookingDraft>[];
   final idempotencyKeys = <String>[];
   Completer<PassengerRideRequestResult>? _completer;
@@ -1345,6 +1578,11 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     if (pending) {
       _completer ??= Completer<PassengerRideRequestResult>();
       return _completer!.future;
+    }
+
+    final configuredFailure = failure;
+    if (configuredFailure != null) {
+      throw configuredFailure;
     }
 
     if (failFirst && submissions.length == 1) {
