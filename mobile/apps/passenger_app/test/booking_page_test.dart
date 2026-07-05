@@ -770,6 +770,61 @@ void main() {
     );
   });
 
+  testWidgets(
+    'ride request timeout keeps details and retry reuses idempotency key',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.timeoutThenSucceed();
+
+      await tester.pumpWidget(
+        _bookingTestApp(
+          submitter: submitter,
+          idempotencyKeyFactory: () => 'APP-timeout-retry-same-key',
+        ),
+      );
+
+      await tester.enterText(find.byKey(const Key('booking-pickup')), 'Osu');
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        'Airport',
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-assistance')),
+        'Please call on arrival.',
+      );
+
+      await tester.ensureVisible(find.byKey(const Key('request-ride')));
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
+      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Cannot reach the server. Check your connection and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Ride request received'), findsNothing);
+      expect(find.text('Osu'), findsOneWidget);
+      expect(find.text('Airport'), findsOneWidget);
+      expect(find.text('Please call on arrival.'), findsOneWidget);
+      expect(find.textContaining('TimeoutException'), findsNothing);
+      expect(submitter.idempotencyKeys, <String>['APP-timeout-retry-same-key']);
+
+      await tester.ensureVisible(find.byKey(const Key('retry-ride-request')));
+      await tester.tap(find.byKey(const Key('retry-ride-request')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ride request received'), findsOneWidget);
+      expect(submitter.idempotencyKeys, <String>[
+        'APP-timeout-retry-same-key',
+        'APP-timeout-retry-same-key',
+      ]);
+    },
+  );
+
   testWidgets('network failure shows retry and reuses idempotency key', (
     tester,
   ) async {
@@ -1008,6 +1063,53 @@ void main() {
         client.submissions.map((submission) => submission.idempotencyKey),
         ['APP-refresh-retry-same-key', 'APP-refresh-retry-same-key'],
       );
+    },
+  );
+
+  test(
+    'api submitter maps refresh timeout to safe message and does not retry ride request',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'expired-passenger-access',
+          refreshToken: 'stored-passenger-refresh',
+        ),
+      );
+      final client = _RecordingApiClient(
+        responses: <ApiResponse<PassengerRideRequestResult>>[
+          ApiResponse.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.authentication,
+              message: 'Authentication credentials were not provided.',
+              statusCode: 401,
+            ),
+          ),
+        ],
+      );
+      final authApi = _TimeoutAuthApiGateway();
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        tokenStore: store,
+        authService: AuthService(apiGateway: authApi, tokenStore: store),
+      );
+
+      await expectLater(
+        submitter.submit(_validDraft(), idempotencyKey: 'APP-refresh-timeout'),
+        throwsA(
+          isA<PassengerRideRequestSubmissionException>().having(
+            (error) => error.message,
+            'message',
+            'Cannot reach the server. Check your connection and try again.',
+          ),
+        ),
+      );
+
+      expect(authApi.paths, <String>[AuthService.refreshPath]);
+      expect(authApi.bodies.single, <String, Object?>{
+        'refresh': 'stored-passenger-refresh',
+      });
+      expect(client.submissions, hasLength(1));
     },
   );
 
@@ -1262,6 +1364,43 @@ void main() {
           ),
         ),
       );
+    },
+  );
+
+  test(
+    'api submitter maps ride request timeout to server reachability message',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'access', refreshToken: 'refresh'),
+      );
+      final client = _RecordingApiClient(
+        responses: <ApiResponse<PassengerRideRequestResult>>[
+          ApiResponse.clientException(
+            const AsmApiException(
+              type: AsmApiExceptionType.timeout,
+              message: 'TimeoutException: raw technical timeout',
+            ),
+          ),
+        ],
+      );
+      final submitter = ApiPassengerRideRequestSubmitter(
+        client,
+        tokenStore: store,
+      );
+
+      await expectLater(
+        submitter.submit(_validDraft(), idempotencyKey: 'APP-timeout'),
+        throwsA(
+          isA<PassengerRideRequestSubmissionException>().having(
+            (error) => error.message,
+            'message',
+            'Cannot reach the server. Check your connection and try again.',
+          ),
+        ),
+      );
+
+      expect(client.submissions, hasLength(1));
     },
   );
 
@@ -1553,6 +1692,10 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     return _FakeRideRequestSubmitter._(failFirst: true);
   }
 
+  factory _FakeRideRequestSubmitter.timeoutThenSucceed() {
+    return _FakeRideRequestSubmitter._(failFirst: true);
+  }
+
   factory _FakeRideRequestSubmitter.failure(
     PassengerRideRequestSubmissionException failure,
   ) {
@@ -1596,6 +1739,27 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
 
   void completeSuccess(PassengerRideRequestResult value) {
     _completer?.complete(value);
+  }
+}
+
+class _TimeoutAuthApiGateway implements AuthApiGateway {
+  final paths = <String>[];
+  final bodies = <Map<String, Object?>>[];
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async {
+    paths.add(path);
+    bodies.add(Map<String, Object?>.of(body));
+
+    return ApiResponse.clientException(
+      const AsmApiException(
+        type: AsmApiExceptionType.timeout,
+        message: 'TimeoutException: raw technical refresh timeout',
+      ),
+    );
   }
 }
 

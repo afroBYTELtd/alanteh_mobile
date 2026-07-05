@@ -91,6 +91,13 @@ void main() {
       expect(AsmApiClient.defaultBaseUrl, isA<String>());
     });
 
+    test('applies the default mobile API request timeout', () {
+      final client = AsmApiClient(baseUrl: 'https://example.test');
+
+      expect(AsmApiClient.defaultRequestTimeout, const Duration(seconds: 15));
+      expect(client.requestTimeout, const Duration(seconds: 15));
+    });
+
     test('sends standard JSON headers', () async {
       final adapter = _MockHttpClientAdapter();
       final client = _client(adapter);
@@ -352,6 +359,20 @@ void main() {
       expect(response.error?.type, AsmApiExceptionType.timeout);
     });
 
+    test('allows a shorter injected request timeout for tests', () async {
+      final pending = Completer<ResponseBody>();
+      final adapter = _MockHttpClientAdapter(pendingResponse: pending);
+      final response = await _client(
+        adapter,
+        requestTimeout: const Duration(milliseconds: 1),
+      ).get<Object?>('/status');
+
+      expect(adapter.lastOptions.path, '/status');
+      expect(response.isClientException, isTrue);
+      expect(response.error?.type, AsmApiExceptionType.timeout);
+      expect(response.error?.message, 'The API request timed out.');
+    });
+
     test('maps network failure to network error', () async {
       final response = await _client(
         _MockHttpClientAdapter(failureType: DioExceptionType.connectionError),
@@ -406,12 +427,17 @@ String? _header(RequestOptions options, String name) {
   return null;
 }
 
-AsmApiClient _client(_MockHttpClientAdapter adapter, {String? token}) {
+AsmApiClient _client(
+  _MockHttpClientAdapter adapter, {
+  String? token,
+  Duration? requestTimeout,
+}) {
   final dio = Dio()..httpClientAdapter = adapter;
   return AsmApiClient(
     baseUrl: 'https://control.example/api/',
     dio: dio,
     tokenProvider: _FixedTokenProvider(token),
+    requestTimeout: requestTimeout ?? AsmApiClient.defaultRequestTimeout,
   );
 }
 
@@ -429,11 +455,13 @@ class _MockHttpClientAdapter implements HttpClientAdapter {
     this.statusCode = 200,
     this.failureType,
     this.responseBody = const <String, Object?>{'ok': true},
+    this.pendingResponse,
   });
 
   final int statusCode;
   final DioExceptionType? failureType;
   final Object? responseBody;
+  final Completer<ResponseBody>? pendingResponse;
 
   late RequestOptions lastOptions;
 
@@ -447,6 +475,12 @@ class _MockHttpClientAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     lastOptions = options;
+
+    final pending = pendingResponse;
+    if (pending != null) {
+      return pending.future;
+    }
+
     final type = failureType;
     if (type != null) {
       throw DioException(
