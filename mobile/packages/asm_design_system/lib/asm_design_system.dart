@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 abstract final class AsmColors {
-  static const Color brandGreen = Color(0xFF2F5233);
+  static const Color brandGreen = Color(0xFF275C2E);
   static const Color brandBlack = Color(0xFF000000);
   static const Color brandWhite = Color(0xFFFFFFFF);
 

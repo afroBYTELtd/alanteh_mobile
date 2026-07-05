@@ -249,24 +249,23 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AsmScreenHeader(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(AsmRadii.radius8),
-                  ),
-                  child: const Icon(
-                    Icons.electric_car_outlined,
-                    color: AsmColors.driverScaffold,
-                  ),
-                ),
-                title: 'ALANTEH',
-                subtitle: 'Driver',
-                compact: true,
+              Image.asset(
+                'assets/brand/alanteh_header_white.png',
+                key: const Key('driver-login-brand-logo'),
+                height: 52,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+                semanticLabel: 'ALANTEH driver logo',
               ),
-              const SizedBox(height: 64),
+              const SizedBox(height: AsmSpacing.space8),
+              const Text(
+                'Driver',
+                style: TextStyle(
+                  color: AsmColors.driverTextSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 48),
               const Icon(
                 Icons.verified_user_outlined,
                 color: AsmColors.brandGreen,

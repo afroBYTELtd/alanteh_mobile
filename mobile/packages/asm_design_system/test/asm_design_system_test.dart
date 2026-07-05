@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('exposes the approved ALANTEH tokens and distinct app themes', () {
-    expect(AsmColors.brandGreen, const Color(0xFF2F5233));
+    expect(AsmColors.brandGreen, const Color(0xFF275C2E));
     expect(AsmColors.brandBlack, const Color(0xFF000000));
     expect(AsmColors.brandWhite, const Color(0xFFFFFFFF));
     expect(AsmColors.green, AsmColors.brandGreen);
@@ -1216,7 +1216,7 @@ void main() {
     WidgetTester tester,
   ) async {
     const background = Color(0xFFE8F5EF);
-    const border = Color(0xFF2F5233);
+    const border = Color(0xFF275C2E);
 
     await tester.pumpWidget(
       MaterialApp(

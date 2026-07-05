@@ -347,10 +347,18 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AsmScreenHeader(
-                leading: const AsmAppBrandMark(),
-                title: 'ALANTEH',
-                subtitle: 'Passenger access',
+              Image.asset(
+                'assets/brand/alanteh_header_dark.png',
+                key: const Key('passenger-login-brand-logo'),
+                height: 48,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+                semanticLabel: 'ALANTEH passenger logo',
+              ),
+              const SizedBox(height: AsmSpacing.space8),
+              const Text(
+                'Passenger access',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: AsmSpacing.space20),
               const Text(

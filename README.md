@@ -324,8 +324,10 @@ M2M keeps Passenger and Driver login on the accepted CC4A format: phone must be 
 
 M2N keeps the Driver signed-in home safe for live QA. By default it shows `No trip assigned yet.` and `Stay ready for the Control Center.` while hiding the local trip preview and local accept action. The local trip preview remains available only when `ASM_ENABLE_LOCAL_QA=true`.
 
-M2O aligns Passenger and Driver app colors with the ALANTEH logo color direction. The shared design system promotes `#2F5233` as `AsmColors.brandGreen` and `#000000` as `AsmColors.brandBlack`. The uploaded `WEB & APP.zip` logo pack is used only as visual color reference; no logo image assets, app icons, splash screens, native launcher files, pubspec changes, or new packages are added.
+M2O aligns Passenger and Driver app colors with the ALANTEH logo color direction. The shared design system promotes `#2F5233` as `AsmColors.brandGreen` and `#000000` as `AsmColors.brandBlack`. The earlier visual logo reference pack was used only as color reference; no logo image assets, app icons, splash screens, native launcher files, pubspec changes, or new packages were added in M2O.
 
 M2P improves the Passenger ride receipt by letting the passenger copy the real backend `request_reference` and by showing `Keep this reference. The Control Center can use it to follow up.` The app copies only the backend reference value and does not generate fake references or copy route, passenger, token, or backend URL data.
 
 M2Q completed a Passenger and Driver live QA visual inspection after M2O ALANTEH color alignment and M2P receipt copy support. Visual proof was captured separately outside the source tree. No app screenshots, logo assets, app icons, splash screens, native files, pubspec files, backend files, or new packages are added.
+
+M2R integrates the accepted ALANTEH final app icon and logo assets into the Passenger and Driver apps. The app brand green is updated to `#275C2E`, in-app header logo assets are declared per app, native launcher and splash assets are updated directly, and the source logo ZIP remains outside the repository and candidate package.

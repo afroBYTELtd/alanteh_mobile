@@ -8,12 +8,18 @@ import 'package:driver_app/main.dart';
 import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('Driver auth endpoint contract paths remain stable', () {
     expect(AuthService.tokenPath, '/api/auth/token/');
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+  });
+
+  test('Driver ALANTEH in-app logo asset is bundled', () async {
+    final logo = await rootBundle.load('assets/brand/alanteh_header_white.png');
+    expect(logo.lengthInBytes, greaterThan(0));
   });
 
   group('DriverReadinessCheck', () {
@@ -76,7 +82,7 @@ void main() {
       ),
     );
 
-    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.byKey(const Key('driver-login-brand-logo')), findsOneWidget);
     expect(find.text('Driver'), findsOneWidget);
     expect(find.byKey(const Key('driver-phone-field')), findsOneWidget);
     expect(find.text('Phone number'), findsOneWidget);
@@ -728,7 +734,7 @@ void main() {
     );
     await _openDriverLocalDemo(tester);
 
-    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.byKey(const Key('driver-home-brand-logo')), findsOneWidget);
     expect(find.text('Field workspace'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Off shift'), findsOneWidget);

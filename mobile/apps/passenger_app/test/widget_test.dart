@@ -4,6 +4,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/main.dart';
 import 'package:passenger_app/passenger_shell.dart';
@@ -14,6 +15,11 @@ void main() {
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
   });
 
+  test('Passenger ALANTEH in-app logo asset is bundled', () async {
+    final logo = await rootBundle.load('assets/brand/alanteh_header_dark.png');
+    expect(logo.lengthInBytes, greaterThan(0));
+  });
+
   testWidgets('Passenger phone PIN login stores tokens and opens home', (
     tester,
   ) async {
@@ -22,7 +28,7 @@ void main() {
     final api = _FakeAuthApiGateway(responseData: _loginResponse());
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
-    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-login-brand-logo')), findsOneWidget);
     expect(find.text('Passenger access'), findsOneWidget);
     expect(find.text('Sign in to ride'), findsOneWidget);
     expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
@@ -555,7 +561,7 @@ void main() {
     await tester.pumpWidget(const PassengerApp());
     await _openPassengerAccess(tester);
 
-    expect(find.text('ALANTEH'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-brand-logo')), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(find.text('Where are you?'), findsOneWidget);
