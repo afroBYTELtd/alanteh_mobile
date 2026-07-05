@@ -6,6 +6,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_page.dart';
@@ -335,6 +336,106 @@ void main() {
       'APP-M2J-SECOND',
     ]);
   });
+
+  testWidgets('success receipt copies only the backend request reference', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.success();
+    final copiedTexts = <String>[];
+
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (methodCall) async {
+        if (methodCall.method == 'Clipboard.setData') {
+          final data = methodCall.arguments as Map<Object?, Object?>;
+          copiedTexts.add(data['text']! as String);
+        }
+
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+    await tester.enterText(
+      find.byKey(const Key('booking-pickup')),
+      'Osu pickup point',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      'Accra Mall',
+    );
+    await tester.ensureVisible(find.byKey(const Key('request-ride')));
+    await tester.tap(find.byKey(const Key('request-ride')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
+    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ride request received'), findsOneWidget);
+    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    expect(
+      find.text(
+        'Keep this reference. The Control Center can use it to follow up.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Copy reference'), findsOneWidget);
+    expect(find.text('Reference copied.'), findsNothing);
+
+    await tester.ensureVisible(
+      find.byKey(const Key('copy-ride-request-reference')),
+    );
+    await tester.tap(find.byKey(const Key('copy-ride-request-reference')));
+    await tester.pumpAndSettle();
+
+    expect(copiedTexts, <String>['RR-APP-3A9F1C2B4E5D']);
+    expect(copiedTexts.single, isNot(contains('Osu pickup point')));
+    expect(copiedTexts.single, isNot(contains('Accra Mall')));
+    expect(copiedTexts.single, isNot(contains('passenger-access-token')));
+    expect(copiedTexts.single, isNot(contains('https://')));
+    expect(find.text('Reference copied.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'malformed success response does not show receipt copy controls',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success(
+        result: const PassengerRideRequestResult(
+          status: 'requested',
+          message: 'Ride request received by the Control Center.',
+        ),
+      );
+
+      await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+      await _enterValidBooking(tester);
+      await tester.tap(find.byKey(const Key('request-ride')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ride request received'), findsNothing);
+      expect(find.text('Copy reference'), findsNothing);
+      expect(find.text('Reference copied.'), findsNothing);
+      expect(
+        find.text(
+          'Keep this reference. The Control Center can use it to follow up.',
+        ),
+        findsNothing,
+      );
+      expect(
+        find.text(PassengerRideRequestSubmissionException.unknownErrorMessage),
+        findsOneWidget,
+      );
+    },
+  );
 
   for (final safeErrorCase
       in <MapEntry<String, PassengerRideRequestSubmissionException>>[
