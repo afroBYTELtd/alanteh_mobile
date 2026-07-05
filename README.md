@@ -309,3 +309,13 @@ Driver live QA example:
     flutter run -d "<simulator-id>" --dart-define=ASM_API_BASE_URL=https://your-control-center-domain.com
 
 If the API base URL is missing or invalid during real sign-in or ride request submission, the apps show `Connection is not configured yet.` Continue without signing in remains local-only and does not require API configuration.
+
+M2L gates the local QA entry behind `ASM_ENABLE_LOCAL_QA`. Live builds should omit it:
+
+    flutter run --dart-define=ASM_API_BASE_URL=https://your-control-center-domain.com
+
+Local QA may enable the local-only entry explicitly:
+
+    flutter run \
+      --dart-define=ASM_API_BASE_URL=https://example.test \
+      --dart-define=ASM_ENABLE_LOCAL_QA=true

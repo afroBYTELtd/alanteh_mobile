@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,38 @@ void main() {
     expect(find.text('Where are you?'), findsOneWidget);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.text('LOCAL DEMO'), findsNothing);
+  });
+
+  testWidgets('Passenger login shows local QA entry only when enabled', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(
+      _loginTestApp(
+        api: api,
+        store: store,
+        configuration: _localQaEnabledConfig,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue without signing in'), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-continue-local-qa')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('passenger-continue-local-qa')));
+    await tester.pumpAndSettle();
+
+    expect(api.paths, isEmpty);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.text('Map preview unavailable.'), findsOneWidget);
+    expect(find.text('Book a ride'), findsOneWidget);
   });
 
   testWidgets('Passenger login rejects non-passenger account types', (
@@ -666,8 +699,10 @@ void main() {
 Widget _loginTestApp({
   required _FakeAuthApiGateway api,
   required AuthTokenStore store,
+  AsmAppConfig configuration = AsmAppConfig.localGhana,
 }) {
   return PassengerApp(
+    configuration: configuration,
     showLoginShell: true,
     authTokenStore: store,
     authService: AuthService(
@@ -770,6 +805,13 @@ class _FakeAuthApiGateway implements AuthApiGateway {
     );
   }
 }
+
+const _localQaEnabledConfig = AsmAppConfig(
+  environment: RuntimeEnvironment.local,
+  market: MarketConfig.ghanaAccra,
+  capabilities: CapabilityConfig(),
+  localQaEnabled: true,
+);
 
 const _removedPassengerTexts = [
   'ASM PASSENGER',

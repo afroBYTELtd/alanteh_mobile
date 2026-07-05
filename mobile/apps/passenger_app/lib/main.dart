@@ -57,6 +57,7 @@ class PassengerApp extends StatelessWidget {
               authService: resolvedAuthService,
               authTokenStore: tokenStore,
               rideRequestSubmitter: resolvedRideRequestSubmitter,
+              localQaEnabled: configuration.localQaEnabled,
             )
           : PassengerShell(
               configuration: configuration,
@@ -72,6 +73,7 @@ class PassengerLoginShell extends StatefulWidget {
     this.authService,
     this.authTokenStore,
     this.rideRequestSubmitter,
+    this.localQaEnabled = false,
     super.key,
   });
 
@@ -79,6 +81,7 @@ class PassengerLoginShell extends StatefulWidget {
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final bool localQaEnabled;
 
   @override
   State<PassengerLoginShell> createState() => _PassengerLoginShellState();
@@ -93,6 +96,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   late final AuthService _authService;
   late final PassengerRideRequestSubmitter _rideRequestSubmitter;
 
+  bool _localQaOpened = false;
   bool _signedIn = false;
   bool _isSigningIn = false;
   String? _loginErrorMessage;
@@ -120,7 +124,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   Future<void> _restoreStoredSession() async {
     final accessToken = (await _tokenStore.readAccessToken())?.trim();
-    if (!mounted || _signedIn) {
+    if (!mounted || _localQaOpened || _signedIn) {
       return;
     }
 
@@ -218,6 +222,20 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  Future<void> _continueLocalQa() async {
+    await _tokenStore.clearTokens();
+    if (!mounted || _isSigningIn) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _localQaOpened = true;
+      _signedIn = false;
+      _loginErrorMessage = null;
+    });
+  }
+
   Future<void> _returnToSignIn() async {
     await _tokenStore.clearTokens();
     if (!mounted) {
@@ -225,6 +243,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     }
 
     setState(() {
+      _localQaOpened = false;
       _signedIn = false;
       _isSigningIn = false;
       _loginErrorMessage =
@@ -243,6 +262,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     _pinController.clear();
     _formKey.currentState?.reset();
     setState(() {
+      _localQaOpened = false;
       _signedIn = false;
       _isSigningIn = false;
       _loginErrorMessage = null;
@@ -304,7 +324,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (_signedIn) {
+    if (_localQaOpened || _signedIn) {
       return PassengerShell(
         configuration: widget.configuration,
         rideRequestSubmitter: _rideRequestSubmitter,
@@ -403,6 +423,17 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                 label: 'Clear form',
                 minimumHeight: 48,
               ),
+              if (widget.localQaEnabled) ...[
+                const SizedBox(height: AsmSpacing.space8),
+                AsmPrimaryActionButton(
+                  key: const Key('passenger-continue-local-qa'),
+                  onPressed: _isSigningIn ? null : _continueLocalQa,
+                  variant: AsmActionButtonVariant.text,
+                  icon: Icons.play_arrow_outlined,
+                  label: 'Continue without signing in',
+                  minimumHeight: 48,
+                ),
+              ],
               const SizedBox(height: AsmSpacing.space20),
               const AsmPilotNoticeBanner(
                 message: 'Use your passenger phone and PIN to sign in.',
