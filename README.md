@@ -325,3 +325,5 @@ M2M keeps Passenger and Driver login on the accepted CC4A format: phone must be 
 M2N keeps the Driver signed-in home safe for live QA. By default it shows `No trip assigned yet.` and `Stay ready for the Control Center.` while hiding the local trip preview and local accept action. The local trip preview remains available only when `ASM_ENABLE_LOCAL_QA=true`.
 
 M2O aligns Passenger and Driver app colors with the ALANTEH logo color direction. The shared design system promotes `#2F5233` as `AsmColors.brandGreen` and `#000000` as `AsmColors.brandBlack`. The uploaded `WEB & APP.zip` logo pack is used only as visual color reference; no logo image assets, app icons, splash screens, native launcher files, pubspec changes, or new packages are added.
+
+M2P improves the Passenger ride receipt by letting the passenger copy the real backend `request_reference` and by showing `Keep this reference. The Control Center can use it to follow up.` The app copies only the backend reference value and does not generate fake references or copy route, passenger, token, or backend URL data.

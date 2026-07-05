@@ -2,6 +2,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'booking_draft.dart';
 import 'booking_submission.dart';
@@ -177,7 +178,7 @@ class BookingReview extends StatelessWidget {
   }
 }
 
-class _SubmissionPanel extends StatelessWidget {
+class _SubmissionPanel extends StatefulWidget {
   const _SubmissionPanel._({
     required this.icon,
     required this.title,
@@ -234,45 +235,111 @@ class _SubmissionPanel extends StatelessWidget {
   final Key keyValue;
 
   @override
+  State<_SubmissionPanel> createState() => _SubmissionPanelState();
+}
+
+class _SubmissionPanelState extends State<_SubmissionPanel> {
+  bool _referenceCopied = false;
+
+  @override
+  void didUpdateWidget(covariant _SubmissionPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reference != widget.reference) {
+      _referenceCopied = false;
+    }
+  }
+
+  Future<void> _copyReference() async {
+    final reference = widget.reference?.trim();
+    if (reference == null || reference.isEmpty) {
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: reference));
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _referenceCopied = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final reference = widget.reference?.trim();
+    final hasReference = reference != null && reference.isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.all(AsmSpacing.space16),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: widget.backgroundColor,
         borderRadius: BorderRadius.circular(AsmRadii.radius8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: foregroundColor),
+          Icon(widget.icon, color: widget.foregroundColor),
           const SizedBox(height: AsmSpacing.space8),
           Text(
-            title,
+            widget.title,
             style: TextStyle(
-              color: foregroundColor,
+              color: widget.foregroundColor,
               fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: AsmSpacing.space8),
-          Text(message, style: TextStyle(color: foregroundColor, height: 1.35)),
-          if (reference != null) ...[
+          Text(
+            widget.message,
+            style: TextStyle(color: widget.foregroundColor, height: 1.35),
+          ),
+          if (hasReference) ...[
             const SizedBox(height: AsmSpacing.space8),
             Text(
               'Reference: $reference',
               key: const Key('ride-request-reference'),
               style: TextStyle(
-                color: foregroundColor,
+                color: widget.foregroundColor,
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ],
-          if (status != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             Text(
-              'Status: $status',
+              'Keep this reference. The Control Center can use it to follow up.',
+              key: const Key('ride-request-reference-support'),
+              style: TextStyle(color: widget.foregroundColor, height: 1.35),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            OutlinedButton.icon(
+              key: const Key('copy-ride-request-reference'),
+              onPressed: _copyReference,
+              icon: const Icon(Icons.copy_outlined),
+              label: const Text('Copy reference'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: widget.foregroundColor,
+                side: BorderSide(color: widget.foregroundColor),
+              ),
+            ),
+            if (_referenceCopied) ...[
+              const SizedBox(height: AsmSpacing.space8),
+              Text(
+                'Reference copied.',
+                key: const Key('ride-request-reference-copied'),
+                style: TextStyle(
+                  color: widget.foregroundColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ],
+          if (widget.status != null) ...[
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              'Status: ${widget.status}',
               key: const Key('ride-request-status'),
               style: TextStyle(
-                color: foregroundColor,
+                color: widget.foregroundColor,
                 fontWeight: FontWeight.w700,
               ),
             ),
