@@ -106,7 +106,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '0550000000',
+      '+233241234567',
     );
     await tester.enterText(find.byKey(const Key('driver-pin-field')), '1234');
     await tester.tap(find.byKey(const Key('driver-clear-form')));
@@ -236,7 +236,48 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Off shift'), findsOneWidget);
+    expect(find.text('Local QA trip preview'), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
   });
+
+  testWidgets(
+    'driver live signed-in home hides local trip preview by default',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway();
+
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(authApi.paths, <String>[AuthService.tokenPath]);
+      expect(find.text('No trip assigned yet.'), findsOneWidget);
+      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(find.text('New trip'), findsNothing);
+      expect(find.text('Local QA trip preview'), findsNothing);
+      expect(find.text('Accept'), findsNothing);
+      expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
+      expect(await store.readAccessToken(), 'driver-access-token');
+    },
+  );
 
   testWidgets(
     'driver phone PIN sign in calls token endpoint and stores tokens',
@@ -280,6 +321,11 @@ void main() {
       expect(await store.readRefreshToken(), 'driver-refresh-token');
       expect(find.text('Approved drivers only'), findsOneWidget);
       expect(find.text('Off shift'), findsOneWidget);
+      expect(find.text('No trip assigned yet.'), findsOneWidget);
+      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(find.text('New trip'), findsNothing);
+      expect(find.text('Accept'), findsNothing);
+      expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
       expect(find.text('4321'), findsNothing);
     },
   );
@@ -678,7 +724,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const DriverApp(configuration: AsmAppConfig.localGhana),
+      const DriverApp(configuration: _localQaEnabledConfig),
     );
     await _openDriverLocalDemo(tester);
 
@@ -687,11 +733,11 @@ void main() {
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Off shift'), findsOneWidget);
     expect(find.text('Ghana'), findsOneWidget);
-    expect(find.text('Map coming soon'), findsOneWidget);
-    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('No trip assigned yet.'), findsOneWidget);
+    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
     expect(find.text('Start shift check'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
-    expect(find.text('New trip'), findsWidgets);
+    expect(find.text('Local QA trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -712,16 +758,20 @@ void main() {
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Map coming soon'), findsOneWidget);
+    expect(find.text('No trip assigned yet.'), findsOneWidget);
+    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
   });
 
   testWidgets('Driver shell exposes existing field areas', (tester) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
     expect(find.byKey(const Key('open-readiness')), findsOneWidget);
     expect(find.byKey(const Key('open-concern')), findsOneWidget);
+    expect(find.text('Local QA trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open-readiness')));
@@ -951,7 +1001,9 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
@@ -988,7 +1040,9 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
     await _openRideOfferPreview(tester);
@@ -1169,6 +1223,10 @@ void main() {
     expect(find.text('Off shift'), findsOneWidget);
     expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
     expect(find.byKey(const Key('driver-sign-in')), findsNothing);
+    expect(find.text('No trip assigned yet.'), findsOneWidget);
+    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+    expect(find.text('New trip'), findsNothing);
+    expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
     expect(authApi.paths, isEmpty);
   });
 
@@ -1272,6 +1330,7 @@ void main() {
       expect(await store.readRefreshToken(), isNull);
       expect(find.text('Off shift'), findsOneWidget);
       expect(find.text('On shift'), findsNothing);
+      expect(find.text('Local QA trip preview'), findsOneWidget);
     },
   );
 }

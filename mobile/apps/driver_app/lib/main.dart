@@ -52,7 +52,10 @@ class DriverApp extends StatelessWidget {
               authTokenStore: tokenStore,
               localQaEnabled: configuration.localQaEnabled,
             )
-          : DriverShell(configuration: configuration),
+          : DriverShell(
+              configuration: configuration,
+              localQaEnabled: configuration.localQaEnabled,
+            ),
     );
   }
 }
@@ -226,6 +229,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (_localDemoOpened || _signedIn) {
       return DriverShell(
         configuration: widget.configuration,
+        localQaEnabled: widget.localQaEnabled,
         onSignOut: _signOut,
       );
     }
