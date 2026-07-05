@@ -24,7 +24,7 @@ class DriverRideOfferDecisionPreview extends StatelessWidget {
         Icon(
           accepted ? Icons.check_circle_outline : Icons.cancel_outlined,
           size: 52,
-          color: AsmColors.solarYellow,
+          color: AsmColors.brandGreen,
         ),
         const SizedBox(height: AsmSpacing.space16),
         Text(
@@ -36,9 +36,9 @@ class DriverRideOfferDecisionPreview extends StatelessWidget {
           message: accepted
               ? 'Trip marked accepted on this screen.'
               : 'Trip marked declined on this screen.',
-          backgroundColor: const Color(0xFF343026),
-          borderColor: const Color(0xFF554C39),
-          iconColor: AsmColors.solarYellow,
+          backgroundColor: AsmColors.driverPanelMuted,
+          borderColor: AsmColors.brandGreen,
+          iconColor: AsmColors.brandGreen,
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: AsmSpacing.space24),

@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
 abstract final class AsmColors {
-  static const Color green = Color(0xFF086B52);
+  static const Color brandGreen = Color(0xFF2F5233);
+  static const Color brandBlack = Color(0xFF000000);
+  static const Color brandWhite = Color(0xFFFFFFFF);
+
+  static const Color green = brandGreen;
   static const Color solarYellow = Color(0xFFFFC928);
-  static const Color passengerScaffold = Color(0xFFF5F7F2);
-  static const Color driverScaffold = Color(0xFF151A1D);
-  static const Color driverPanelMuted = Color(0xFF343026);
-  static const Color driverTextSecondary = Color(0xFFB7C0C4);
+
+  static const Color passengerScaffold = Color(0xFFFAFBF8);
+  static const Color driverScaffold = brandBlack;
+  static const Color driverPanelMuted = Color(0xFF111A14);
+  static const Color driverTextSecondary = Color(0xFFD6DED8);
   static const Color driverWarningSurface = Color(0xFFFFD968);
 }
 
@@ -29,7 +34,7 @@ abstract final class AsmThemes {
   static ThemeData get passenger {
     return ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: AsmColors.green,
+        seedColor: AsmColors.brandGreen,
         brightness: Brightness.light,
       ),
       scaffoldBackgroundColor: AsmColors.passengerScaffold,
@@ -40,7 +45,7 @@ abstract final class AsmThemes {
   static ThemeData get driver {
     return ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: AsmColors.solarYellow,
+        seedColor: AsmColors.brandGreen,
         brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: AsmColors.driverScaffold,
@@ -1081,7 +1086,7 @@ class AsmPilotNoticeBanner extends StatelessWidget {
   const AsmPilotNoticeBanner({
     required this.message,
     this.icon = Icons.info_outline,
-    this.backgroundColor = const Color(0xFFFFF4C2),
+    this.backgroundColor = const Color(0xFFE9F0EA),
     this.iconColor = AsmColors.green,
     this.textStyle = const TextStyle(fontWeight: FontWeight.w600),
     this.padding = const EdgeInsets.all(AsmSpacing.space12),

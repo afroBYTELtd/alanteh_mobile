@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('exposes the approved ASM tokens and distinct app themes', () {
-    expect(AsmColors.green, const Color(0xFF086B52));
+  test('exposes the approved ALANTEH tokens and distinct app themes', () {
+    expect(AsmColors.brandGreen, const Color(0xFF2F5233));
+    expect(AsmColors.brandBlack, const Color(0xFF000000));
+    expect(AsmColors.brandWhite, const Color(0xFFFFFFFF));
+    expect(AsmColors.green, AsmColors.brandGreen);
     expect(AsmColors.solarYellow, const Color(0xFFFFC928));
-    expect(AsmColors.passengerScaffold, const Color(0xFFF5F7F2));
-    expect(AsmColors.driverScaffold, const Color(0xFF151A1D));
-    expect(AsmColors.driverPanelMuted, const Color(0xFF343026));
-    expect(AsmColors.driverTextSecondary, const Color(0xFFB7C0C4));
+    expect(AsmColors.passengerScaffold, const Color(0xFFFAFBF8));
+    expect(AsmColors.driverScaffold, AsmColors.brandBlack);
+    expect(AsmColors.driverPanelMuted, const Color(0xFF111A14));
+    expect(AsmColors.driverTextSecondary, const Color(0xFFD6DED8));
     expect(AsmColors.driverWarningSurface, const Color(0xFFFFD968));
 
     expect(
@@ -34,7 +37,7 @@ void main() {
     expect(passenger.scaffoldBackgroundColor, AsmColors.passengerScaffold);
     expect(
       passenger.colorScheme.primary,
-      ColorScheme.fromSeed(seedColor: AsmColors.green).primary,
+      ColorScheme.fromSeed(seedColor: AsmColors.brandGreen).primary,
     );
 
     expect(driver.useMaterial3, isTrue);
@@ -43,7 +46,7 @@ void main() {
     expect(
       driver.colorScheme.primary,
       ColorScheme.fromSeed(
-        seedColor: AsmColors.solarYellow,
+        seedColor: AsmColors.brandGreen,
         brightness: Brightness.dark,
       ).primary,
     );
@@ -1213,7 +1216,7 @@ void main() {
     WidgetTester tester,
   ) async {
     const background = Color(0xFFE8F5EF);
-    const border = Color(0xFF086B52);
+    const border = Color(0xFF2F5233);
 
     await tester.pumpWidget(
       MaterialApp(
