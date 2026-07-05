@@ -385,6 +385,50 @@ void main() {
     expect(await store.readAccessToken(), isNull);
   });
 
+  testWidgets(
+    'Driver sign-in timeout shows safe message and stores no tokens',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final api = _RecordingDriverAuthApiGateway(
+        exceptionType: AsmApiExceptionType.timeout,
+      );
+
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authTokenStore: store,
+          authService: AuthService(
+            apiGateway: api,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233241234567',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Cannot reach the server. Check your connection and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('TimeoutException'), findsNothing);
+      expect(find.textContaining('Raw technical'), findsNothing);
+      expect(find.byKey(const Key('driver-phone-field')), findsOneWidget);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
+
   testWidgets('Driver sign-in 503 shows service unavailable message', (
     tester,
   ) async {

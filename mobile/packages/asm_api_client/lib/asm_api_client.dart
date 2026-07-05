@@ -311,8 +311,10 @@ class AsmApiClient {
     Duration connectTimeout = const Duration(seconds: 10),
     Duration sendTimeout = const Duration(seconds: 10),
     Duration receiveTimeout = const Duration(seconds: 20),
+    Duration requestTimeout = const Duration(seconds: 15),
   }) : _dio = dio ?? Dio(),
-       _tokenProvider = tokenProvider {
+       _tokenProvider = tokenProvider,
+       _requestTimeout = requestTimeout {
     final cleanedBaseUrl = AsmApiBaseUrl.normalize(baseUrl);
 
     _dio.options
@@ -337,6 +339,9 @@ class AsmApiClient {
     apiBaseUrlEnvironmentKey,
   );
 
+  /// Default wall-clock timeout for one mobile API request.
+  static const defaultRequestTimeout = Duration(seconds: 15);
+
   static const jsonHeaders = <String, String>{
     'Accept': 'application/json',
     'Content-Type': 'application/json',
@@ -344,8 +349,10 @@ class AsmApiClient {
 
   final Dio _dio;
   final TokenProvider? _tokenProvider;
+  final Duration _requestTimeout;
 
   String get baseUrl => _dio.options.baseUrl;
+  Duration get requestTimeout => _requestTimeout;
 
   Future<ApiResponse<T>> get<T>(
     String path, {
@@ -398,12 +405,14 @@ class AsmApiClient {
   }) async {
     try {
       final requestHeaders = await _requestHeaders(additionalHeaders: headers);
-      final response = await _dio.request<Object?>(
-        path,
-        data: data,
-        queryParameters: queryParameters,
-        options: Options(method: method, headers: requestHeaders),
-      );
+      final response = await _dio
+          .request<Object?>(
+            path,
+            data: data,
+            queryParameters: queryParameters,
+            options: Options(method: method, headers: requestHeaders),
+          )
+          .timeout(_requestTimeout);
       return _mapResponse(response, decoder);
     } on DioException catch (error) {
       return ApiResponse.clientException(_mapDioException(error));

@@ -294,6 +294,53 @@ void main() {
     expect(await store.readAccessToken(), isNull);
   });
 
+  testWidgets(
+    'Passenger sign-in timeout shows safe message and stores no token',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      final api = _FakeAuthApiGateway(
+        exceptionType: AsmApiExceptionType.timeout,
+      );
+
+      await tester.pumpWidget(
+        PassengerApp(
+          showLoginShell: true,
+          authTokenStore: store,
+          authService: AuthService(
+            apiGateway: api,
+            tokenStore: store,
+            appContext: AuthAppContext.passenger,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233551234567',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '1234',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Cannot reach the server. Check your connection and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('TimeoutException'), findsNothing);
+      expect(find.textContaining('Raw technical'), findsNothing);
+      expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
+
   testWidgets('Passenger sign-in 503 shows service unavailable message', (
     tester,
   ) async {
