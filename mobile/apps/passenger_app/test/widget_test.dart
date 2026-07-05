@@ -43,8 +43,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
-    expect(find.text('Phone number cannot be blank.'), findsOneWidget);
-    expect(find.text('PIN cannot be blank.'), findsOneWidget);
+    expect(find.text(loginPhoneRequiredMessage), findsOneWidget);
+    expect(find.text(loginPinRequiredMessage), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
@@ -53,11 +53,8 @@ void main() {
     await tester.enterText(find.byKey(const Key('passenger-pin-field')), '12');
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Phone must use +233 followed by 9 digits.'),
-      findsOneWidget,
-    );
-    expect(find.text('PIN must be exactly 4 numeric digits.'), findsOneWidget);
+    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
+    expect(find.text(loginPinFormatMessage), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('passenger-clear-form')));
     await tester.pumpAndSettle();
@@ -78,11 +75,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      ' +233551234567 ',
+      '+233551234567',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      ' 1234 ',
+      '1234',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -104,6 +101,69 @@ void main() {
     expect(find.text('Where are you?'), findsOneWidget);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.text('LOCAL DEMO'), findsNothing);
+  });
+
+  testWidgets('Passenger invalid login input is blocked before network', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneRequiredMessage), findsOneWidget);
+    expect(find.text(loginPinRequiredMessage), findsOneWidget);
+    expect(api.paths, isEmpty);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '0550000000',
+    );
+    await tester.enterText(find.byKey(const Key('passenger-pin-field')), '123');
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
+    expect(find.text(loginPinFormatMessage), findsOneWidget);
+    expect(api.paths, isEmpty);
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+23355 1234567',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '12a4',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
+    expect(find.text(loginPinFormatMessage), findsOneWidget);
+    expect(api.paths, isEmpty);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('passenger-phone-field')))
+          .controller
+          ?.text,
+      '+23355 1234567',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('passenger-pin-field')))
+          .controller
+          ?.text,
+      '12a4',
+    );
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
   });
 
   testWidgets('Passenger login shows local QA entry only when enabled', (

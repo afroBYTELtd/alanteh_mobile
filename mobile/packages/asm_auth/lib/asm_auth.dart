@@ -30,14 +30,48 @@ enum AuthStatus { loading, authenticated, unauthenticated }
 const authAppContextErrorMessage =
     'This account is not allowed to sign in to this app.';
 
+/// User-facing login validation message for a missing Ghana pilot phone.
+const loginPhoneRequiredMessage = 'Enter a Ghana phone number.';
+
+/// User-facing login validation message for an invalid Ghana pilot phone.
+const loginPhoneFormatMessage = 'Use format +233XXXXXXXXX.';
+
+/// User-facing login validation message for a missing PIN.
+const loginPinRequiredMessage = 'Enter your 4-digit PIN.';
+
+/// User-facing login validation message for an invalid PIN.
+const loginPinFormatMessage = 'PIN must be 4 digits.';
+
 /// Ghana pilot phone validation for CC4A phone/PIN auth.
 bool isValidGhanaPhoneNumber(String phone) {
-  return RegExp(r'^\+233\d{9}$').hasMatch(phone.trim());
+  return RegExp(r'^\+233\d{9}$').hasMatch(phone);
 }
 
 /// Ghana pilot PIN validation for CC4A phone/PIN auth.
 bool isValidPin(String pin) {
-  return RegExp(r'^\d{4}$').hasMatch(pin.trim());
+  return RegExp(r'^\d{4}$').hasMatch(pin);
+}
+
+/// Returns the exact user-facing phone validation message, or null when valid.
+String? validateGhanaPhoneNumberForLogin(String phone) {
+  if (phone.trim().isEmpty) {
+    return loginPhoneRequiredMessage;
+  }
+  if (!isValidGhanaPhoneNumber(phone)) {
+    return loginPhoneFormatMessage;
+  }
+  return null;
+}
+
+/// Returns the exact user-facing PIN validation message, or null when valid.
+String? validatePinForLogin(String pin) {
+  if (pin.trim().isEmpty) {
+    return loginPinRequiredMessage;
+  }
+  if (!isValidPin(pin)) {
+    return loginPinFormatMessage;
+  }
+  return null;
 }
 
 /// Account types returned by the finalized CC4A auth response.
@@ -328,17 +362,19 @@ class AuthService {
   Future<AuthState> login(String phone, String pin) async {
     final cleanPhone = phone.trim();
     final cleanPin = pin.trim();
+    final phoneValidationMessage = validateGhanaPhoneNumberForLogin(phone);
+    final pinValidationMessage = validatePinForLogin(pin);
 
-    if (!isValidGhanaPhoneNumber(cleanPhone)) {
-      throw const AuthException(
+    if (phoneValidationMessage != null) {
+      throw AuthException(
         type: AuthExceptionType.validation,
-        message: 'Phone must use +233 followed by 9 digits.',
+        message: phoneValidationMessage,
       );
     }
-    if (!isValidPin(cleanPin)) {
-      throw const AuthException(
+    if (pinValidationMessage != null) {
+      throw AuthException(
         type: AuthExceptionType.validation,
-        message: 'PIN must be exactly 4 numeric digits.',
+        message: pinValidationMessage,
       );
     }
 

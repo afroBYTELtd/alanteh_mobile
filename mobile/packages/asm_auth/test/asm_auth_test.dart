@@ -39,19 +39,48 @@ void main() {
   });
 
   group('CC4A phone and PIN validation helpers', () {
-    test('supports Ghana +233 phone and exact 4 digit PIN', () {
+    test('supports Ghana +233 phone and exact 4 digit PIN only', () {
       expect(isValidGhanaPhoneNumber('+233551234567'), isTrue);
       expect(isValidGhanaPhoneNumber('+233241234567'), isTrue);
       expect(isValidGhanaPhoneNumber('0200000000'), isFalse);
       expect(isValidGhanaPhoneNumber('+23355123456'), isFalse);
       expect(isValidGhanaPhoneNumber('+2335512345670'), isFalse);
       expect(isValidGhanaPhoneNumber('+23355abc4567'), isFalse);
+      expect(isValidGhanaPhoneNumber('+23355 1234567'), isFalse);
+      expect(isValidGhanaPhoneNumber(' +233551234567 '), isFalse);
 
       expect(isValidPin('1234'), isTrue);
       expect(isValidPin('4321'), isTrue);
       expect(isValidPin('123'), isFalse);
       expect(isValidPin('12345'), isFalse);
       expect(isValidPin('12a4'), isFalse);
+      expect(isValidPin('12 4'), isFalse);
+      expect(isValidPin(' 1234 '), isFalse);
+    });
+
+    test('returns exact user-facing validation messages', () {
+      expect(validateGhanaPhoneNumberForLogin(''), loginPhoneRequiredMessage);
+      expect(
+        validateGhanaPhoneNumberForLogin('   '),
+        loginPhoneRequiredMessage,
+      );
+      expect(
+        validateGhanaPhoneNumberForLogin('0550000000'),
+        loginPhoneFormatMessage,
+      );
+      expect(
+        validateGhanaPhoneNumberForLogin('+23355 1234567'),
+        loginPhoneFormatMessage,
+      );
+      expect(validateGhanaPhoneNumberForLogin('+233551234567'), isNull);
+
+      expect(validatePinForLogin(''), loginPinRequiredMessage);
+      expect(validatePinForLogin('   '), loginPinRequiredMessage);
+      expect(validatePinForLogin('123'), loginPinFormatMessage);
+      expect(validatePinForLogin('12345'), loginPinFormatMessage);
+      expect(validatePinForLogin('12a4'), loginPinFormatMessage);
+      expect(validatePinForLogin(' 1234 '), loginPinFormatMessage);
+      expect(validatePinForLogin('1234'), isNull);
     });
   });
 
@@ -122,28 +151,63 @@ void main() {
 
   group('AuthService', () {
     test('login validates phone and PIN against the CC4A contract', () async {
-      final service = _serviceWithResponse(_successLoginResponse());
+      final api = _MockAuthApiGateway(responseData: _successLoginResponse());
+      final service = AuthService(
+        apiGateway: api,
+        tokenStore: MemoryAuthTokenStore(),
+      );
 
       await expectLater(
         service.login('', '1234'),
-        throwsA(isA<AuthException>()),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            loginPhoneRequiredMessage,
+          ),
+        ),
       );
       await expectLater(
         service.login('0200000000', '1234'),
-        throwsA(isA<AuthException>()),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            loginPhoneFormatMessage,
+          ),
+        ),
       );
       await expectLater(
         service.login('+233551234567', ''),
-        throwsA(isA<AuthException>()),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            loginPinRequiredMessage,
+          ),
+        ),
       );
       await expectLater(
         service.login('+233551234567', 'bad-pin'),
-        throwsA(isA<AuthException>()),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            loginPinFormatMessage,
+          ),
+        ),
       );
       await expectLater(
-        service.login('+233551234567', '12345'),
-        throwsA(isA<AuthException>()),
+        service.login('+233551234567', '1234 '),
+        throwsA(
+          isA<AuthException>().having(
+            (error) => error.message,
+            'message',
+            loginPinFormatMessage,
+          ),
+        ),
       );
+      expect(api.paths, isEmpty);
     });
 
     test(
@@ -153,7 +217,7 @@ void main() {
         final api = _MockAuthApiGateway(responseData: _successLoginResponse());
         final service = AuthService(apiGateway: api, tokenStore: store);
 
-        final state = await service.login(' +233551234567 ', ' 1234 ');
+        final state = await service.login('+233551234567', '1234');
 
         expect(state.status, AuthStatus.authenticated);
         expect(state.session?.accountType, AuthAccountType.passenger);

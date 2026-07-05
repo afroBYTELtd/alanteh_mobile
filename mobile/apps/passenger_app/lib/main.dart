@@ -369,16 +369,8 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                   labelText: 'Phone number',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  final phone = (value ?? '').trim();
-                  if (phone.isEmpty) {
-                    return 'Phone number cannot be blank.';
-                  }
-                  if (!isValidGhanaPhoneNumber(phone)) {
-                    return 'Phone must use +233 followed by 9 digits.';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                    validateGhanaPhoneNumberForLogin(value ?? ''),
               ),
               const SizedBox(height: AsmSpacing.space12),
               TextFormField(
@@ -392,16 +384,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                   labelText: 'PIN',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  final pin = (value ?? '').trim();
-                  if (pin.isEmpty) {
-                    return 'PIN cannot be blank.';
-                  }
-                  if (!isValidPin(pin)) {
-                    return 'PIN must be exactly 4 numeric digits.';
-                  }
-                  return null;
-                },
+                validator: (value) => validatePinForLogin(value ?? ''),
               ),
               if (_loginErrorMessage != null) ...[
                 const SizedBox(height: AsmSpacing.space12),

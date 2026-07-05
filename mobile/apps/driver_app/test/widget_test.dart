@@ -100,8 +100,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
-    expect(find.text('Phone number cannot be blank.'), findsOneWidget);
-    expect(find.text('PIN cannot be blank.'), findsOneWidget);
+    expect(find.text(loginPhoneRequiredMessage), findsOneWidget);
+    expect(find.text(loginPinRequiredMessage), findsOneWidget);
     expect(authApi.paths, isEmpty);
 
     await tester.enterText(
@@ -113,8 +113,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('0550000000'), findsNothing);
     expect(find.text('1234'), findsNothing);
-    expect(find.text('Phone number cannot be blank.'), findsNothing);
-    expect(find.text('PIN cannot be blank.'), findsNothing);
+    expect(find.text(loginPhoneRequiredMessage), findsNothing);
+    expect(find.text(loginPinRequiredMessage), findsNothing);
     expect(
       tester
           .widget<TextFormField>(find.byKey(const Key('driver-phone-field')))
@@ -129,6 +129,76 @@ void main() {
           ?.text,
       isEmpty,
     );
+  });
+
+  testWidgets('driver invalid login input is blocked before network', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneRequiredMessage), findsOneWidget);
+    expect(find.text(loginPinRequiredMessage), findsOneWidget);
+    expect(authApi.paths, isEmpty);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '0550000000',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '123');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
+    expect(find.text(loginPinFormatMessage), findsOneWidget);
+    expect(authApi.paths, isEmpty);
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+23324 1234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '43a1');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
+    expect(find.text(loginPinFormatMessage), findsOneWidget);
+    expect(authApi.paths, isEmpty);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('driver-phone-field')))
+          .controller
+          ?.text,
+      '+23324 1234567',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('driver-pin-field')))
+          .controller
+          ?.text,
+      '43a1',
+    );
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
   });
 
   testWidgets('driver login shows local QA entry only when enabled', (
@@ -192,12 +262,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        ' +233241234567 ',
+        '+233241234567',
       );
-      await tester.enterText(
-        find.byKey(const Key('driver-pin-field')),
-        ' 4321 ',
-      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 

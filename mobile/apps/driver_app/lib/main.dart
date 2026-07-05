@@ -291,12 +291,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                   labelText: 'Phone number',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
-                    return 'Phone number cannot be blank.';
-                  }
-                  return null;
-                },
+                validator: (value) =>
+                    validateGhanaPhoneNumberForLogin(value ?? ''),
               ),
               const SizedBox(height: AsmSpacing.space12),
               TextFormField(
@@ -310,12 +306,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                   labelText: 'PIN',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  if ((value ?? '').trim().isEmpty) {
-                    return 'PIN cannot be blank.';
-                  }
-                  return null;
-                },
+                validator: (value) => validatePinForLogin(value ?? ''),
               ),
               if (_loginError != null) ...[
                 const SizedBox(height: AsmSpacing.space16),
