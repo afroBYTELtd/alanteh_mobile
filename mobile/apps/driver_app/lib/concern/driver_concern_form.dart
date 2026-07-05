@@ -53,7 +53,7 @@ class DriverConcernForm extends StatelessWidget {
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: AsmColors.solarYellow),
+                Icon(Icons.info_outline, color: AsmColors.brandGreen),
                 SizedBox(width: AsmSpacing.space12),
                 Expanded(
                   child: Text(

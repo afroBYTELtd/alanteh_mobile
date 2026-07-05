@@ -99,13 +99,13 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF4A3B08),
+        color: AsmColors.brandGreen,
         borderRadius: BorderRadius.circular(AsmRadii.radius6),
       ),
       child: Text(
         label,
         style: const TextStyle(
-          color: Color(0xFFFFD968),
+          color: Colors.white,
           fontWeight: FontWeight.w800,
         ),
       ),

@@ -41,7 +41,7 @@ class PassengerRoutePlanner extends StatelessWidget {
       ),
       destinationInputTile: AsmRouteInputTile(
         key: const Key('choose-destination'),
-        markerColor: AsmColors.solarYellow,
+        markerColor: AsmColors.brandBlack,
         placeholder: 'Where to?',
         description: destinationDescription,
         onTap: onChooseDestination,

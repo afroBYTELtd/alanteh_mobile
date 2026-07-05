@@ -269,7 +269,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
               const SizedBox(height: 64),
               const Icon(
                 Icons.verified_user_outlined,
-                color: AsmColors.solarYellow,
+                color: AsmColors.brandGreen,
                 size: 44,
               ),
               const SizedBox(height: AsmSpacing.space20),

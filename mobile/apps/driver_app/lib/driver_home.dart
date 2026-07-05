@@ -79,13 +79,13 @@ class DriverHome extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF343026),
+                    color: AsmColors.driverPanelMuted,
                     borderRadius: BorderRadius.circular(AsmRadii.radius6),
                   ),
                   child: Text(
                     shiftLabel,
                     style: const TextStyle(
-                      color: Color(0xFFFFD968),
+                      color: Colors.white,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
                     ),
@@ -97,7 +97,7 @@ class DriverHome extends StatelessWidget {
           const SizedBox(height: 64),
           const Icon(
             Icons.verified_user_outlined,
-            color: AsmColors.solarYellow,
+            color: AsmColors.brandGreen,
             size: 44,
           ),
           const SizedBox(height: AsmSpacing.space20),
@@ -119,7 +119,7 @@ class DriverHome extends StatelessWidget {
             key: const Key('driver-market'),
             text: marketLabel,
             icon: Icons.location_on_outlined,
-            iconColor: AsmColors.solarYellow,
+            iconColor: AsmColors.brandGreen,
             textStyle: const TextStyle(fontWeight: FontWeight.w700),
             textMaxLines: null,
           ),
@@ -136,7 +136,7 @@ class DriverHome extends StatelessWidget {
             backgroundColor: Color(0xFF20272B),
             borderColor: Color(0xFF3A4449),
             icon: Icons.route_outlined,
-            iconColor: AsmColors.solarYellow,
+            iconColor: AsmColors.brandGreen,
             title: 'No trip assigned yet.',
             message: 'Stay ready for the Control Center.',
             titleStyle: TextStyle(fontWeight: FontWeight.w700),
