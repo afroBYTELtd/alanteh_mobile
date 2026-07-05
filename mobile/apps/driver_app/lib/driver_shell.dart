@@ -10,11 +10,13 @@ import 'ride_offer/driver_ride_offer_page.dart';
 class DriverShell extends StatefulWidget {
   const DriverShell({
     this.configuration = AsmAppConfig.localGhana,
+    this.localQaEnabled = false,
     this.onSignOut,
     super.key,
   });
 
   final AsmAppConfig configuration;
+  final bool localQaEnabled;
   final Future<void> Function()? onSignOut;
 
   @override
@@ -52,6 +54,10 @@ class _DriverShellState extends State<DriverShell> {
   }
 
   Future<void> _openRideOfferPreview() async {
+    if (!widget.localQaEnabled) {
+      return;
+    }
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) =>
@@ -76,6 +82,7 @@ class _DriverShellState extends State<DriverShell> {
         onOpenReadiness: _openReadiness,
         onRecordConcern: _openConcern,
         onPreviewIncomingRequest: _openRideOfferPreview,
+        localQaEnabled: widget.localQaEnabled,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
       1 => const AsmDemoPlaceholder(

@@ -9,6 +9,7 @@ class DriverHome extends StatelessWidget {
     required this.onOpenReadiness,
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
+    required this.localQaEnabled,
     this.onSignOut,
     super.key,
   });
@@ -18,6 +19,7 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onOpenReadiness;
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
+  final bool localQaEnabled;
   final VoidCallback? onSignOut;
 
   @override
@@ -128,14 +130,15 @@ class DriverHome extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space8),
           const AsmEmptyStatePanel(
+            key: Key('driver-live-safe-waiting'),
             compact: true,
             padding: EdgeInsets.all(18),
             backgroundColor: Color(0xFF20272B),
             borderColor: Color(0xFF3A4449),
-            icon: Icons.map_outlined,
+            icon: Icons.route_outlined,
             iconColor: AsmColors.solarYellow,
-            title: 'Map coming soon',
-            message: 'No trips yet',
+            title: 'No trip assigned yet.',
+            message: 'Stay ready for the Control Center.',
             titleStyle: TextStyle(fontWeight: FontWeight.w700),
             messageStyle: TextStyle(color: Color(0xFFB7C0C4)),
             textSpacing: 3,
@@ -157,15 +160,17 @@ class DriverHome extends StatelessWidget {
             label: 'Report an issue',
             minimumHeight: 48,
           ),
-          const SizedBox(height: AsmSpacing.space4),
-          AsmPrimaryActionButton(
-            key: const Key('open-ride-offer-preview'),
-            onPressed: onPreviewIncomingRequest,
-            variant: AsmActionButtonVariant.text,
-            icon: Icons.notifications_none_outlined,
-            label: 'New trip',
-            minimumHeight: 48,
-          ),
+          if (localQaEnabled) ...[
+            const SizedBox(height: AsmSpacing.space4),
+            AsmPrimaryActionButton(
+              key: const Key('open-ride-offer-preview'),
+              onPressed: onPreviewIncomingRequest,
+              variant: AsmActionButtonVariant.text,
+              icon: Icons.notifications_none_outlined,
+              label: 'Local QA trip preview',
+              minimumHeight: 48,
+            ),
+          ],
           const SizedBox(height: AsmSpacing.space16),
           const AsmSectionLabel(
             text: 'Driver app foundation',
