@@ -319,3 +319,5 @@ Local QA may enable the local-only entry explicitly:
     flutter run \
       --dart-define=ASM_API_BASE_URL=https://example.test \
       --dart-define=ASM_ENABLE_LOCAL_QA=true
+
+M2M keeps Passenger and Driver login on the accepted CC4A format: phone must be `+233` followed by 9 digits, and PIN must be exactly 4 numeric digits before the apps call the backend.
