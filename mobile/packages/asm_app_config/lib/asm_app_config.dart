@@ -103,6 +103,7 @@ final class AsmAppConfig {
     required this.capabilities,
     this.mobileIntegrationDependencies =
         const MobileIntegrationDependencyConfig(),
+    this.localQaEnabled = false,
   });
 
   static const localGhana = AsmAppConfig(
@@ -115,6 +116,19 @@ final class AsmAppConfig {
   final MarketConfig market;
   final CapabilityConfig capabilities;
   final MobileIntegrationDependencyConfig mobileIntegrationDependencies;
+  final bool localQaEnabled;
+}
+
+abstract final class LocalQaFlagResolver {
+  static const environmentKey = 'ASM_ENABLE_LOCAL_QA';
+
+  static bool resolve(String? value) {
+    final normalized = value?.trim();
+    return switch (normalized) {
+      'true' || 'TRUE' || '1' || 'yes' => true,
+      _ => false,
+    };
+  }
 }
 
 final class AsmConfigurationException implements Exception {
@@ -196,22 +210,28 @@ abstract final class AsmAppConfigLoader {
       'ASM_MARKET',
       defaultValue: defaultMarketValue,
     );
+    const localQaValue = String.fromEnvironment(
+      LocalQaFlagResolver.environmentKey,
+    );
 
     return fromValues(
       environmentValue: environmentValue,
       marketValue: marketValue,
+      localQaValue: localQaValue,
     );
   }
 
   static AsmAppConfig fromValues({
     String environmentValue = defaultEnvironmentValue,
     String marketValue = defaultMarketValue,
+    String? localQaValue,
     MarketRegistry? registry,
   }) {
     return AsmAppConfig(
       environment: RuntimeEnvironmentResolver.resolve(environmentValue),
       market: MarketResolver(registry: registry).resolve(marketValue),
       capabilities: const CapabilityConfig(),
+      localQaEnabled: LocalQaFlagResolver.resolve(localQaValue),
     );
   }
 }

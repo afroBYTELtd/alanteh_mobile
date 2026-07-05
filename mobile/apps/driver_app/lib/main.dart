@@ -50,6 +50,7 @@ class DriverApp extends StatelessWidget {
               configuration: configuration,
               authService: service,
               authTokenStore: tokenStore,
+              localQaEnabled: configuration.localQaEnabled,
             )
           : DriverShell(configuration: configuration),
     );
@@ -61,12 +62,14 @@ class DriverLoginShell extends StatefulWidget {
     required this.authService,
     required this.authTokenStore,
     this.configuration = AsmAppConfig.localGhana,
+    this.localQaEnabled = false,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final AuthService authService;
   final AuthTokenStore authTokenStore;
+  final bool localQaEnabled;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -116,9 +119,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     super.dispose();
   }
 
-  void _continueLocalDemo() {
+  Future<void> _continueLocalDemo() async {
     final form = _formKey.currentState;
     if (form == null || !form.validate()) {
+      return;
+    }
+
+    await widget.authTokenStore.clearTokens();
+    if (!mounted) {
       return;
     }
 
@@ -126,6 +134,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() {
       _loginError = null;
       _localDemoOpened = true;
+      _signedIn = false;
     });
   }
 
@@ -320,15 +329,17 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                 label: _isSigningIn ? 'Signing in...' : 'Sign in',
               ),
               const SizedBox(height: AsmSpacing.space8),
-              AsmPrimaryActionButton(
-                key: const Key('driver-continue-local-demo'),
-                onPressed: _isSigningIn ? null : _continueLocalDemo,
-                variant: AsmActionButtonVariant.text,
-                icon: Icons.play_arrow_outlined,
-                label: 'Continue without signing in',
-                minimumHeight: 48,
-              ),
-              const SizedBox(height: AsmSpacing.space8),
+              if (widget.localQaEnabled) ...[
+                AsmPrimaryActionButton(
+                  key: const Key('driver-continue-local-demo'),
+                  onPressed: _isSigningIn ? null : _continueLocalDemo,
+                  variant: AsmActionButtonVariant.text,
+                  icon: Icons.play_arrow_outlined,
+                  label: 'Continue without signing in',
+                  minimumHeight: 48,
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+              ],
               AsmPrimaryActionButton(
                 key: const Key('driver-clear-form'),
                 onPressed: _isSigningIn ? null : _clearForm,

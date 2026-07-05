@@ -89,7 +89,7 @@ void main() {
     );
     expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
-    expect(find.text('Continue without signing in'), findsOneWidget);
+    expect(find.text('Continue without signing in'), findsNothing);
     expect(find.text('Clear form'), findsOneWidget);
     expect(find.text('Create account'), findsNothing);
     expect(find.text('Open public account'), findsNothing);
@@ -129,6 +129,43 @@ void main() {
           ?.text,
       isEmpty,
     );
+  });
+
+  testWidgets('driver login shows local QA entry only when enabled', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    await tester.pumpWidget(
+      DriverApp(
+        configuration: _localQaEnabledConfig,
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+
+    expect(find.text('Continue without signing in'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233241234567',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
+    await tester.pumpAndSettle();
+
+    expect(authApi.paths, isEmpty);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Off shift'), findsOneWidget);
   });
 
   testWidgets(
@@ -544,6 +581,7 @@ void main() {
     final authApi = _RecordingDriverAuthApiGateway();
     await tester.pumpWidget(
       DriverApp(
+        configuration: _localQaEnabledConfig,
         showLoginShell: true,
         authService: AuthService(
           apiGateway: authApi,
@@ -907,7 +945,12 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp(showLoginShell: true));
+    await tester.pumpWidget(
+      const DriverApp(
+        configuration: _localQaEnabledConfig,
+        showLoginShell: true,
+      ),
+    );
 
     for (final removedText in _removedDriverTexts) {
       expect(find.text(removedText), findsNothing);
@@ -1105,6 +1148,7 @@ void main() {
       final authApi = _RecordingDriverAuthApiGateway();
       await tester.pumpWidget(
         DriverApp(
+          configuration: _localQaEnabledConfig,
           showLoginShell: true,
           authService: AuthService(
             apiGateway: authApi,
@@ -1255,6 +1299,13 @@ Map<String, Object?> _driverLoginResponse({Object? accountType = 'driver'}) {
   }
   return response;
 }
+
+const _localQaEnabledConfig = AsmAppConfig(
+  environment: RuntimeEnvironment.local,
+  market: MarketConfig.ghanaAccra,
+  capabilities: CapabilityConfig(),
+  localQaEnabled: true,
+);
 
 const _removedDriverTexts = [
   'ASM DRIVER',

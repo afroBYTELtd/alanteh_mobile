@@ -157,6 +157,54 @@ void main() {
       expect(compileTimeConfig.market, same(MarketConfig.ghanaAccra));
       expect(AsmAppConfigLoader.defaultEnvironmentValue, 'local');
       expect(AsmAppConfigLoader.defaultMarketValue, 'gh-accra');
+      expect(config.localQaEnabled, isFalse);
+      expect(compileTimeConfig.localQaEnabled, isA<bool>());
+      expect(
+        compileTimeConfig.localQaEnabled,
+        LocalQaFlagResolver.resolve(
+          const String.fromEnvironment(LocalQaFlagResolver.environmentKey),
+        ),
+      );
+    });
+
+    test('parses explicit local QA true values only', () {
+      for (final value in ['true', 'TRUE', '1', 'yes']) {
+        expect(
+          AsmAppConfigLoader.fromValues(localQaValue: value).localQaEnabled,
+          isTrue,
+          reason: value,
+        );
+        expect(LocalQaFlagResolver.resolve(value), isTrue, reason: value);
+      }
+    });
+
+    test(
+      'treats missing, empty, false, and invalid local QA values as disabled',
+      () {
+        for (final value in <String?>[
+          null,
+          '',
+          ' ',
+          'false',
+          'FALSE',
+          '0',
+          'no',
+          'enabled',
+          'True',
+          'YES',
+        ]) {
+          expect(
+            AsmAppConfigLoader.fromValues(localQaValue: value).localQaEnabled,
+            isFalse,
+            reason: '$value',
+          );
+          expect(LocalQaFlagResolver.resolve(value), isFalse, reason: '$value');
+        }
+      },
+    );
+
+    test('exposes stable local QA dart-define key', () {
+      expect(LocalQaFlagResolver.environmentKey, 'ASM_ENABLE_LOCAL_QA');
     });
 
     test('rejects blank and unknown environments with stable messages', () {
