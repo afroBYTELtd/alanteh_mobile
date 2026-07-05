@@ -48,13 +48,13 @@ class PassengerHome extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AsmScreenHeader(
-            leading: const AsmAppBrandMark(),
-            title: 'ALANTEH',
-            titleStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
+          Image.asset(
+            'assets/brand/alanteh_header_dark.png',
+            key: const Key('passenger-home-brand-logo'),
+            height: 36,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            semanticLabel: 'ALANTEH passenger logo',
           ),
           const SizedBox(height: AsmSpacing.space12),
           AsmLocalMapPreviewSurface(

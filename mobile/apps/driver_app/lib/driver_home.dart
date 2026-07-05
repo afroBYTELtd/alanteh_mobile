@@ -24,7 +24,6 @@ class DriverHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final marketLabel = market.countryName;
     final shiftLabel = isOnShift ? 'On shift' : 'Off shift';
 
@@ -40,60 +39,7 @@ class DriverHome extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AsmScreenHeader(
-            leading: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: colors.primary,
-                borderRadius: BorderRadius.circular(AsmRadii.radius8),
-              ),
-              child: const Icon(
-                Icons.electric_car_outlined,
-                color: AsmColors.driverScaffold,
-              ),
-            ),
-            title: 'ALANTEH',
-            subtitle: 'Field workspace',
-            compact: true,
-            titleStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-            subtitleStyle: const TextStyle(color: Color(0xFFAEB8BD)),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (onSignOut != null) ...[
-                  TextButton.icon(
-                    key: const Key('driver-sign-out'),
-                    onPressed: onSignOut,
-                    icon: const Icon(Icons.exit_to_app_outlined, size: 16),
-                    label: const Text('Sign out'),
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AsmColors.driverPanelMuted,
-                    borderRadius: BorderRadius.circular(AsmRadii.radius6),
-                  ),
-                  child: Text(
-                    shiftLabel,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _DriverHomeBrandHeader(shiftLabel: shiftLabel, onSignOut: onSignOut),
           const SizedBox(height: 64),
           const Icon(
             Icons.verified_user_outlined,
@@ -178,6 +124,75 @@ class DriverHome extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DriverHomeBrandHeader extends StatelessWidget {
+  const _DriverHomeBrandHeader({
+    required this.shiftLabel,
+    required this.onSignOut,
+  });
+
+  final String shiftLabel;
+  final VoidCallback? onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Image.asset(
+                'assets/brand/alanteh_header_white.png',
+                key: const Key('driver-home-brand-logo'),
+                height: 34,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+                semanticLabel: 'ALANTEH driver logo',
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Field workspace',
+                style: TextStyle(color: Color(0xFFAEB8BD)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AsmSpacing.space12),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onSignOut != null) ...[
+              TextButton.icon(
+                key: const Key('driver-sign-out'),
+                onPressed: onSignOut,
+                icon: const Icon(Icons.exit_to_app_outlined, size: 16),
+                label: const Text('Sign out'),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: AsmColors.driverPanelMuted,
+                borderRadius: BorderRadius.circular(AsmRadii.radius6),
+              ),
+              child: Text(
+                shiftLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
