@@ -241,7 +241,7 @@ void main() {
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Off shift'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsOneWidget);
     expect(find.text('Local QA trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
   });
@@ -275,6 +275,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(authApi.paths, <String>[AuthService.tokenPath]);
+      expect(
+        find.text('Control Center will confirm your duty status.'),
+        findsOneWidget,
+      );
+      expect(find.text('Local QA: Off shift'), findsNothing);
+      expect(find.text('Local QA: On shift'), findsNothing);
+      expect(find.byKey(const Key('open-readiness')), findsNothing);
+      expect(find.text('Local QA readiness preview'), findsNothing);
+      expect(find.text("I'm ready"), findsNothing);
       expect(find.text('No trip assigned yet.'), findsOneWidget);
       expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
       expect(find.text('New trip'), findsNothing);
@@ -326,7 +335,14 @@ void main() {
       expect(await store.readAccessToken(), 'driver-access-token');
       expect(await store.readRefreshToken(), 'driver-refresh-token');
       expect(find.text('Approved drivers only'), findsOneWidget);
-      expect(find.text('Off shift'), findsOneWidget);
+      expect(
+        find.text('Control Center will confirm your duty status.'),
+        findsOneWidget,
+      );
+      expect(find.text('Local QA: Off shift'), findsNothing);
+      expect(find.text('Local QA: On shift'), findsNothing);
+      expect(find.byKey(const Key('open-readiness')), findsNothing);
+      expect(find.text('Local QA readiness preview'), findsNothing);
       expect(find.text('No trip assigned yet.'), findsOneWidget);
       expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
       expect(find.text('New trip'), findsNothing);
@@ -692,7 +708,7 @@ void main() {
     },
   );
 
-  testWidgets('continue without signing in remains separate local QA path', (
+  testWidgets('continue without signing in remains separate local QA readiness path', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
@@ -723,10 +739,10 @@ void main() {
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Off shift'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsOneWidget);
   });
 
-  testWidgets('navigates the configured approved-driver field shell', (
+  testWidgets('navigates the configured approved-driver local QA field shell', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -737,11 +753,11 @@ void main() {
     expect(find.byKey(const Key('driver-home-brand-logo')), findsOneWidget);
     expect(find.text('Field workspace'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Off shift'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsOneWidget);
     expect(find.text('Ghana'), findsOneWidget);
     expect(find.text('No trip assigned yet.'), findsOneWidget);
     expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
-    expect(find.text('Start shift check'), findsOneWidget);
+    expect(find.text('Local QA readiness preview'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
     expect(find.text('Local QA trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
@@ -768,7 +784,7 @@ void main() {
     expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
   });
 
-  testWidgets('Driver shell exposes existing field areas', (tester) async {
+  testWidgets('Driver shell exposes local QA readiness and existing field areas', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(
       const DriverApp(configuration: _localQaEnabledConfig),
@@ -802,7 +818,9 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
     await tester.tap(find.byKey(const Key('open-readiness')));
@@ -863,15 +881,17 @@ void main() {
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
-  testWidgets('ready button returns home and marks the driver on shift', (
+  testWidgets('local QA ready button returns home and marks the preview on shift', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
-    expect(find.text('Off shift'), findsOneWidget);
-    expect(find.text('On shift'), findsNothing);
+    expect(find.text('Local QA: Off shift'), findsOneWidget);
+    expect(find.text('Local QA: On shift'), findsNothing);
 
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
@@ -901,8 +921,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('On shift'), findsOneWidget);
-    expect(find.text('Off shift'), findsNothing);
+    expect(find.text('Local QA: On shift'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsNothing);
   });
 
   testWidgets('validates, reviews, edits, closes, and resets a concern draft', (
@@ -977,7 +997,9 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    await tester.pumpWidget(
+      const DriverApp(configuration: _localQaEnabledConfig),
+    );
     await _openDriverLocalDemo(tester);
 
     await tester.tap(find.byKey(const Key('open-readiness')));
@@ -1156,11 +1178,13 @@ void main() {
           ).copyWith(textScaler: const TextScaler.linear(1.5)),
           child: child!,
         ),
-        home: const DriverShell(),
+        home: const DriverShell(localQaEnabled: true),
       ),
     );
 
     await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-readiness')), findsOneWidget);
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('Shift check'), findsOneWidget);
@@ -1205,7 +1229,7 @@ void main() {
     expect(authApi.paths, isEmpty);
   });
 
-  testWidgets('driver startup with stored tokens opens home off shift', (
+  testWidgets('driver startup with stored tokens opens live-safe home', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
@@ -1226,7 +1250,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Off shift'), findsOneWidget);
+    expect(
+      find.text('Control Center will confirm your duty status.'),
+      findsOneWidget,
+    );
+    expect(find.text('Local QA: Off shift'), findsNothing);
+    expect(find.text('Local QA: On shift'), findsNothing);
+    expect(find.byKey(const Key('open-readiness')), findsNothing);
+    expect(find.text('Local QA readiness preview'), findsNothing);
     expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
     expect(find.byKey(const Key('driver-sign-in')), findsNothing);
     expect(find.text('No trip assigned yet.'), findsOneWidget);
@@ -1272,7 +1303,7 @@ void main() {
   });
 
   testWidgets(
-    'driver sign out clears tokens, returns login, and resets shift',
+    'driver sign out clears tokens, returns login, and resets local QA shift',
     (tester) async {
       _useSurface(tester, const Size(430, 1000));
       final store = MemoryAuthTokenStore();
@@ -1301,7 +1332,7 @@ void main() {
       expect(await store.readAccessToken(), 'driver-access-token');
       expect(await store.readRefreshToken(), 'driver-refresh-token');
       expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
-      expect(find.text('Off shift'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
@@ -1313,7 +1344,7 @@ void main() {
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
-      expect(find.text('On shift'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('driver-sign-out')));
       await tester.pumpAndSettle();
@@ -1334,8 +1365,8 @@ void main() {
 
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
-      expect(find.text('Off shift'), findsOneWidget);
-      expect(find.text('On shift'), findsNothing);
+      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.text('Local QA trip preview'), findsOneWidget);
     },
   );
