@@ -61,6 +61,7 @@ class PassengerApp extends StatelessWidget {
             )
           : PassengerShell(
               configuration: configuration,
+              localQaEnabled: configuration.localQaEnabled,
               rideRequestSubmitter: resolvedRideRequestSubmitter,
             ),
     );
@@ -327,6 +328,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     if (_localQaOpened || _signedIn) {
       return PassengerShell(
         configuration: widget.configuration,
+        localQaEnabled: widget.configuration.localQaEnabled,
         rideRequestSubmitter: _rideRequestSubmitter,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,

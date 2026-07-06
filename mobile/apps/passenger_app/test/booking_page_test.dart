@@ -605,7 +605,12 @@ void main() {
   ) async {
     _useSurface(tester, const Size(430, 1000));
     final submitter = _FakeRideRequestSubmitter.success();
-    await tester.pumpWidget(PassengerApp(rideRequestSubmitter: submitter));
+    await tester.pumpWidget(
+      PassengerApp(
+        configuration: _localQaEnabledConfig,
+        rideRequestSubmitter: submitter,
+      ),
+    );
 
     FilledButton continueButton() => tester.widget<FilledButton>(
       find.byKey(const Key('continue-local-draft')),
@@ -1641,7 +1646,9 @@ void main() {
 
   testWidgets('clear route preserves session locations', (tester) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const PassengerApp());
+    await tester.pumpWidget(
+      const PassengerApp(configuration: _localQaEnabledConfig),
+    );
 
     await _selectLocation(
       tester,
@@ -1739,6 +1746,13 @@ const _noLiveFeatureTexts = [
 String _repeatedText(int length, String character) {
   return List<String>.filled(length, character).join();
 }
+
+const _localQaEnabledConfig = AsmAppConfig(
+  environment: RuntimeEnvironment.local,
+  market: MarketConfig.ghanaAccra,
+  capabilities: CapabilityConfig(),
+  localQaEnabled: true,
+);
 
 Future<void> _selectLocation(
   WidgetTester tester, {
