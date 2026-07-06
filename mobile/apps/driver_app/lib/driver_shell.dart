@@ -91,8 +91,8 @@ class _DriverShellState extends State<DriverShell> {
       ),
       1 => const AsmDemoPlaceholder(
         icon: Icons.route_outlined,
-        title: 'No trips yet',
-        message: 'Trip assignments will appear here.',
+        title: 'No assigned trips yet.',
+        message: 'The Control Center will contact you when a trip is ready.',
       ),
       _ => const AsmDemoPlaceholder(
         icon: Icons.support_agent_outlined,
