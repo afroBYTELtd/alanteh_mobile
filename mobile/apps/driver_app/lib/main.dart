@@ -286,7 +286,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
               Image.asset(
                 'assets/brand/alanteh_header_white.png',
                 key: const Key('driver-login-brand-logo'),
-                height: 52,
+                width: 176,
+                height: 56,
                 fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
                 semanticLabel: 'ALANTEH driver logo',

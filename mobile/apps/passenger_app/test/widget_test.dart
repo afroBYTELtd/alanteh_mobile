@@ -29,6 +29,12 @@ void main() {
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
     expect(find.byKey(const Key('passenger-login-brand-logo')), findsOneWidget);
+    final passengerLoginLogo = tester.widget<Image>(
+      find.byKey(const Key('passenger-login-brand-logo')),
+    );
+    expect(passengerLoginLogo.width, greaterThanOrEqualTo(160));
+    expect(passengerLoginLogo.width, lessThanOrEqualTo(190));
+    expect(passengerLoginLogo.fit, BoxFit.contain);
     expect(find.text('Passenger access'), findsOneWidget);
     expect(find.text('Sign in to ride'), findsOneWidget);
     expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
@@ -571,6 +577,12 @@ void main() {
     await _openPassengerAccess(tester);
 
     expect(find.byKey(const Key('passenger-home-brand-logo')), findsOneWidget);
+    final passengerHomeLogo = tester.widget<Image>(
+      find.byKey(const Key('passenger-home-brand-logo')),
+    );
+    expect(passengerHomeLogo.width, greaterThanOrEqualTo(160));
+    expect(passengerHomeLogo.width, lessThanOrEqualTo(190));
+    expect(passengerHomeLogo.fit, BoxFit.contain);
     expect(find.text('Book a ride'), findsOneWidget);
     expect(
       find.text(

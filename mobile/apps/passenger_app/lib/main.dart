@@ -384,7 +384,8 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
               Image.asset(
                 'assets/brand/alanteh_header_dark.png',
                 key: const Key('passenger-login-brand-logo'),
-                height: 48,
+                width: 176,
+                height: 56,
                 fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
                 semanticLabel: 'ALANTEH passenger logo',

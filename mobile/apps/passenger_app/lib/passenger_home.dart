@@ -55,7 +55,8 @@ class PassengerHome extends StatelessWidget {
           Image.asset(
             'assets/brand/alanteh_header_dark.png',
             key: const Key('passenger-home-brand-logo'),
-            height: 36,
+            width: 176,
+            height: 48,
             fit: BoxFit.contain,
             alignment: Alignment.centerLeft,
             semanticLabel: 'ALANTEH passenger logo',
