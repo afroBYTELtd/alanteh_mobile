@@ -189,10 +189,15 @@ class _PassengerShellState extends State<PassengerShell> {
         actionLabel: 'Book a ride',
         onActionPressed: () => setState(() => _selectedIndex = 0),
       ),
-      _ => const _PassengerPlaceholder(
-        icon: Icons.support_agent_outlined,
-        title: 'Support not connected',
-        message: 'Support is not available yet.',
+      _ => _PassengerPlaceholder(
+        icon: Icons.account_circle_outlined,
+        title: 'Passenger account',
+        message: 'Your account details are managed by the Control Center.',
+        actionLabel: widget.onSignOut == null ? null : 'Sign out',
+        actionKey: widget.onSignOut == null
+            ? null
+            : const Key('passenger-account-sign-out'),
+        onActionPressed: widget.onSignOut == null ? null : _signOut,
       ),
     };
   }
@@ -226,9 +231,9 @@ class _PassengerShellState extends State<PassengerShell> {
             label: 'Trips',
           ),
           AsmBottomNavigationDestination(
-            icon: Icon(Icons.support_agent_outlined),
-            selectedIcon: Icon(Icons.support_agent),
-            label: 'Support',
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle),
+            label: 'Account',
           ),
         ],
       ),
@@ -242,6 +247,7 @@ class _PassengerPlaceholder extends StatelessWidget {
     required this.title,
     required this.message,
     this.actionLabel,
+    this.actionKey,
     this.onActionPressed,
   });
 
@@ -249,6 +255,7 @@ class _PassengerPlaceholder extends StatelessWidget {
   final String title;
   final String message;
   final String? actionLabel;
+  final Key? actionKey;
   final VoidCallback? onActionPressed;
 
   @override
@@ -282,6 +289,7 @@ class _PassengerPlaceholder extends StatelessWidget {
             if (actionLabel != null && onActionPressed != null) ...[
               const SizedBox(height: AsmSpacing.space16),
               FilledButton(
+                key: actionKey,
                 onPressed: onActionPressed,
                 child: Text(actionLabel!),
               ),
