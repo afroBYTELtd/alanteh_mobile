@@ -248,7 +248,7 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Local QA: Off shift'), findsOneWidget);
-    expect(find.text('Local QA trip preview'), findsOneWidget);
+    expect(find.text('Local QA driver trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
   });
 
@@ -293,7 +293,7 @@ void main() {
       expect(find.text('No trip assigned yet.'), findsOneWidget);
       expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
       expect(find.text('New trip'), findsNothing);
-      expect(find.text('Local QA trip preview'), findsNothing);
+      expect(find.text('Local QA driver trip preview'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
       expect(await store.readAccessToken(), 'driver-access-token');
@@ -772,7 +772,7 @@ void main() {
     expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
     expect(find.text('Local QA readiness preview'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
-    expect(find.text('Local QA trip preview'), findsOneWidget);
+    expect(find.text('Local QA driver trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -781,9 +781,28 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips yet'), findsOneWidget);
-    expect(find.text('Trip assignments will appear here.'), findsOneWidget);
-    expect(find.text('Earnings'), findsNothing);
+    expect(find.text('No assigned trips yet.'), findsOneWidget);
+    expect(
+      find.text('The Control Center will contact you when a trip is ready.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('fake assigned trip'), findsNothing);
+    expect(find.textContaining('assigned trip card'), findsNothing);
+    expect(find.textContaining('fake active trip'), findsNothing);
+    expect(find.textContaining('active trip'), findsNothing);
+    expect(find.textContaining('fake completed trip'), findsNothing);
+    expect(find.textContaining('completed trip'), findsNothing);
+    expect(find.textContaining('fake passenger details'), findsNothing);
+    expect(find.textContaining('passenger details'), findsNothing);
+    expect(find.textContaining('fake ETA'), findsNothing);
+    expect(find.textContaining('ETA'), findsNothing);
+    expect(find.textContaining('fake fare'), findsNothing);
+    expect(find.textContaining('fare'), findsNothing);
+    expect(find.textContaining('fake earnings'), findsNothing);
+    expect(find.textContaining('earnings'), findsNothing);
+    expect(find.text('Accept trip'), findsNothing);
+    expect(find.text('Start trip'), findsNothing);
+    expect(find.text('Complete trip'), findsNothing);
 
     await tester.tap(find.text('Support'));
     await tester.pumpAndSettle();
@@ -808,7 +827,7 @@ void main() {
 
       expect(find.byKey(const Key('open-readiness')), findsOneWidget);
       expect(find.byKey(const Key('open-concern')), findsOneWidget);
-      expect(find.text('Local QA trip preview'), findsOneWidget);
+      expect(find.text('Local QA driver trip preview'), findsOneWidget);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('open-readiness')));
@@ -1077,8 +1096,14 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips yet'), findsOneWidget);
-    expect(find.text('Trip assignments will appear here.'), findsOneWidget);
+    expect(find.text('No assigned trips yet.'), findsOneWidget);
+    expect(
+      find.text('The Control Center will contact you when a trip is ready.'),
+      findsOneWidget,
+    );
+    expect(find.text('Accept trip'), findsNothing);
+    expect(find.text('Start trip'), findsNothing);
+    expect(find.text('Complete trip'), findsNothing);
   });
 
   testWidgets('declines a trip screen decision and returns to Driver Home', (
@@ -1426,7 +1451,7 @@ void main() {
       expect(await store.readRefreshToken(), isNull);
       expect(find.text('Local QA: Off shift'), findsOneWidget);
       expect(find.text('Local QA: On shift'), findsNothing);
-      expect(find.text('Local QA trip preview'), findsOneWidget);
+      expect(find.text('Local QA driver trip preview'), findsOneWidget);
     },
   );
 }
