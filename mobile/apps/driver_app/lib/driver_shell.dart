@@ -94,10 +94,8 @@ class _DriverShellState extends State<DriverShell> {
         title: 'No assigned trips yet.',
         message: 'The Control Center will contact you when a trip is ready.',
       ),
-      _ => const AsmDemoPlaceholder(
-        icon: Icons.support_agent_outlined,
-        title: 'Support not connected',
-        message: 'Support is not available yet.',
+      _ => _DriverAccountPage(
+        onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
     };
   }
@@ -123,11 +121,64 @@ class _DriverShellState extends State<DriverShell> {
             label: 'Trips',
           ),
           NavigationDestination(
-            icon: Icon(Icons.support_agent_outlined),
-            selectedIcon: Icon(Icons.support_agent),
-            label: 'Support',
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle),
+            label: 'Account',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DriverAccountPage extends StatelessWidget {
+  const _DriverAccountPage({required this.onSignOut});
+
+  final Future<void> Function()? onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return AsmScreenSurface(
+      padding: const EdgeInsets.all(AsmSpacing.space24),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.account_circle_outlined,
+              size: 48,
+              color: colors.primary,
+            ),
+            const SizedBox(height: AsmSpacing.space16),
+            Text(
+              'Driver account',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              'Your driver account details are managed by the Control Center.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: colors.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+            if (onSignOut != null) ...[
+              const SizedBox(height: AsmSpacing.space16),
+              FilledButton.icon(
+                key: const Key('driver-account-sign-out'),
+                onPressed: onSignOut,
+                icon: const Icon(Icons.exit_to_app_outlined),
+                label: const Text('Sign out'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

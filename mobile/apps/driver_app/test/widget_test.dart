@@ -804,10 +804,29 @@ void main() {
     expect(find.text('Start trip'), findsNothing);
     expect(find.text('Complete trip'), findsNothing);
 
-    await tester.tap(find.text('Support'));
+    await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
-    expect(find.text('Support not connected'), findsOneWidget);
-    expect(find.text('Support is not available yet.'), findsOneWidget);
+    expect(find.text('Driver account'), findsOneWidget);
+    expect(
+      find.text(
+        'Your driver account details are managed by the Control Center.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Sign out'), findsNothing);
+    expect(find.textContaining('fake driver name'), findsNothing);
+    expect(find.textContaining('driver phone'), findsNothing);
+    expect(find.textContaining('fake phone number'), findsNothing);
+    expect(find.textContaining('vehicle assignment'), findsNothing);
+    expect(find.textContaining('fake earnings'), findsNothing);
+    expect(find.textContaining('earnings'), findsNothing);
+    expect(find.textContaining('wallet'), findsNothing);
+    expect(find.textContaining('payout'), findsNothing);
+    expect(find.textContaining('rating'), findsNothing);
+    expect(find.textContaining('license'), findsNothing);
+    expect(find.textContaining('document'), findsNothing);
+    expect(find.textContaining('support ticket'), findsNothing);
+    expect(find.textContaining('verification'), findsNothing);
 
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
@@ -1306,6 +1325,31 @@ void main() {
     expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
     expect(find.text('New trip'), findsNothing);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Driver account'), findsOneWidget);
+    expect(
+      find.text(
+        'Your driver account details are managed by the Control Center.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('driver-account-sign-out')), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.textContaining('fake driver name'), findsNothing);
+    expect(find.textContaining('driver phone'), findsNothing);
+    expect(find.textContaining('fake phone number'), findsNothing);
+    expect(find.textContaining('vehicle assignment'), findsNothing);
+    expect(find.textContaining('fake earnings'), findsNothing);
+    expect(find.textContaining('earnings'), findsNothing);
+    expect(find.textContaining('wallet'), findsNothing);
+    expect(find.textContaining('payout'), findsNothing);
+    expect(find.textContaining('rating'), findsNothing);
+    expect(find.textContaining('license'), findsNothing);
+    expect(find.textContaining('document'), findsNothing);
+    expect(find.textContaining('support ticket'), findsNothing);
+    expect(find.textContaining('verification'), findsNothing);
     expect(authApi.paths, isEmpty);
   });
 
@@ -1370,7 +1414,16 @@ void main() {
 
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('driver-sign-out')));
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Driver account'), findsOneWidget);
+    expect(
+      find.text(
+        'Your driver account details are managed by the Control Center.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('driver-account-sign-out')));
     await tester.pumpAndSettle();
 
     expect(await store.readAccessToken(), isNull);

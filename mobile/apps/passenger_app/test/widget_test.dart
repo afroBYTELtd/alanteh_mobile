@@ -630,10 +630,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
 
-    await tester.tap(find.text('Support'));
+    await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
-    expect(find.text('Support not connected'), findsOneWidget);
-    expect(find.text('Support is not available yet.'), findsOneWidget);
+    expect(find.text('Passenger account'), findsOneWidget);
+    expect(
+      find.text('Your account details are managed by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign out'), findsNothing);
+    expect(find.byKey(const Key('passenger-account-sign-out')), findsNothing);
+    expect(find.textContaining('fake passenger name'), findsNothing);
+    expect(find.textContaining('passenger phone'), findsNothing);
+    expect(find.textContaining('fake phone number'), findsNothing);
+    expect(find.textContaining('wallet'), findsNothing);
+    expect(find.textContaining('payment method'), findsNothing);
+    expect(find.textContaining('ride statistics'), findsNothing);
+    expect(find.textContaining('support ticket'), findsNothing);
+    expect(find.textContaining('verification'), findsNothing);
 
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
@@ -747,6 +760,24 @@ void main() {
     expect(find.textContaining('/api/driver'), findsNothing);
     expect(find.textContaining('GoogleMap'), findsNothing);
     expect(find.textContaining('geolocator'), findsNothing);
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Passenger account'), findsOneWidget);
+    expect(
+      find.text('Your account details are managed by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign out'), findsWidgets);
+    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
+    expect(find.textContaining('fake passenger name'), findsNothing);
+    expect(find.textContaining('passenger phone'), findsNothing);
+    expect(find.textContaining('fake phone number'), findsNothing);
+    expect(find.textContaining('wallet'), findsNothing);
+    expect(find.textContaining('payment method'), findsNothing);
+    expect(find.textContaining('ride statistics'), findsNothing);
+    expect(find.textContaining('support ticket'), findsNothing);
+    expect(find.textContaining('verification'), findsNothing);
   });
 
   testWidgets('Passenger startup without stored tokens opens login', (
@@ -785,6 +816,24 @@ void main() {
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
     expect(find.byKey(const Key('passenger-sign-in')), findsNothing);
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Passenger account'), findsOneWidget);
+    expect(
+      find.text('Your account details are managed by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign out'), findsWidgets);
+    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
+    expect(find.textContaining('fake passenger name'), findsNothing);
+    expect(find.textContaining('passenger phone'), findsNothing);
+    expect(find.textContaining('fake phone number'), findsNothing);
+    expect(find.textContaining('wallet'), findsNothing);
+    expect(find.textContaining('payment method'), findsNothing);
+    expect(find.textContaining('ride statistics'), findsNothing);
+    expect(find.textContaining('support ticket'), findsNothing);
+    expect(find.textContaining('verification'), findsNothing);
     expect(api.paths, isEmpty);
   });
 
@@ -894,7 +943,17 @@ void main() {
     expect(await store.readRefreshToken(), 'passenger-refresh-token');
     expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('passenger-sign-out')));
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Passenger account'), findsOneWidget);
+    expect(
+      find.text('Your account details are managed by the Control Center.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign out'), findsWidgets);
+    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('passenger-account-sign-out')));
     await tester.pumpAndSettle();
 
     expect(await store.readAccessToken(), isNull);
