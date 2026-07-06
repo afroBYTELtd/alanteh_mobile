@@ -108,10 +108,43 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return;
     }
 
+    final refreshToken = (await widget.authTokenStore.readRefreshToken())
+        ?.trim();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      setState(() {
+        _signedIn = true;
+        _isSigningIn = false;
+        _loginError = null;
+      });
+      return;
+    }
+
+    final state = await widget.authService.refresh();
+    if (!mounted || _localDemoOpened) {
+      return;
+    }
+
+    if (state.isAuthenticated &&
+        state.session?.accountType == AuthAccountType.driver) {
+      setState(() {
+        _signedIn = true;
+        _isSigningIn = false;
+        _loginError = null;
+      });
+      return;
+    }
+
+    await widget.authTokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
-      _signedIn = true;
+      _signedIn = false;
       _isSigningIn = false;
-      _loginError = null;
+      _loginError = state.error?.message == authAppContextErrorMessage
+          ? authAppContextErrorMessage
+          : null;
     });
   }
 
@@ -165,7 +198,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
       _pinController.clear();
 
-      if (state.isAuthenticated) {
+      if (state.isAuthenticated &&
+          state.session?.accountType == AuthAccountType.driver) {
         setState(() {
           _isSigningIn = false;
           _signedIn = true;

@@ -81,26 +81,26 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
 
     expect(api.paths, <String>[AuthService.tokenPath]);
     expect(api.bodies.single, <String, Object?>{
-      'phone': '+233551234567',
-      'pin': '1234',
+      'phone': '+233000000000',
+      'pin': '0000',
     });
     expect(api.bodies.single.keys, isNot(contains('password')));
     expect(api.bodies.single.keys, isNot(contains('email')));
     expect(await store.readAccessToken(), 'passenger-access-token');
     expect(await store.readRefreshToken(), 'passenger-refresh-token');
-    expect(await store.readAccessToken(), isNot('1234'));
-    expect(await store.readRefreshToken(), isNot('1234'));
+    expect(await store.readAccessToken(), isNot('0000'));
+    expect(await store.readRefreshToken(), isNot('0000'));
 
     expect(find.text('Book a ride'), findsOneWidget);
     expect(
@@ -150,7 +150,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+23355 1234567',
+      '+23300 0000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
@@ -167,7 +167,7 @@ void main() {
           .widget<TextFormField>(find.byKey(const Key('passenger-phone-field')))
           .controller
           ?.text,
-      '+23355 1234567',
+      '+23300 0000000',
     );
     expect(
       tester
@@ -226,11 +226,11 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('passenger-phone-field')),
-        '+233551234567',
+        '+233000000000',
       );
       await tester.enterText(
         find.byKey(const Key('passenger-pin-field')),
-        '1234',
+        '0000',
       );
       await tester.tap(find.byKey(const Key('passenger-sign-in')));
       await tester.pumpAndSettle();
@@ -255,11 +255,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -297,11 +297,11 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('passenger-phone-field')),
-        '+233551234567',
+        '+233000000000',
       );
       await tester.enterText(
         find.byKey(const Key('passenger-pin-field')),
-        '1234',
+        '0000',
       );
       await tester.tap(find.byKey(const Key('passenger-sign-in')));
       await tester.pump();
@@ -344,11 +344,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -383,11 +383,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -426,11 +426,11 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('passenger-phone-field')),
-        '+233551234567',
+        '+233000000000',
       );
       await tester.enterText(
         find.byKey(const Key('passenger-pin-field')),
-        '1234',
+        '0000',
       );
       await tester.tap(find.byKey(const Key('passenger-sign-in')));
       await tester.pumpAndSettle();
@@ -471,11 +471,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -515,11 +515,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -545,11 +545,11 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('passenger-phone-field')),
-        '+233551234567',
+        '+233000000000',
       );
       await tester.enterText(
         find.byKey(const Key('passenger-pin-field')),
-        '1234',
+        '0000',
       );
       await tester.tap(find.byKey(const Key('passenger-sign-in')));
       await tester.pumpAndSettle();
@@ -752,6 +752,38 @@ void main() {
     expect(api.paths, isEmpty);
   });
 
+  testWidgets('Passenger restored driver and staff sessions clear safely', (
+    tester,
+  ) async {
+    for (final accountType in <String>['driver', 'staff']) {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-cross-app-access-$accountType',
+          refreshToken: 'stored-cross-app-refresh-$accountType',
+        ),
+      );
+      final api = _FakeAuthApiGateway(
+        responseData: _loginResponse(accountType: accountType),
+      );
+
+      await tester.pumpWidget(_loginTestApp(api: api, store: store));
+      await tester.pumpAndSettle();
+
+      expect(api.paths, <String>[AuthService.refreshPath]);
+      expect(api.bodies.single, <String, Object?>{
+        'refresh': 'stored-cross-app-refresh-$accountType',
+      });
+      expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+      expect(find.text('Book a ride'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('Passenger sign out after restored startup clears next startup', (
     tester,
   ) async {
@@ -813,11 +845,11 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
-      '+233551234567',
+      '+233000000000',
     );
     await tester.enterText(
       find.byKey(const Key('passenger-pin-field')),
-      '1234',
+      '0000',
     );
     await tester.tap(find.byKey(const Key('passenger-sign-in')));
     await tester.pumpAndSettle();
@@ -989,9 +1021,9 @@ Future<void> _openPassengerAccess(WidgetTester tester) async {
 
   await tester.enterText(
     find.byKey(const Key('passenger-phone-field')),
-    '+233551234567',
+    '+233000000000',
   );
-  await tester.enterText(find.byKey(const Key('passenger-pin-field')), '1234');
+  await tester.enterText(find.byKey(const Key('passenger-pin-field')), '0000');
   await tester.tap(find.byKey(const Key('passenger-sign-in')));
   await tester.pumpAndSettle();
 }

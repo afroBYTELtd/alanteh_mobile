@@ -137,10 +137,42 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       return;
     }
 
+    final refreshToken = (await _tokenStore.readRefreshToken())?.trim();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      setState(() {
+        _signedIn = true;
+        _isSigningIn = false;
+        _loginErrorMessage = null;
+      });
+      return;
+    }
+
+    final state = await _authService.refresh();
+    if (!mounted || _localQaOpened) {
+      return;
+    }
+
+    if (state.isAuthenticated &&
+        state.session?.accountType == AuthAccountType.passenger) {
+      setState(() {
+        _signedIn = true;
+        _isSigningIn = false;
+        _loginErrorMessage = null;
+      });
+      return;
+    }
+
+    await _tokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
-      _signedIn = true;
+      _signedIn = false;
       _isSigningIn = false;
-      _loginErrorMessage = null;
+      _loginErrorMessage = state.error?.message == authAppContextErrorMessage
+          ? authAppContextErrorMessage
+          : null;
     });
   }
 

@@ -103,7 +103,7 @@ void main() {
   testWidgets('local demo badge supports custom text and colors', (
     WidgetTester tester,
   ) async {
-    const background = Color(0xFF123456);
+    const background = Color(0xFF000006);
     const foreground = Color(0xFFABCDEF);
 
     await tester.pumpWidget(
@@ -198,7 +198,7 @@ void main() {
   testWidgets('app brand mark custom size color and radius render safely', (
     WidgetTester tester,
   ) async {
-    const background = Color(0xFF123456);
+    const background = Color(0xFF000006);
     const iconColor = Color(0xFFABCDEF);
 
     await tester.pumpWidget(
@@ -1361,9 +1361,9 @@ void main() {
     WidgetTester tester,
   ) async {
     const background = Color(0xFFE8F5EF);
-    const iconColor = Color(0xFF123456);
+    const iconColor = Color(0xFF000006);
     const textStyle = TextStyle(
-      color: Color(0xFF654321),
+      color: Color(0xFF659876),
       fontWeight: FontWeight.w800,
     );
 

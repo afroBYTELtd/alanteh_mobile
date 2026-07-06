@@ -992,14 +992,14 @@ void main() {
 
     final result = await submitter.submit(
       _validDraft(),
-      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
     );
 
     expect(result.requestReference, 'RR-APP-3A9F1C2B4E5D');
     expect(client.wasCalled, isTrue);
     expect(
       client.lastSubmission?.idempotencyKey,
-      'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+      'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
     );
     expect(client.lastSubmission?.pickupLocation, 'Osu');
     expect(client.lastSubmission?.destination, 'Airport');
@@ -1096,14 +1096,14 @@ void main() {
 
     final result = await submitter.submit(
       _validDraft(),
-      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+      idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
     );
 
     expect(result.requestReference, 'RR-APP-3A9F1C2B4E5D');
     expect(client.wasCalled, isTrue);
     expect(
       client.lastSubmission?.idempotencyKey,
-      'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+      'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
     );
     expect(client.lastSubmission?.pickupLocation, 'Osu');
     expect(client.lastSubmission?.destination, 'Airport');
