@@ -152,7 +152,7 @@ void main() {
 
       final response = await client.submitPassengerRideRequest(
         PassengerRideRequestSubmission(
-          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
           pickupLocation: ' Kempinski Hotel Gold Coast City, Accra ',
           destination: 'Kotoka International Airport',
           passengerCount: 2,
@@ -170,7 +170,7 @@ void main() {
       );
       expect(
         _header(adapter.lastOptions, 'Idempotency-Key'),
-        'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+        'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
       );
       expect(adapter.lastOptions.data, {
         'pickup_location': 'Kempinski Hotel Gold Coast City, Accra',
@@ -207,7 +207,7 @@ void main() {
 
       final response = await client.submitPassengerRideRequest(
         PassengerRideRequestSubmission(
-          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
           pickupLocation: 'Osu',
           destination: 'Airport',
           passengerCount: 1,
@@ -235,7 +235,7 @@ void main() {
             token: 'passenger-access-token',
           ).submitPassengerRideRequest(
             PassengerRideRequestSubmission(
-              idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+              idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
               pickupLocation: 'Osu',
               destination: 'Airport',
               passengerCount: 1,
@@ -264,7 +264,7 @@ void main() {
               token: 'passenger-access-token',
             ).submitPassengerRideRequest(
               PassengerRideRequestSubmission(
-                idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+                idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
                 pickupLocation: 'Osu',
                 destination: 'Airport',
                 passengerCount: 1,
@@ -288,7 +288,7 @@ void main() {
       );
       expect(
         () => PassengerRideRequestSubmission(
-          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef1234567890',
+          idempotencyKey: 'APP-a1b2c3d4-e5f6-4890-abcd-ef0000067890',
           pickupLocation: 'Osu',
           destination: 'Airport',
           passengerCount: 7,

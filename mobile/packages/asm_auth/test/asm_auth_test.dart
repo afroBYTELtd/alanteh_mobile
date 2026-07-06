@@ -40,22 +40,22 @@ void main() {
 
   group('CC4A phone and PIN validation helpers', () {
     test('supports Ghana +233 phone and exact 4 digit PIN only', () {
-      expect(isValidGhanaPhoneNumber('+233551234567'), isTrue);
-      expect(isValidGhanaPhoneNumber('+233241234567'), isTrue);
+      expect(isValidGhanaPhoneNumber('+233000000000'), isTrue);
+      expect(isValidGhanaPhoneNumber('+233000000001'), isTrue);
       expect(isValidGhanaPhoneNumber('0200000000'), isFalse);
-      expect(isValidGhanaPhoneNumber('+23355123456'), isFalse);
-      expect(isValidGhanaPhoneNumber('+2335512345670'), isFalse);
+      expect(isValidGhanaPhoneNumber('+23355000006'), isFalse);
+      expect(isValidGhanaPhoneNumber('+2330000000000'), isFalse);
       expect(isValidGhanaPhoneNumber('+23355abc4567'), isFalse);
-      expect(isValidGhanaPhoneNumber('+23355 1234567'), isFalse);
-      expect(isValidGhanaPhoneNumber(' +233551234567 '), isFalse);
+      expect(isValidGhanaPhoneNumber('+23300 0000000'), isFalse);
+      expect(isValidGhanaPhoneNumber(' +233000000000 '), isFalse);
 
-      expect(isValidPin('1234'), isTrue);
-      expect(isValidPin('4321'), isTrue);
+      expect(isValidPin('0000'), isTrue);
+      expect(isValidPin('9876'), isTrue);
       expect(isValidPin('123'), isFalse);
-      expect(isValidPin('12345'), isFalse);
+      expect(isValidPin('00000'), isFalse);
       expect(isValidPin('12a4'), isFalse);
       expect(isValidPin('12 4'), isFalse);
-      expect(isValidPin(' 1234 '), isFalse);
+      expect(isValidPin(' 0000 '), isFalse);
     });
 
     test('returns exact user-facing validation messages', () {
@@ -69,18 +69,18 @@ void main() {
         loginPhoneFormatMessage,
       );
       expect(
-        validateGhanaPhoneNumberForLogin('+23355 1234567'),
+        validateGhanaPhoneNumberForLogin('+23300 0000000'),
         loginPhoneFormatMessage,
       );
-      expect(validateGhanaPhoneNumberForLogin('+233551234567'), isNull);
+      expect(validateGhanaPhoneNumberForLogin('+233000000000'), isNull);
 
       expect(validatePinForLogin(''), loginPinRequiredMessage);
       expect(validatePinForLogin('   '), loginPinRequiredMessage);
       expect(validatePinForLogin('123'), loginPinFormatMessage);
-      expect(validatePinForLogin('12345'), loginPinFormatMessage);
+      expect(validatePinForLogin('00000'), loginPinFormatMessage);
       expect(validatePinForLogin('12a4'), loginPinFormatMessage);
-      expect(validatePinForLogin(' 1234 '), loginPinFormatMessage);
-      expect(validatePinForLogin('1234'), isNull);
+      expect(validatePinForLogin(' 0000 '), loginPinFormatMessage);
+      expect(validatePinForLogin('0000'), isNull);
     });
   });
 
@@ -158,7 +158,7 @@ void main() {
       );
 
       await expectLater(
-        service.login('', '1234'),
+        service.login('', '0000'),
         throwsA(
           isA<AuthException>().having(
             (error) => error.message,
@@ -168,7 +168,7 @@ void main() {
         ),
       );
       await expectLater(
-        service.login('0200000000', '1234'),
+        service.login('0200000000', '0000'),
         throwsA(
           isA<AuthException>().having(
             (error) => error.message,
@@ -178,7 +178,7 @@ void main() {
         ),
       );
       await expectLater(
-        service.login('+233551234567', ''),
+        service.login('+233000000000', ''),
         throwsA(
           isA<AuthException>().having(
             (error) => error.message,
@@ -188,7 +188,7 @@ void main() {
         ),
       );
       await expectLater(
-        service.login('+233551234567', 'bad-pin'),
+        service.login('+233000000000', 'bad-pin'),
         throwsA(
           isA<AuthException>().having(
             (error) => error.message,
@@ -198,7 +198,7 @@ void main() {
         ),
       );
       await expectLater(
-        service.login('+233551234567', '1234 '),
+        service.login('+233000000000', '0000 '),
         throwsA(
           isA<AuthException>().having(
             (error) => error.message,
@@ -217,14 +217,14 @@ void main() {
         final api = _MockAuthApiGateway(responseData: _successLoginResponse());
         final service = AuthService(apiGateway: api, tokenStore: store);
 
-        final state = await service.login('+233551234567', '1234');
+        final state = await service.login('+233000000000', '0000');
 
         expect(state.status, AuthStatus.authenticated);
         expect(state.session?.accountType, AuthAccountType.passenger);
         expect(api.paths, <String>[AuthService.tokenPath]);
         expect(api.bodies.single, <String, Object?>{
-          'phone': '+233551234567',
-          'pin': '1234',
+          'phone': '+233000000000',
+          'pin': '0000',
         });
         expect(api.bodies.single.keys, isNot(contains('email')));
         expect(api.bodies.single.keys, isNot(contains('password')));
@@ -241,7 +241,7 @@ void main() {
         appContext: AuthAppContext.passenger,
       );
 
-      final state = await service.login('+233551234567', '1234');
+      final state = await service.login('+233000000000', '0000');
 
       expect(state.status, AuthStatus.authenticated);
       expect(state.session?.accountType, AuthAccountType.passenger);
@@ -256,7 +256,7 @@ void main() {
         appContext: AuthAppContext.driver,
       );
 
-      final state = await service.login('+233241234567', '4321');
+      final state = await service.login('+233000000001', '9876');
 
       expect(state.status, AuthStatus.authenticated);
       expect(state.session?.accountType, AuthAccountType.driver);
@@ -280,7 +280,7 @@ void main() {
             appContext: AuthAppContext.passenger,
           );
 
-          final state = await service.login('+233551234567', '1234');
+          final state = await service.login('+233000000000', '0000');
 
           expect(state.status, AuthStatus.unauthenticated);
           expect(state.error?.message, authAppContextErrorMessage);
@@ -308,7 +308,7 @@ void main() {
             appContext: AuthAppContext.driver,
           );
 
-          final state = await service.login('+233241234567', '4321');
+          final state = await service.login('+233000000001', '9876');
 
           expect(state.status, AuthStatus.unauthenticated);
           expect(state.error?.message, authAppContextErrorMessage);
@@ -415,7 +415,7 @@ void main() {
         tokenStore: store,
       );
 
-      final state = await service.login('+233551234567', '1234');
+      final state = await service.login('+233000000000', '0000');
 
       expect(state.status, AuthStatus.unauthenticated);
       expect(await store.readAccessToken(), isNull);

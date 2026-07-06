@@ -112,13 +112,13 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '1234');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '0000');
     await tester.tap(find.byKey(const Key('driver-clear-form')));
     await tester.pumpAndSettle();
     expect(find.text('0550000000'), findsNothing);
-    expect(find.text('1234'), findsNothing);
+    expect(find.text('0000'), findsNothing);
     expect(find.text(loginPhoneRequiredMessage), findsNothing);
     expect(find.text(loginPinRequiredMessage), findsNothing);
     expect(
@@ -180,7 +180,7 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+23324 1234567',
+      '+23300 0000001',
     );
     await tester.enterText(find.byKey(const Key('driver-pin-field')), '43a1');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
@@ -194,7 +194,7 @@ void main() {
           .widget<TextFormField>(find.byKey(const Key('driver-phone-field')))
           .controller
           ?.text,
-      '+23324 1234567',
+      '+23300 0000001',
     );
     expect(
       tester
@@ -231,9 +231,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
     await tester.pumpAndSettle();
 
@@ -268,9 +268,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
@@ -318,16 +318,16 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
       expect(authApi.paths, <String>[AuthService.tokenPath]);
       expect(authApi.bodies.single, <String, Object?>{
-        'phone': '+233241234567',
-        'pin': '4321',
+        'phone': '+233000000001',
+        'pin': '9876',
       });
       expect(authApi.bodies.single.keys, isNot(contains('email')));
       expect(authApi.bodies.single.keys, isNot(contains('password')));
@@ -348,7 +348,7 @@ void main() {
       expect(find.text('New trip'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
-      expect(find.text('4321'), findsNothing);
+      expect(find.text('9876'), findsNothing);
     },
   );
 
@@ -379,9 +379,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
@@ -393,7 +393,7 @@ void main() {
       expect(find.text('Approved drivers only'), findsNothing);
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
-      expect(find.text('4321'), findsNothing);
+      expect(find.text('9876'), findsNothing);
     }
   });
 
@@ -417,9 +417,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
 
@@ -431,7 +431,7 @@ void main() {
     expect(find.text('Approved drivers only'), findsNothing);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
-    expect(find.text('4321'), findsNothing);
+    expect(find.text('9876'), findsNothing);
   });
 
   testWidgets(
@@ -457,9 +457,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pump();
 
@@ -503,9 +503,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
 
@@ -541,9 +541,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
 
@@ -581,9 +581,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
@@ -623,9 +623,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
 
@@ -664,9 +664,9 @@ void main() {
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
+      '+233000000001',
     );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
     await tester.pumpAndSettle();
 
@@ -691,9 +691,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
@@ -708,39 +708,40 @@ void main() {
     },
   );
 
-  testWidgets('continue without signing in remains separate local QA readiness path', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 1000));
-    final store = MemoryAuthTokenStore();
-    final authApi = _RecordingDriverAuthApiGateway();
-    await tester.pumpWidget(
-      DriverApp(
-        configuration: _localQaEnabledConfig,
-        showLoginShell: true,
-        authService: AuthService(
-          apiGateway: authApi,
-          tokenStore: store,
-          appContext: AuthAppContext.driver,
+  testWidgets(
+    'continue without signing in remains separate local QA readiness path',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway();
+      await tester.pumpWidget(
+        DriverApp(
+          configuration: _localQaEnabledConfig,
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
         ),
-        authTokenStore: store,
-      ),
-    );
+      );
 
-    await tester.enterText(
-      find.byKey(const Key('driver-phone-field')),
-      '+233241234567',
-    );
-    await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
-    await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
-    await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233000000001',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
+      await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
+      await tester.pumpAndSettle();
 
-    expect(authApi.paths, isEmpty);
-    expect(await store.readAccessToken(), isNull);
-    expect(await store.readRefreshToken(), isNull);
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Local QA: Off shift'), findsOneWidget);
-  });
+      expect(authApi.paths, isEmpty);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(find.text('Approved drivers only'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsOneWidget);
+    },
+  );
 
   testWidgets('navigates the configured approved-driver local QA field shell', (
     tester,
@@ -784,35 +785,38 @@ void main() {
     expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
   });
 
-  testWidgets('Driver shell exposes local QA readiness and existing field areas', (tester) async {
-    _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(
-      const DriverApp(configuration: _localQaEnabledConfig),
-    );
-    await _openDriverLocalDemo(tester);
+  testWidgets(
+    'Driver shell exposes local QA readiness and existing field areas',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      await tester.pumpWidget(
+        const DriverApp(configuration: _localQaEnabledConfig),
+      );
+      await _openDriverLocalDemo(tester);
 
-    expect(find.byKey(const Key('open-readiness')), findsOneWidget);
-    expect(find.byKey(const Key('open-concern')), findsOneWidget);
-    expect(find.text('Local QA trip preview'), findsOneWidget);
-    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
+      expect(find.byKey(const Key('open-readiness')), findsOneWidget);
+      expect(find.byKey(const Key('open-concern')), findsOneWidget);
+      expect(find.text('Local QA trip preview'), findsOneWidget);
+      expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('open-readiness')));
-    await tester.pumpAndSettle();
-    expect(find.text('Shift check'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
+      expect(find.text('Shift check'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('open-concern')));
-    await tester.pumpAndSettle();
-    expect(find.text('Report an issue'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-concern')));
+      await tester.pumpAndSettle();
+      expect(find.text('Report an issue'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
-    await _openRideOfferPreview(tester);
-    await tester.pumpAndSettle();
-    expect(find.text('New trip'), findsWidgets);
-    _expectNoOperationalActions();
-  });
+      await _openRideOfferPreview(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('New trip'), findsWidgets);
+      _expectNoOperationalActions();
+    },
+  );
 
   testWidgets('completes, resets, closes, and reopens the shift check', (
     tester,
@@ -881,49 +885,50 @@ void main() {
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
-  testWidgets('local QA ready button returns home and marks the preview on shift', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(
-      const DriverApp(configuration: _localQaEnabledConfig),
-    );
-    await _openDriverLocalDemo(tester);
+  testWidgets(
+    'local QA ready button returns home and marks the preview on shift',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      await tester.pumpWidget(
+        const DriverApp(configuration: _localQaEnabledConfig),
+      );
+      await _openDriverLocalDemo(tester);
 
-    expect(find.text('Local QA: Off shift'), findsOneWidget);
-    expect(find.text('Local QA: On shift'), findsNothing);
+      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('open-readiness')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
 
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
-          .onPressed,
-      isNull,
-    );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+            .onPressed,
+        isNull,
+      );
 
-    for (final item in DriverReadinessItem.values) {
-      await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
-    }
-    await tester.pumpAndSettle();
+      for (final item in DriverReadinessItem.values) {
+        await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
+      }
+      await tester.pumpAndSettle();
 
-    expect(find.text('4 of 4 checks complete'), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
-          .onPressed,
-      isNotNull,
-    );
+      expect(find.text('4 of 4 checks complete'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
+            .onPressed,
+        isNotNull,
+      );
 
-    await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
-    await tester.tap(find.byKey(const Key('readiness-ready')));
-    await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+      await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Local QA: On shift'), findsOneWidget);
-    expect(find.text('Local QA: Off shift'), findsNothing);
-  });
+      expect(find.text('Approved drivers only'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsNothing);
+    },
+  );
 
   testWidgets('validates, reviews, edits, closes, and resets a concern draft', (
     tester,
@@ -1267,6 +1272,48 @@ void main() {
     expect(authApi.paths, isEmpty);
   });
 
+  testWidgets('Driver restored passenger and staff sessions clear safely', (
+    tester,
+  ) async {
+    for (final accountType in <String>['passenger', 'staff']) {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-cross-app-access-$accountType',
+          refreshToken: 'stored-cross-app-refresh-$accountType',
+        ),
+      );
+      final authApi = _RecordingDriverAuthApiGateway(
+        responseData: _driverLoginResponse(accountType: accountType),
+      );
+
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(authApi.paths, <String>[AuthService.refreshPath]);
+      expect(authApi.bodies.single, <String, Object?>{
+        'refresh': 'stored-cross-app-refresh-$accountType',
+      });
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.text('No trip assigned yet.'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('driver sign out after restored startup clears next startup', (
     tester,
   ) async {
@@ -1323,9 +1370,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
       await tester.pumpAndSettle();
 
@@ -1357,9 +1404,9 @@ void main() {
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
-        '+233241234567',
+        '+233000000001',
       );
-      await tester.enterText(find.byKey(const Key('driver-pin-field')), '4321');
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
       await tester.pumpAndSettle();
 
@@ -1544,7 +1591,7 @@ Future<void> _openDriverLocalDemo(WidgetTester tester) async {
     find.byKey(const Key('driver-phone-field')),
     '0550000000',
   );
-  await tester.enterText(find.byKey(const Key('driver-pin-field')), '1234');
+  await tester.enterText(find.byKey(const Key('driver-pin-field')), '0000');
   await tester.tap(find.byKey(const Key('driver-continue-local-demo')));
   await tester.pumpAndSettle();
 }
