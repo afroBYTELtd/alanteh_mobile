@@ -28,6 +28,10 @@ class _DriverShellState extends State<DriverShell> {
   bool _isOnShift = false;
 
   Future<void> _openReadiness() async {
+    if (!widget.localQaEnabled) {
+      return;
+    }
+
     final completed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) =>

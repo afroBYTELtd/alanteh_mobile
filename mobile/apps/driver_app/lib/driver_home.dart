@@ -25,7 +25,9 @@ class DriverHome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final marketLabel = market.countryName;
-    final shiftLabel = isOnShift ? 'On shift' : 'Off shift';
+    final shiftLabel = localQaEnabled
+        ? (isOnShift ? 'Local QA: On shift' : 'Local QA: Off shift')
+        : 'Control Center will confirm your duty status.';
 
     return AsmScreenSurface(
       scrollable: true,
@@ -90,14 +92,16 @@ class DriverHome extends StatelessWidget {
             textSpacing: 3,
           ),
           const SizedBox(height: AsmSpacing.space16),
-          AsmPrimaryActionButton(
-            key: const Key('open-readiness'),
-            onPressed: onOpenReadiness,
-            variant: AsmActionButtonVariant.outlined,
-            icon: Icons.fact_check_outlined,
-            label: 'Start shift check',
-          ),
-          const SizedBox(height: AsmSpacing.space8),
+          if (localQaEnabled) ...[
+            AsmPrimaryActionButton(
+              key: const Key('open-readiness'),
+              onPressed: onOpenReadiness,
+              variant: AsmActionButtonVariant.outlined,
+              icon: Icons.fact_check_outlined,
+              label: 'Local QA readiness preview',
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+          ],
           AsmPrimaryActionButton(
             key: const Key('open-concern'),
             onPressed: onRecordConcern,
@@ -159,39 +163,37 @@ class _DriverHomeBrandHeader extends StatelessWidget {
                 'Field workspace',
                 style: TextStyle(color: Color(0xFFAEB8BD)),
               ),
+              const SizedBox(height: 8),
+              Container(
+                key: const Key('driver-duty-status'),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AsmColors.driverPanelMuted,
+                  borderRadius: BorderRadius.circular(AsmRadii.radius6),
+                ),
+                child: Text(
+                  shiftLabel,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
-        const SizedBox(width: AsmSpacing.space12),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (onSignOut != null) ...[
-              TextButton.icon(
-                key: const Key('driver-sign-out'),
-                onPressed: onSignOut,
-                icon: const Icon(Icons.exit_to_app_outlined, size: 16),
-                label: const Text('Sign out'),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: AsmColors.driverPanelMuted,
-                borderRadius: BorderRadius.circular(AsmRadii.radius6),
-              ),
-              child: Text(
-                shiftLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
+        if (onSignOut != null) ...[
+          const SizedBox(width: AsmSpacing.space12),
+          TextButton.icon(
+            key: const Key('driver-sign-out'),
+            onPressed: onSignOut,
+            icon: const Icon(Icons.exit_to_app_outlined, size: 16),
+            label: const Text('Sign out'),
+          ),
+        ],
       ],
     );
   }
