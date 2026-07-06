@@ -153,7 +153,8 @@ class _DriverHomeBrandHeader extends StatelessWidget {
               Image.asset(
                 'assets/brand/alanteh_header_white.png',
                 key: const Key('driver-home-brand-logo'),
-                height: 34,
+                width: 176,
+                height: 48,
                 fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
                 semanticLabel: 'ALANTEH driver logo',

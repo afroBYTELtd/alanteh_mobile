@@ -83,6 +83,12 @@ void main() {
     );
 
     expect(find.byKey(const Key('driver-login-brand-logo')), findsOneWidget);
+    final driverLoginLogo = tester.widget<Image>(
+      find.byKey(const Key('driver-login-brand-logo')),
+    );
+    expect(driverLoginLogo.width, greaterThanOrEqualTo(160));
+    expect(driverLoginLogo.width, lessThanOrEqualTo(190));
+    expect(driverLoginLogo.fit, BoxFit.contain);
     expect(find.text('Driver'), findsOneWidget);
     expect(find.byKey(const Key('driver-phone-field')), findsOneWidget);
     expect(find.text('Phone number'), findsOneWidget);
@@ -752,6 +758,12 @@ void main() {
     await _openDriverLocalDemo(tester);
 
     expect(find.byKey(const Key('driver-home-brand-logo')), findsOneWidget);
+    final driverHomeLogo = tester.widget<Image>(
+      find.byKey(const Key('driver-home-brand-logo')),
+    );
+    expect(driverHomeLogo.width, greaterThanOrEqualTo(160));
+    expect(driverHomeLogo.width, lessThanOrEqualTo(190));
+    expect(driverHomeLogo.fit, BoxFit.contain);
     expect(find.text('Field workspace'), findsOneWidget);
     expect(find.text('Approved drivers only'), findsOneWidget);
     expect(find.text('Local QA: Off shift'), findsOneWidget);
