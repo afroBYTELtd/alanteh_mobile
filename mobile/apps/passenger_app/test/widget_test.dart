@@ -606,8 +606,29 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips connected'), findsOneWidget);
+    expect(find.text('No trips to show yet.'), findsOneWidget);
+    expect(
+      find.text(
+        'After you request a ride, the Control Center will follow up with your pickup details.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('LOCAL DEMO'), findsNothing);
+    expect(find.textContaining('fake active trip'), findsNothing);
+    expect(find.textContaining('active trip'), findsNothing);
+    expect(find.textContaining('fake completed trip'), findsNothing);
+    expect(find.textContaining('completed trip'), findsNothing);
+    expect(find.textContaining('fake driver assignment'), findsNothing);
+    expect(find.textContaining('driver assignment'), findsNothing);
+    expect(find.textContaining('fake ETA'), findsNothing);
+    expect(find.textContaining('ETA'), findsNothing);
+    expect(find.textContaining('fake fare'), findsNothing);
+    expect(find.textContaining('fare'), findsNothing);
+    expect(find.textContaining('trip history'), findsNothing);
+    expect(find.text('Book a ride'), findsOneWidget);
+    await tester.tap(find.text('Book a ride'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
 
     await tester.tap(find.text('Support'));
     await tester.pumpAndSettle();
@@ -688,6 +709,9 @@ void main() {
     expect(find.textContaining('fare'), findsNothing);
     expect(find.textContaining('estimate'), findsNothing);
     expect(find.textContaining('driver assignment'), findsNothing);
+    expect(find.textContaining('active trip'), findsNothing);
+    expect(find.textContaining('completed trip'), findsNothing);
+    expect(find.textContaining('trip history'), findsNothing);
   });
 
   testWidgets('Passenger local QA route preview is gated and local only', (

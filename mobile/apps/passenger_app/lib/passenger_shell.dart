@@ -181,11 +181,13 @@ class _PassengerShellState extends State<PassengerShell> {
         onSwap: _swapRoute,
         onClear: _clearRoute,
       ),
-      1 => const _PassengerPlaceholder(
+      1 => _PassengerPlaceholder(
         icon: Icons.route_outlined,
-        title: 'No trips connected',
+        title: 'No trips to show yet.',
         message:
-            'Trip history will appear after secure services are connected.',
+            'After you request a ride, the Control Center will follow up with your pickup details.',
+        actionLabel: 'Book a ride',
+        onActionPressed: () => setState(() => _selectedIndex = 0),
       ),
       _ => const _PassengerPlaceholder(
         icon: Icons.support_agent_outlined,
@@ -239,11 +241,15 @@ class _PassengerPlaceholder extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.onActionPressed,
   });
 
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onActionPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -273,6 +279,13 @@ class _PassengerPlaceholder extends StatelessWidget {
                 height: 1.4,
               ),
             ),
+            if (actionLabel != null && onActionPressed != null) ...[
+              const SizedBox(height: AsmSpacing.space16),
+              FilledButton(
+                onPressed: onActionPressed,
+                child: Text(actionLabel!),
+              ),
+            ],
           ],
         ),
       ),
