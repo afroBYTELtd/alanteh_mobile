@@ -102,10 +102,18 @@ void main() {
     expect(await store.readAccessToken(), isNot('1234'));
     expect(await store.readRefreshToken(), isNot('1234'));
 
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
-    expect(find.text('Where are you?'), findsOneWidget);
-    expect(find.text('Where to?'), findsOneWidget);
+    expect(
+      find.text(
+        'The Control Center will review your request and confirm pickup details.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
     expect(find.text('LOCAL DEMO'), findsNothing);
   });
 
@@ -200,6 +208,7 @@ void main() {
     expect(api.paths, isEmpty);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
+    expect(find.text('Local QA route preview'), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
   });
@@ -562,31 +571,24 @@ void main() {
     await _openPassengerAccess(tester);
 
     expect(find.byKey(const Key('passenger-home-brand-logo')), findsOneWidget);
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
-    expect(find.text('Where are you?'), findsOneWidget);
-    expect(find.text('Where to?'), findsOneWidget);
-    expect(find.text('GHANA PILOT'), findsNothing);
     expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('continue-local-draft')))
-          .onPressed,
-      isNull,
-    );
-
-    await tester.tap(find.byKey(const Key('choose-pickup')));
-    await tester.pumpAndSettle();
-    expect(find.text('Choose pickup'), findsWidgets);
-    expect(
-      find.text('Local description only. No map search is connected.'),
+      find.text(
+        'The Control Center will review your request and confirm pickup details.',
+      ),
       findsOneWidget,
     );
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+    expect(find.text('GHANA PILOT'), findsNothing);
 
-    await tester.tap(find.byKey(const Key('choose-destination')));
+    await tester.tap(find.byKey(const Key('open-live-request')));
     await tester.pumpAndSettle();
-    expect(find.text('Where to?'), findsWidgets);
+    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 
@@ -602,34 +604,36 @@ void main() {
 
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
+    expect(find.text('Map preview unavailable.'), findsNothing);
   });
 
-  testWidgets('map-first Home remains reachable on a small scaled screen', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(320, 568));
+  testWidgets(
+    'local QA route preview remains reachable on a small scaled screen',
+    (tester) async {
+      _useSurface(tester, const Size(320, 568));
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AsmThemes.passenger,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: const TextScaler.linear(1.5)),
-          child: child!,
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: child!,
+          ),
+          home: const PassengerShell(localQaEnabled: true),
         ),
-        home: const PassengerShell(),
-      ),
-    );
+      );
 
-    expect(find.text('LOCAL DEMO'), findsNothing);
-    await tester.ensureVisible(find.byKey(const Key('choose-pickup')));
-    expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('continue-local-draft')));
-    expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.text('LOCAL DEMO'), findsNothing);
+      expect(find.text('Local QA route preview'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('choose-pickup')));
+      expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const Key('continue-local-draft')));
+      expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('passenger shell hides internal and no live feature wording', (
     tester,
@@ -644,6 +648,69 @@ void main() {
     for (final forbiddenText in _noLiveFeatureTexts) {
       expect(find.textContaining(forbiddenText), findsNothing);
     }
+  });
+
+  testWidgets('Passenger live home hides local route preview by default', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+
+    await tester.pumpWidget(
+      MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
+    );
+
+    expect(find.text('Book a ride'), findsOneWidget);
+    expect(
+      find.text(
+        'The Control Center will review your request and confirm pickup details.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.byKey(const Key('local-map-preview')), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('choose-destination')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+    expect(find.textContaining('ETA'), findsNothing);
+    expect(find.textContaining('fare'), findsNothing);
+    expect(find.textContaining('estimate'), findsNothing);
+    expect(find.textContaining('driver assignment'), findsNothing);
+  });
+
+  testWidgets('Passenger local QA route preview is gated and local only', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+    await tester.pumpWidget(
+      _loginTestApp(
+        api: api,
+        store: store,
+        configuration: _localQaEnabledConfig,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('passenger-continue-local-qa')));
+    await tester.pumpAndSettle();
+
+    expect(api.paths, isEmpty);
+    expect(find.text('Local QA route preview'), findsOneWidget);
+    expect(find.byKey(const Key('local-map-preview')), findsOneWidget);
+    expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('choose-destination')), findsOneWidget);
+    expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+    expect(find.textContaining('/api/routes'), findsNothing);
+    expect(find.textContaining('/api/estimate'), findsNothing);
+    expect(find.textContaining('/api/fares'), findsNothing);
+    expect(find.textContaining('/api/driver'), findsNothing);
+    expect(find.textContaining('GoogleMap'), findsNothing);
+    expect(find.textContaining('geolocator'), findsNothing);
   });
 
   testWidgets('Passenger startup without stored tokens opens login', (
@@ -672,8 +739,14 @@ void main() {
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
     await tester.pumpAndSettle();
 
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
     expect(find.text('Book a ride'), findsOneWidget);
+    expect(
+      find.text(
+        'The Control Center will review your request and confirm pickup details.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
     expect(find.byKey(const Key('passenger-sign-in')), findsNothing);
     expect(api.paths, isEmpty);
@@ -713,7 +786,9 @@ void main() {
     await tester.pumpWidget(PassengerApp(authTokenStore: store));
     await tester.pumpAndSettle();
 
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
+    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
   });

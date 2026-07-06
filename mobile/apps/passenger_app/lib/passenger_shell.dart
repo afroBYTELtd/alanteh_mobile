@@ -11,6 +11,7 @@ import 'passenger_home.dart';
 class PassengerShell extends StatefulWidget {
   const PassengerShell({
     this.configuration = AsmAppConfig.localGhana,
+    this.localQaEnabled = false,
     this.rideRequestSubmitter,
     this.onSignInRequired,
     this.onSignOut,
@@ -18,6 +19,7 @@ class PassengerShell extends StatefulWidget {
   });
 
   final AsmAppConfig configuration;
+  final bool localQaEnabled;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
@@ -139,10 +141,32 @@ class _PassengerShellState extends State<PassengerShell> {
     }
   }
 
+  Future<void> _openRequestForm() async {
+    final closed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => BookingPage(
+          market: widget.configuration.market,
+          initialPickupDescription: _pickupDescription ?? '',
+          initialDestinationDescription: _destinationDescription ?? '',
+          rideRequestSubmitter: widget.rideRequestSubmitter,
+          onSignInRequired: widget.onSignInRequired,
+        ),
+      ),
+    );
+
+    if (closed == true && mounted) {
+      setState(() {
+        _pickupDescription = null;
+        _destinationDescription = null;
+      });
+    }
+  }
+
   Widget get _selectedPage {
     return switch (_selectedIndex) {
       0 => PassengerHome(
         market: widget.configuration.market,
+        localQaEnabled: widget.localQaEnabled,
         pickupDescription: _pickupDescription,
         destinationDescription: _destinationDescription,
         canContinue: _canContinue,
@@ -153,6 +177,7 @@ class _PassengerShellState extends State<PassengerShell> {
         onChooseDestination: () =>
             _chooseLocation(LocationSearchKind.destination),
         onContinue: _continueToDraft,
+        onStartRequest: _openRequestForm,
         onSwap: _swapRoute,
         onClear: _clearRoute,
       ),
