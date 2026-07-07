@@ -290,8 +290,8 @@ void main() {
     expect(authApi.paths, isEmpty);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Local QA: Off shift'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsNothing);
     expect(find.text('Local QA driver trip preview'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
   });
@@ -325,17 +325,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(authApi.paths, <String>[AuthService.tokenPath]);
-      expect(
-        find.text('Control Center will confirm your duty status.'),
-        findsOneWidget,
-      );
+      expect(find.text('Accra, Ghana'), findsOneWidget);
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.byKey(const Key('open-readiness')), findsNothing);
       expect(find.text('Local QA readiness preview'), findsNothing);
       expect(find.text("I'm ready"), findsNothing);
-      expect(find.text('No trip assigned yet.'), findsOneWidget);
-      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(
+        find.text(
+          'Trip and shift tools will appear after Control Center activation.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Keep your phone nearby.'), findsWidgets);
       expect(find.text('New trip'), findsNothing);
       expect(find.text('Local QA driver trip preview'), findsNothing);
       expect(find.text('Accept'), findsNothing);
@@ -384,17 +386,19 @@ void main() {
       expect(authApi.bodies.single['pin'], isA<String>());
       expect(await store.readAccessToken(), 'driver-access-token');
       expect(await store.readRefreshToken(), 'driver-refresh-token');
-      expect(find.text('Approved drivers only'), findsOneWidget);
-      expect(
-        find.text('Control Center will confirm your duty status.'),
-        findsOneWidget,
-      );
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Accra, Ghana'), findsOneWidget);
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.byKey(const Key('open-readiness')), findsNothing);
       expect(find.text('Local QA readiness preview'), findsNothing);
-      expect(find.text('No trip assigned yet.'), findsOneWidget);
-      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(
+        find.text(
+          'Trip and shift tools will appear after Control Center activation.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Keep your phone nearby.'), findsWidgets);
       expect(find.text('New trip'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
@@ -440,7 +444,7 @@ void main() {
         findsOneWidget,
         reason: 'account_type=$accountType',
       );
-      expect(find.text('Approved drivers only'), findsNothing);
+      expect(find.text('Driver app ready'), findsNothing);
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
       expect(find.text('9876'), findsNothing);
@@ -478,7 +482,7 @@ void main() {
       find.text('Sign in failed. Check your phone and PIN.'),
       findsOneWidget,
     );
-    expect(find.text('Approved drivers only'), findsNothing);
+    expect(find.text('Driver app ready'), findsNothing);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('9876'), findsNothing);
@@ -754,7 +758,7 @@ void main() {
       );
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
-      expect(find.text('Approved drivers only'), findsNothing);
+      expect(find.text('Driver app ready'), findsNothing);
     },
   );
 
@@ -788,8 +792,8 @@ void main() {
       expect(authApi.paths, isEmpty);
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
-      expect(find.text('Approved drivers only'), findsOneWidget);
-      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsNothing);
     },
   );
 
@@ -808,12 +812,17 @@ void main() {
     expect(driverHomeLogo.width, greaterThanOrEqualTo(160));
     expect(driverHomeLogo.width, lessThanOrEqualTo(190));
     expect(driverHomeLogo.fit, BoxFit.contain);
-    expect(find.text('Field workspace'), findsOneWidget);
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('Local QA: Off shift'), findsOneWidget);
-    expect(find.text('Ghana'), findsOneWidget);
-    expect(find.text('No trip assigned yet.'), findsOneWidget);
-    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+    expect(find.text('Field workspace'), findsNothing);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Local QA: Off shift'), findsNothing);
+    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(
+      find.text(
+        'Trip and shift tools will appear after Control Center activation.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Keep your phone nearby.'), findsWidgets);
     expect(find.text('Local QA readiness preview'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
     expect(find.text('Local QA driver trip preview'), findsOneWidget);
@@ -874,9 +883,14 @@ void main() {
 
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(find.text('No trip assigned yet.'), findsOneWidget);
-    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(
+      find.text(
+        'Trip and shift tools will appear after Control Center activation.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Keep your phone nearby.'), findsWidgets);
   });
 
   testWidgets(
@@ -971,7 +985,7 @@ void main() {
     expect(find.text('1 of 4 checks complete'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
@@ -988,7 +1002,7 @@ void main() {
       );
       await _openDriverLocalDemo(tester);
 
-      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
 
       await tester.tap(find.byKey(const Key('open-readiness')));
@@ -1018,8 +1032,8 @@ void main() {
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Approved drivers only'), findsOneWidget);
-      expect(find.text('Local QA: On shift'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.text('Local QA: Off shift'), findsNothing);
     },
   );
@@ -1076,7 +1090,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('close-concern')));
     await tester.pumpAndSettle();
-    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
@@ -1148,7 +1162,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
     await tester.pumpAndSettle();
-    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
 
     await _openRideOfferPreview(tester);
     await tester.pumpAndSettle();
@@ -1190,7 +1204,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
     await tester.pumpAndSettle();
-    expect(find.text('Approved drivers only'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
     expect(find.byKey(const Key('open-readiness')), findsOneWidget);
     expect(find.byKey(const Key('open-concern')), findsOneWidget);
   });
@@ -1439,13 +1453,15 @@ void main() {
       });
       expect(await store.readAccessToken(), 'restored-driver-access');
       expect(await store.readRefreshToken(), 'stored-driver-refresh');
-      expect(find.text('Approved drivers only'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Accra, Ghana'), findsOneWidget);
       expect(
-        find.text('Control Center will confirm your duty status.'),
+        find.text(
+          'Trip and shift tools will appear after Control Center activation.',
+        ),
         findsOneWidget,
       );
-      expect(find.text('No trip assigned yet.'), findsOneWidget);
-      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(find.text('Keep your phone nearby.'), findsWidgets);
       expect(find.text('Local QA driver trip preview'), findsNothing);
       expect(find.text('Please sign in again to continue.'), findsNothing);
     },
@@ -1531,7 +1547,7 @@ void main() {
       expect(await store.readAccessToken(), 'driver-access-token');
       expect(await store.readRefreshToken(), 'driver-refresh-token');
       expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
-      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsNothing);
 
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
@@ -1543,7 +1559,7 @@ void main() {
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Local QA: On shift'), findsOneWidget);
+      expect(find.text('Local QA: On shift'), findsNothing);
 
       await tester.tap(find.byKey(const Key('driver-sign-out')));
       await tester.pumpAndSettle();
@@ -1564,11 +1580,97 @@ void main() {
 
       expect(await store.readAccessToken(), isNull);
       expect(await store.readRefreshToken(), isNull);
-      expect(find.text('Local QA: Off shift'), findsOneWidget);
+      expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.text('Local QA driver trip preview'), findsOneWidget);
     },
   );
+
+  testWidgets('Driver home uses safe M3C copy without fake live status', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final authApi = _RecordingDriverAuthApiGateway();
+
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: authApi,
+          tokenStore: store,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: store,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233000000001',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Field workspace'), findsNothing);
+    expect(find.text('Approved drivers only'), findsNothing);
+    expect(
+      find.text('This workspace is reserved for approved ALANTEH drivers.'),
+      findsNothing,
+    );
+    expect(find.text('Driver app foundation'), findsNothing);
+
+    expect(find.text('Accra, Ghana'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(
+      find.text(
+        'Trip and shift tools will appear after Control Center activation.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Keep your phone nearby.'), findsWidgets);
+
+    expect(find.textContaining('On shift'), findsNothing);
+    expect(find.textContaining('Off shift'), findsNothing);
+    expect(find.textContaining('Waiting for trip'), findsNothing);
+    expect(find.textContaining('Trip assigned'), findsNothing);
+    expect(find.textContaining('Dispatcher confirmed'), findsNothing);
+    expect(find.textContaining('Active trip'), findsNothing);
+    expect(find.textContaining('Trip completed'), findsNothing);
+    expect(find.textContaining('No trip waiting'), findsNothing);
+    expect(
+      find.textContaining('Shift status is managed by the dispatcher.'),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('Control Center will confirm your duty status.'),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('Stay ready for the Control Center.'),
+      findsNothing,
+    );
+
+    expect(find.textContaining('fake assigned trip'), findsNothing);
+    expect(find.textContaining('fake active trip'), findsNothing);
+    expect(find.textContaining('fake passenger details'), findsNothing);
+    expect(find.textContaining('fake earnings'), findsNothing);
+    expect(find.textContaining('fake route'), findsNothing);
+    expect(find.textContaining('fake ETA'), findsNothing);
+    expect(find.textContaining('fake fare'), findsNothing);
+    expect(find.textContaining('passenger details'), findsNothing);
+    expect(find.textContaining('earnings'), findsNothing);
+    expect(find.textContaining('ETA'), findsNothing);
+    expect(find.textContaining('fare'), findsNothing);
+    expect(find.text('Accept trip'), findsNothing);
+    expect(find.text('Start trip'), findsNothing);
+    expect(find.text('Complete trip'), findsNothing);
+
+    expect(find.text('Local QA driver trip preview'), findsNothing);
+    expect(find.text('Local QA readiness preview'), findsNothing);
+  });
 }
 
 class _AccessOnlyAuthTokenStore implements AuthTokenStore {

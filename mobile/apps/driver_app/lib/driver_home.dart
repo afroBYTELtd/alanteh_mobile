@@ -24,11 +24,6 @@ class DriverHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final marketLabel = market.countryName;
-    final shiftLabel = localQaEnabled
-        ? (isOnShift ? 'Local QA: On shift' : 'Local QA: Off shift')
-        : 'Control Center will confirm your duty status.';
-
     return AsmScreenSurface(
       scrollable: true,
       expandToViewport: true,
@@ -41,7 +36,7 @@ class DriverHome extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _DriverHomeBrandHeader(shiftLabel: shiftLabel, onSignOut: onSignOut),
+          _DriverHomeBrandHeader(onSignOut: onSignOut),
           const SizedBox(height: 64),
           const Icon(
             Icons.verified_user_outlined,
@@ -50,12 +45,12 @@ class DriverHome extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space20),
           const Text(
-            'Approved drivers only',
+            'Driver app ready',
             style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 14),
           const Text(
-            'This workspace is reserved for approved ALANTEH drivers.',
+            'Keep your phone nearby.',
             style: TextStyle(
               color: Color(0xFFB7C0C4),
               fontSize: 17,
@@ -63,12 +58,12 @@ class DriverHome extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AsmSpacing.space20),
-          AsmSectionLabel(
-            key: const Key('driver-market'),
-            text: marketLabel,
+          const AsmSectionLabel(
+            key: Key('driver-market'),
+            text: 'Accra, Ghana',
             icon: Icons.location_on_outlined,
             iconColor: AsmColors.brandGreen,
-            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            textStyle: TextStyle(fontWeight: FontWeight.w700),
             textMaxLines: null,
           ),
           const SizedBox(height: AsmSpacing.space16),
@@ -85,8 +80,9 @@ class DriverHome extends StatelessWidget {
             borderColor: Color(0xFF3A4449),
             icon: Icons.route_outlined,
             iconColor: AsmColors.brandGreen,
-            title: 'No trip assigned yet.',
-            message: 'Stay ready for the Control Center.',
+            title:
+                'Trip and shift tools will appear after Control Center activation.',
+            message: 'Keep your phone nearby.',
             titleStyle: TextStyle(fontWeight: FontWeight.w700),
             messageStyle: TextStyle(color: Color(0xFFB7C0C4)),
             textSpacing: 3,
@@ -121,11 +117,6 @@ class DriverHome extends StatelessWidget {
               minimumHeight: 48,
             ),
           ],
-          const SizedBox(height: AsmSpacing.space16),
-          const AsmSectionLabel(
-            text: 'Driver app foundation',
-            textStyle: TextStyle(color: Color(0xFF8F9A9F), fontSize: 13),
-          ),
         ],
       ),
     );
@@ -133,12 +124,8 @@ class DriverHome extends StatelessWidget {
 }
 
 class _DriverHomeBrandHeader extends StatelessWidget {
-  const _DriverHomeBrandHeader({
-    required this.shiftLabel,
-    required this.onSignOut,
-  });
+  const _DriverHomeBrandHeader({required this.onSignOut});
 
-  final String shiftLabel;
   final VoidCallback? onSignOut;
 
   @override
@@ -147,43 +134,14 @@ class _DriverHomeBrandHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Image.asset(
-                'assets/brand/alanteh_header_white.png',
-                key: const Key('driver-home-brand-logo'),
-                width: 176,
-                height: 48,
-                fit: BoxFit.contain,
-                alignment: Alignment.centerLeft,
-                semanticLabel: 'ALANTEH driver logo',
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Field workspace',
-                style: TextStyle(color: Color(0xFFAEB8BD)),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                key: const Key('driver-duty-status'),
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AsmColors.driverPanelMuted,
-                  borderRadius: BorderRadius.circular(AsmRadii.radius6),
-                ),
-                child: Text(
-                  shiftLabel,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
+          child: Image.asset(
+            'assets/brand/alanteh_header_white.png',
+            key: const Key('driver-home-brand-logo'),
+            width: 176,
+            height: 48,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            semanticLabel: 'ALANTEH driver logo',
           ),
         ),
         if (onSignOut != null) ...[
