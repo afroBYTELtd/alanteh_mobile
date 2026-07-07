@@ -232,6 +232,34 @@ void main() {
       },
     );
 
+    test('M3A locks auth service to accepted token endpoints only', () {
+      final source = File('lib/asm_auth.dart').readAsStringSync();
+
+      expect(AuthService.tokenPath, '/api/auth/token/');
+      expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+      expect(source, contains("static const tokenPath = '/api/auth/token/';"));
+      expect(
+        source,
+        contains("static const refreshPath = '/api/auth/token/refresh/';"),
+      );
+      expect(source, isNot(contains('/api/logout')));
+      expect(source, isNot(contains('session/validate')));
+      expect(source, isNot(contains('/api/profile')));
+      expect(source, isNot(contains('/api/account')));
+      expect(source, isNot(contains('/api/wallet')));
+      expect(source, isNot(contains('/api/payment')));
+      expect(source, isNot(contains('/api/payments')));
+      expect(source, isNot(contains('/api/payout')));
+      expect(source, isNot(contains('/api/payouts')));
+      expect(source, isNot(contains('/api/earnings')));
+      expect(source, isNot(contains('/api/support')));
+      expect(source, isNot(contains('/api/documents')));
+      expect(source, isNot(contains('/api/verification')));
+      expect(source, isNot(contains('/api/vehicles')));
+      expect(source, isNot(contains(['fake', 'token'].join(' '))));
+      expect(source, isNot(contains(['fake', 'Token'].join())));
+    });
+
     test('Passenger app context accepts passenger account_type', () async {
       final service = AuthService(
         apiGateway: _MockAuthApiGateway(

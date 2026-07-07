@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:asm_api_client/asm_api_client.dart';
@@ -196,6 +197,36 @@ void main() {
         response.data?.message,
         'Ride request received by the Control Center.',
       );
+    });
+
+    test('M3A locks passenger ride requests to accepted endpoint only', () {
+      final source = File('lib/asm_api_client.dart').readAsStringSync();
+
+      expect(source, contains("'/api/rides/request/'"));
+      expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
+      expect(source, isNot(contains('/api/trips')));
+      expect(source, isNot(contains('/api/dispatch')));
+      expect(source, isNot(contains('/api/assignments')));
+      expect(source, isNot(contains('/api/routes')));
+      expect(source, isNot(contains('/api/estimate')));
+      expect(source, isNot(contains('/api/fares')));
+      expect(source, isNot(contains('/api/profile')));
+      expect(source, isNot(contains('/api/account')));
+      expect(source, isNot(contains('/api/wallet')));
+      expect(source, isNot(contains('/api/payment')));
+      expect(source, isNot(contains('/api/payments')));
+      expect(source, isNot(contains('/api/payout')));
+      expect(source, isNot(contains('/api/payouts')));
+      expect(source, isNot(contains('/api/earnings')));
+      expect(source, isNot(contains('/api/support')));
+      expect(source, isNot(contains('/api/documents')));
+      expect(source, isNot(contains('/api/verification')));
+      expect(source, isNot(contains('/api/vehicles')));
+      expect(source, isNot(contains('/api/logout')));
+      expect(source, isNot(contains('session/validate')));
+      expect(source, isNot(contains('service_context')));
+      expect(source, isNot(contains(['fake', 'token'].join(' '))));
+      expect(source, isNot(contains(['fake', 'Token'].join())));
     });
 
     test('omits assistance_note when it is blank', () async {
