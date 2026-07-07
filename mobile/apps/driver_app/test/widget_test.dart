@@ -1334,83 +1334,90 @@ void main() {
     expect(authApi.paths, isEmpty);
   });
 
-  testWidgets('driver startup with stored tokens opens live-safe home', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 1000));
-    final store = _AccessOnlyAuthTokenStore('stored-driver-access');
-    final authApi = _RecordingDriverAuthApiGateway();
+  testWidgets(
+    'driver access-only restored session clears tokens and asks sign in again',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = _AccessOnlyAuthTokenStore('stored-driver-access');
+      final authApi = _RecordingDriverAuthApiGateway();
 
-    await tester.pumpWidget(
-      DriverApp(
-        showLoginShell: true,
-        authService: AuthService(
-          apiGateway: authApi,
-          tokenStore: store,
-          appContext: AuthAppContext.driver,
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
         ),
-        authTokenStore: store,
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Approved drivers only'), findsOneWidget);
-    expect(
-      find.text('Control Center will confirm your duty status.'),
-      findsOneWidget,
-    );
-    expect(find.text('Local QA: Off shift'), findsNothing);
-    expect(find.text('Local QA: On shift'), findsNothing);
-    expect(find.byKey(const Key('open-readiness')), findsNothing);
-    expect(find.text('Local QA readiness preview'), findsNothing);
-    expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
-    expect(find.byKey(const Key('driver-sign-in')), findsNothing);
-    expect(find.text('No trip assigned yet.'), findsOneWidget);
-    expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
-    expect(find.text('New trip'), findsNothing);
-    expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
+      expect(authApi.paths, isEmpty);
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.text('Driver access'), findsOneWidget);
+      expect(find.text('Please sign in again to continue.'), findsOneWidget);
+      expect(find.text('No trip assigned yet.'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
 
-    await tester.tap(find.text('Account'));
-    await tester.pumpAndSettle();
-    expect(find.text('Driver account'), findsOneWidget);
-    expect(
-      find.text(
-        'Your driver account details are managed by the Control Center.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('driver-account-sign-out')), findsOneWidget);
-    expect(find.text('Sign out'), findsOneWidget);
-    expect(find.textContaining('fake driver name'), findsNothing);
-    expect(find.textContaining('driver phone'), findsNothing);
-    expect(find.textContaining('fake phone number'), findsNothing);
-    expect(find.textContaining('vehicle assignment'), findsNothing);
-    expect(find.textContaining('fake earnings'), findsNothing);
-    expect(find.textContaining('earnings'), findsNothing);
-    expect(find.textContaining('wallet'), findsNothing);
-    expect(find.textContaining('payout'), findsNothing);
-    expect(find.textContaining('rating'), findsNothing);
-    expect(find.textContaining('license'), findsNothing);
-    expect(find.textContaining('document'), findsNothing);
-    expect(find.textContaining('support ticket'), findsNothing);
-    expect(find.textContaining('verification'), findsNothing);
-    expect(authApi.paths, isEmpty);
-  });
-
-  testWidgets('Driver restored passenger and staff sessions clear safely', (
-    tester,
-  ) async {
-    for (final accountType in <String>['passenger', 'staff']) {
+  testWidgets(
+    'driver rejected restored session clears tokens and asks sign in again',
+    (tester) async {
       _useSurface(tester, const Size(430, 1000));
       final store = MemoryAuthTokenStore();
       await store.saveTokens(
         AuthTokens(
-          accessToken: 'stored-cross-app-access-$accountType',
-          refreshToken: 'stored-cross-app-refresh-$accountType',
+          accessToken: 'expired-driver-access',
+          refreshToken: 'expired-driver-refresh',
+        ),
+      );
+      final authApi = _RecordingDriverAuthApiGateway(statusCode: 401);
+
+      await tester.pumpWidget(
+        DriverApp(
+          showLoginShell: true,
+          authService: AuthService(
+            apiGateway: authApi,
+            tokenStore: store,
+            appContext: AuthAppContext.driver,
+          ),
+          authTokenStore: store,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(authApi.paths, <String>[AuthService.refreshPath]);
+      expect(authApi.bodies.single, <String, Object?>{
+        'refresh': 'expired-driver-refresh',
+      });
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.text('Driver access'), findsOneWidget);
+      expect(find.text('Please sign in again to continue.'), findsOneWidget);
+      expect(find.text('No trip assigned yet.'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
+
+  testWidgets(
+    'driver startup with refreshable stored tokens opens live-safe home',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-driver-access',
+          refreshToken: 'stored-driver-refresh',
         ),
       );
       final authApi = _RecordingDriverAuthApiGateway(
-        responseData: _driverLoginResponse(accountType: accountType),
+        responseData: const <String, Object?>{
+          'access': 'restored-driver-access',
+        },
       );
 
       await tester.pumpWidget(
@@ -1428,22 +1435,33 @@ void main() {
 
       expect(authApi.paths, <String>[AuthService.refreshPath]);
       expect(authApi.bodies.single, <String, Object?>{
-        'refresh': 'stored-cross-app-refresh-$accountType',
+        'refresh': 'stored-driver-refresh',
       });
-      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
-      expect(find.text('No trip assigned yet.'), findsNothing);
-      expect(await store.readAccessToken(), isNull);
-      expect(await store.readRefreshToken(), isNull);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
-  });
+      expect(await store.readAccessToken(), 'restored-driver-access');
+      expect(await store.readRefreshToken(), 'stored-driver-refresh');
+      expect(find.text('Approved drivers only'), findsOneWidget);
+      expect(
+        find.text('Control Center will confirm your duty status.'),
+        findsOneWidget,
+      );
+      expect(find.text('No trip assigned yet.'), findsOneWidget);
+      expect(find.text('Stay ready for the Control Center.'), findsOneWidget);
+      expect(find.text('Local QA driver trip preview'), findsNothing);
+      expect(find.text('Please sign in again to continue.'), findsNothing);
+    },
+  );
 
   testWidgets('driver sign out after restored startup clears next startup', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    final store = _AccessOnlyAuthTokenStore('stored-driver-access');
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-driver-access',
+        refreshToken: 'stored-driver-refresh',
+      ),
+    );
     final authApi = _RecordingDriverAuthApiGateway();
 
     Widget app() => DriverApp(

@@ -95,37 +95,61 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _restoreStoredSession() async {
-    final accessToken = (await widget.authTokenStore.readAccessToken())?.trim();
+    final rawAccessToken = await widget.authTokenStore.readAccessToken();
+    final rawRefreshToken = await widget.authTokenStore.readRefreshToken();
+    final accessToken = rawAccessToken?.trim();
+    final refreshToken = rawRefreshToken?.trim();
+    final hadStoredSession = rawAccessToken != null || rawRefreshToken != null;
+
     if (!mounted || _localDemoOpened || _signedIn) {
       return;
     }
 
-    if (accessToken == null || accessToken.isEmpty) {
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        refreshToken == null ||
+        refreshToken.isEmpty) {
+      if (hadStoredSession) {
+        await widget.authTokenStore.clearTokens();
+      }
+      if (!mounted || _localDemoOpened || _signedIn) {
+        return;
+      }
+
       setState(() {
         _signedIn = false;
         _isSigningIn = false;
+        _loginError = hadStoredSession
+            ? 'Please sign in again to continue.'
+            : null;
       });
       return;
     }
 
-    final refreshToken = (await widget.authTokenStore.readRefreshToken())
-        ?.trim();
-    if (refreshToken == null || refreshToken.isEmpty) {
+    AuthState state;
+    try {
+      state = await widget.authService.refresh();
+    } on Object {
+      await widget.authTokenStore.clearTokens();
+      if (!mounted || _localDemoOpened) {
+        return;
+      }
+
       setState(() {
-        _signedIn = true;
+        _signedIn = false;
         _isSigningIn = false;
-        _loginError = null;
+        _loginError = 'Please sign in again to continue.';
       });
       return;
     }
 
-    final state = await widget.authService.refresh();
     if (!mounted || _localDemoOpened) {
       return;
     }
 
+    final accountType = state.session?.accountType;
     if (state.isAuthenticated &&
-        state.session?.accountType == AuthAccountType.driver) {
+        (accountType == null || accountType == AuthAccountType.driver)) {
       setState(() {
         _signedIn = true;
         _isSigningIn = false;
@@ -142,9 +166,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() {
       _signedIn = false;
       _isSigningIn = false;
-      _loginError = state.error?.message == authAppContextErrorMessage
-          ? authAppContextErrorMessage
-          : null;
+      _loginError = 'Please sign in again to continue.';
     });
   }
 

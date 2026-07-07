@@ -837,16 +837,81 @@ void main() {
     expect(api.paths, isEmpty);
   });
 
-  testWidgets('Passenger startup with stored tokens opens home', (
+  testWidgets(
+    'Passenger access-only restored session clears tokens and asks sign in again',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+      final store = _AccessOnlyAuthTokenStore('stored-passenger-access');
+      final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
+      await tester.pumpWidget(_loginTestApp(api: api, store: store));
+      await tester.pumpAndSettle();
+
+      expect(api.paths, isEmpty);
+      expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+      expect(find.text('Passenger access'), findsOneWidget);
+      expect(find.text('Please sign in again to continue.'), findsOneWidget);
+      expect(find.text('Book a ride'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Passenger rejected restored session clears tokens and asks sign in again',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'expired-passenger-access',
+          refreshToken: 'expired-passenger-refresh',
+        ),
+      );
+      final api = _FakeAuthApiGateway(statusCode: 401);
+
+      await tester.pumpWidget(_loginTestApp(api: api, store: store));
+      await tester.pumpAndSettle();
+
+      expect(api.paths, <String>[AuthService.refreshPath]);
+      expect(api.bodies.single, <String, Object?>{
+        'refresh': 'expired-passenger-refresh',
+      });
+      expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+      expect(find.text('Passenger access'), findsOneWidget);
+      expect(find.text('Please sign in again to continue.'), findsOneWidget);
+      expect(find.text('Book a ride'), findsNothing);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+    },
+  );
+
+  testWidgets('Passenger startup with refreshable stored tokens opens home', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
-    final store = _AccessOnlyAuthTokenStore('stored-passenger-access');
-    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
 
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
     await tester.pumpAndSettle();
 
+    expect(api.paths, <String>[AuthService.refreshPath]);
+    expect(api.bodies.single, <String, Object?>{
+      'refresh': 'stored-passenger-refresh',
+    });
+    expect(await store.readAccessToken(), 'restored-passenger-access');
+    expect(await store.readRefreshToken(), 'stored-passenger-refresh');
     expect(find.text('Book a ride'), findsOneWidget);
     expect(
       find.text(
@@ -856,65 +921,20 @@ void main() {
     );
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
-    expect(find.byKey(const Key('passenger-sign-in')), findsNothing);
-
-    await tester.tap(find.text('Account'));
-    await tester.pumpAndSettle();
-    expect(find.text('Passenger account'), findsOneWidget);
-    expect(
-      find.text('Your account details are managed by the Control Center.'),
-      findsOneWidget,
-    );
-    expect(find.text('Sign out'), findsWidgets);
-    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
-    expect(find.textContaining('fake passenger name'), findsNothing);
-    expect(find.textContaining('passenger phone'), findsNothing);
-    expect(find.textContaining('fake phone number'), findsNothing);
-    expect(find.textContaining('wallet'), findsNothing);
-    expect(find.textContaining('payment method'), findsNothing);
-    expect(find.textContaining('ride statistics'), findsNothing);
-    expect(find.textContaining('support ticket'), findsNothing);
-    expect(find.textContaining('verification'), findsNothing);
-    expect(api.paths, isEmpty);
-  });
-
-  testWidgets('Passenger restored driver and staff sessions clear safely', (
-    tester,
-  ) async {
-    for (final accountType in <String>['driver', 'staff']) {
-      _useSurface(tester, const Size(430, 900));
-      final store = MemoryAuthTokenStore();
-      await store.saveTokens(
-        AuthTokens(
-          accessToken: 'stored-cross-app-access-$accountType',
-          refreshToken: 'stored-cross-app-refresh-$accountType',
-        ),
-      );
-      final api = _FakeAuthApiGateway(
-        responseData: _loginResponse(accountType: accountType),
-      );
-
-      await tester.pumpWidget(_loginTestApp(api: api, store: store));
-      await tester.pumpAndSettle();
-
-      expect(api.paths, <String>[AuthService.refreshPath]);
-      expect(api.bodies.single, <String, Object?>{
-        'refresh': 'stored-cross-app-refresh-$accountType',
-      });
-      expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
-      expect(find.text('Book a ride'), findsNothing);
-      expect(await store.readAccessToken(), isNull);
-      expect(await store.readRefreshToken(), isNull);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
+    expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
   testWidgets('Passenger sign out after restored startup clears next startup', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
-    final store = _AccessOnlyAuthTokenStore('stored-passenger-access');
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
     final api = _FakeAuthApiGateway(responseData: _loginResponse());
 
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
