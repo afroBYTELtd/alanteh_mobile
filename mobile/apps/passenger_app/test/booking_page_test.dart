@@ -1542,6 +1542,18 @@ void main() {
     );
   });
 
+  test('api submitter accepts production API base URL without live HTTP', () {
+    final store = MemoryAuthTokenStore();
+    final submitter = ApiPassengerRideRequestSubmitter.withDefaultClient(
+      tokenStore: store,
+      baseUrl: 'https://control.alanteh.io',
+    );
+
+    expect(AsmApiBaseUrl.isUsable('https://control.alanteh.io'), isTrue);
+    expect(submitter.client.baseUrl, 'https://control.alanteh.io');
+    expect(submitter.connectionConfigured, isTrue);
+  });
+
   test('api submitter uses configured API base URL', () {
     final store = MemoryAuthTokenStore();
     final submitter = ApiPassengerRideRequestSubmitter.withDefaultClient(

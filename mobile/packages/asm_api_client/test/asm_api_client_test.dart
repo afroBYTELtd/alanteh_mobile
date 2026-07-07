@@ -85,6 +85,52 @@ void main() {
       expect(AsmApiClient.defaultBaseUrl, value);
     });
 
+    test('accepts production Control Center base URL from configuration', () {
+      const productionBaseUrl = 'https://control.alanteh.io';
+
+      expect(AsmApiBaseUrl.environmentKey, 'ASM_API_BASE_URL');
+      expect(AsmApiBaseUrl.isUsable(productionBaseUrl), isTrue);
+      expect(AsmApiBaseUrl.normalize(productionBaseUrl), productionBaseUrl);
+
+      final client = AsmApiClient(baseUrl: productionBaseUrl);
+      expect(client.baseUrl, productionBaseUrl);
+    });
+
+    test('normalizes production Control Center trailing slash safely', () {
+      const productionBaseUrl = 'https://control.alanteh.io';
+
+      expect(AsmApiBaseUrl.isUsable('$productionBaseUrl/'), isTrue);
+      expect(
+        AsmApiBaseUrl.normalize('$productionBaseUrl/'),
+        '$productionBaseUrl/',
+      );
+
+      final client = AsmApiClient(baseUrl: '$productionBaseUrl/');
+      expect(client.baseUrl, '$productionBaseUrl/');
+    });
+
+    test(
+      'builds accepted endpoint URLs from production base URL without live HTTP',
+      () {
+        const productionBaseUrl = 'https://control.alanteh.io';
+        final baseUri = Uri.parse(AsmApiBaseUrl.normalize(productionBaseUrl));
+
+        expect(AsmApiBaseUrl.isUsable(productionBaseUrl), isTrue);
+        expect(
+          baseUri.resolve('/api/auth/token/').toString(),
+          'https://control.alanteh.io/api/auth/token/',
+        );
+        expect(
+          baseUri.resolve('/api/auth/token/refresh/').toString(),
+          'https://control.alanteh.io/api/auth/token/refresh/',
+        );
+        expect(
+          baseUri.resolve('/api/rides/request/').toString(),
+          'https://control.alanteh.io/api/rides/request/',
+        );
+      },
+    );
+
     test('keeps configured base URL on the client', () {
       final client = AsmApiClient(baseUrl: 'https://example.test');
 
