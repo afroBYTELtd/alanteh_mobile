@@ -124,36 +124,61 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _restoreStoredSession() async {
-    final accessToken = (await _tokenStore.readAccessToken())?.trim();
+    final rawAccessToken = await _tokenStore.readAccessToken();
+    final rawRefreshToken = await _tokenStore.readRefreshToken();
+    final accessToken = rawAccessToken?.trim();
+    final refreshToken = rawRefreshToken?.trim();
+    final hadStoredSession = rawAccessToken != null || rawRefreshToken != null;
+
     if (!mounted || _localQaOpened || _signedIn) {
       return;
     }
 
-    if (accessToken == null || accessToken.isEmpty) {
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        refreshToken == null ||
+        refreshToken.isEmpty) {
+      if (hadStoredSession) {
+        await _tokenStore.clearTokens();
+      }
+      if (!mounted || _localQaOpened || _signedIn) {
+        return;
+      }
+
       setState(() {
         _signedIn = false;
         _isSigningIn = false;
+        _loginErrorMessage = hadStoredSession
+            ? 'Please sign in again to continue.'
+            : null;
       });
       return;
     }
 
-    final refreshToken = (await _tokenStore.readRefreshToken())?.trim();
-    if (refreshToken == null || refreshToken.isEmpty) {
+    AuthState state;
+    try {
+      state = await _authService.refresh();
+    } on Object {
+      await _tokenStore.clearTokens();
+      if (!mounted || _localQaOpened) {
+        return;
+      }
+
       setState(() {
-        _signedIn = true;
+        _signedIn = false;
         _isSigningIn = false;
-        _loginErrorMessage = null;
+        _loginErrorMessage = 'Please sign in again to continue.';
       });
       return;
     }
 
-    final state = await _authService.refresh();
     if (!mounted || _localQaOpened) {
       return;
     }
 
+    final accountType = state.session?.accountType;
     if (state.isAuthenticated &&
-        state.session?.accountType == AuthAccountType.passenger) {
+        (accountType == null || accountType == AuthAccountType.passenger)) {
       setState(() {
         _signedIn = true;
         _isSigningIn = false;
@@ -170,9 +195,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _signedIn = false;
       _isSigningIn = false;
-      _loginErrorMessage = state.error?.message == authAppContextErrorMessage
-          ? authAppContextErrorMessage
-          : null;
+      _loginErrorMessage = 'Please sign in again to continue.';
     });
   }
 
