@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -13,6 +14,46 @@ void main() {
   test('Passenger auth endpoint contract paths remain stable', () {
     expect(AuthService.tokenPath, '/api/auth/token/');
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+  });
+
+  test('M3A keeps Passenger runtime free of unaccepted backend endpoints', () {
+    final source = _readM3aDartSources('lib');
+
+    expect(source, contains('Passenger account'));
+    expect(
+      source,
+      contains('Your account details are managed by the Control Center.'),
+    );
+    expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
+    expect(source, isNot(contains('/api/trips')));
+    expect(source, isNot(contains('/api/rides/status')));
+    expect(source, isNot(contains('/api/driver')));
+    expect(source, isNot(contains('/api/dispatch')));
+    expect(source, isNot(contains('/api/assignments')));
+    expect(source, isNot(contains('/api/routes')));
+    expect(source, isNot(contains('/api/estimate')));
+    expect(source, isNot(contains('/api/fares')));
+    expect(source, isNot(contains('/api/profile')));
+    expect(source, isNot(contains('/api/account')));
+    expect(source, isNot(contains('/api/wallet')));
+    expect(source, isNot(contains('/api/payment')));
+    expect(source, isNot(contains('/api/payments')));
+    expect(source, isNot(contains('/api/payout')));
+    expect(source, isNot(contains('/api/payouts')));
+    expect(source, isNot(contains('/api/earnings')));
+    expect(source, isNot(contains('/api/support')));
+    expect(source, isNot(contains('/api/documents')));
+    expect(source, isNot(contains('/api/verification')));
+    expect(source, isNot(contains('/api/vehicles')));
+    expect(source, isNot(contains('/api/logout')));
+    expect(source, isNot(contains('session/validate')));
+    expect(source, isNot(contains('GoogleMap')));
+    expect(source, isNot(contains('geolocator')));
+    for (final credential in _m3aDevelopmentCredentials) {
+      expect(source, isNot(contains(credential)));
+    }
+    expect(source, isNot(contains(['fake', 'token'].join(' '))));
+    expect(source, isNot(contains(['fake', 'Token'].join())));
   });
 
   test('Passenger ALANTEH in-app logo asset is bundled', () async {
@@ -1129,3 +1170,20 @@ void _useSurface(WidgetTester tester, Size size) {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 }
+
+String _readM3aDartSources(String rootPath) {
+  final buffer = StringBuffer();
+  for (final entity in Directory(rootPath).listSync(recursive: true)) {
+    if (entity is File && entity.path.endsWith('.dart')) {
+      buffer.writeln(entity.readAsStringSync());
+    }
+  }
+  return buffer.toString();
+}
+
+List<String> get _m3aDevelopmentCredentials => <String>[
+  ['+23355', '123', '4567'].join(),
+  ['+23324', '123', '4567'].join(),
+  ['12', '34'].join(),
+  ['43', '21'].join(),
+];

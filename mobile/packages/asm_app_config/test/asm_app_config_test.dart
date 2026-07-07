@@ -67,6 +67,50 @@ void main() {
         expect(config.capabilities.automatedMatching, isFalse);
       }
     });
+
+    test('M3A keeps future backend-dependent capabilities disabled', () {
+      final defaultConfig = AsmAppConfigLoader.fromValues();
+      expect(defaultConfig.capabilities.publicRegistration, isFalse);
+      expect(defaultConfig.capabilities.liveMaps, isFalse);
+      expect(defaultConfig.capabilities.bookingSubmission, isFalse);
+      expect(defaultConfig.capabilities.payments, isFalse);
+      expect(defaultConfig.capabilities.wallets, isFalse);
+      expect(defaultConfig.capabilities.automatedMatching, isFalse);
+      expect(
+        defaultConfig.mobileIntegrationDependencies.mobileAuthApiEnabled,
+        isFalse,
+      );
+      expect(
+        defaultConfig.mobileIntegrationDependencies.rideRequestApiEnabled,
+        isFalse,
+      );
+
+      for (final environment in <String>[
+        'local',
+        'development',
+        'staging',
+        'production',
+      ]) {
+        final config = AsmAppConfigLoader.fromValues(
+          environmentValue: environment,
+        );
+
+        expect(config.capabilities.publicRegistration, isFalse);
+        expect(config.capabilities.liveMaps, isFalse);
+        expect(config.capabilities.bookingSubmission, isFalse);
+        expect(config.capabilities.payments, isFalse);
+        expect(config.capabilities.wallets, isFalse);
+        expect(config.capabilities.automatedMatching, isFalse);
+        expect(
+          config.mobileIntegrationDependencies.mobileAuthApiEnabled,
+          isFalse,
+        );
+        expect(
+          config.mobileIntegrationDependencies.rideRequestApiEnabled,
+          isFalse,
+        );
+      }
+    });
   });
 
   group('disabled mobile integration dependencies', () {
