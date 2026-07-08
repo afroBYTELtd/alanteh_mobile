@@ -576,6 +576,28 @@ void main() {
   });
 
   testWidgets(
+    'Passenger app accepts production API base URL dart-define without live HTTP',
+    (tester) async {
+      const productionBaseUrl = 'https://control.alanteh.io';
+      const configuredBaseUrl = String.fromEnvironment('ASM_API_BASE_URL');
+
+      if (configuredBaseUrl != productionBaseUrl) {
+        expect(AsmApiClient.defaultBaseUrl, configuredBaseUrl);
+        return;
+      }
+
+      await tester.pumpWidget(const PassengerApp());
+      await tester.pump();
+
+      expect(AsmApiClient.defaultBaseUrl, productionBaseUrl);
+      expect(AsmApiBaseUrl.isUsable(AsmApiClient.defaultBaseUrl), isTrue);
+      expect(AuthService.tokenPath, '/api/auth/token/');
+      expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+      expect(find.byType(PassengerApp), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'real sign-in without API base URL shows connection configuration error',
     (tester) async {
       if (AsmApiClient.defaultBaseUrl.trim().isNotEmpty) {

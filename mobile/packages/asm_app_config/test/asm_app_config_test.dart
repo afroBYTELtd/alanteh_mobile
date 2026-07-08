@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -244,6 +246,20 @@ void main() {
           );
           expect(LocalQaFlagResolver.resolve(value), isFalse, reason: '$value');
         }
+      },
+    );
+
+    test(
+      'keeps production environment separate from API base URL defaults',
+      () {
+        final config = AsmAppConfigLoader.fromValues(
+          environmentValue: 'production',
+        );
+        final source = File('lib/asm_app_config.dart').readAsStringSync();
+
+        expect(config.environment, RuntimeEnvironment.production);
+        expect(source, isNot(contains('ASM_API_BASE_URL')));
+        expect(source, isNot(contains('https://control.alanteh.io')));
       },
     );
 
