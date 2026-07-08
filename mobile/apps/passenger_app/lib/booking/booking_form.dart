@@ -62,16 +62,16 @@ class BookingForm extends StatelessWidget {
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
               labelText: 'Where are you?',
-              hintText: 'Pickup address or landmark',
+              hintText: 'e.g. Kempinski Hotel, Accra Mall',
               border: OutlineInputBorder(),
             ),
             validator: (value) {
               final pickup = value?.trim() ?? '';
               if (pickup.isEmpty) {
-                return 'Enter pickup location.';
+                return 'Please enter your pickup location.';
               }
               if (pickup.length > 240) {
-                return 'Pickup location is too long.';
+                return 'Location is too long. Please shorten it.';
               }
               return null;
             },
@@ -84,20 +84,20 @@ class BookingForm extends StatelessWidget {
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
               labelText: 'Where to?',
-              hintText: 'Destination address or landmark',
+              hintText: 'e.g. Kotoka Airport, University of Ghana',
               border: OutlineInputBorder(),
             ),
             validator: (value) {
               final destination = value?.trim() ?? '';
               if (destination.isEmpty) {
-                return 'Enter destination.';
+                return 'Please enter your destination.';
               }
               if (destination.length > 240) {
-                return 'Destination is too long.';
+                return 'Destination is too long. Please shorten it.';
               }
               if (destination.toLowerCase() ==
                   pickupController.text.trim().toLowerCase()) {
-                return 'Destination must be different from pickup.';
+                return 'Drop-off cannot be the same as pickup.';
               }
               return null;
             },
@@ -180,7 +180,7 @@ class BookingForm extends StatelessWidget {
             key: const Key('request-ride'),
             onPressed: onReview,
             icon: const Icon(Icons.directions_car_filled_outlined),
-            label: const Text('Request ride'),
+            label: const Text('Review my ride'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
             ),

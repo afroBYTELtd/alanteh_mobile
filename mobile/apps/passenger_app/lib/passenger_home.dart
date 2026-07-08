@@ -89,7 +89,7 @@ class PassengerHome extends StatelessWidget {
             AsmLocalMapPreviewSurface(
               key: const Key('local-map-preview'),
               icon: Icons.map_outlined,
-              title: 'Map preview unavailable.',
+              title: '',
               minHeight: 190,
               titleStyle: const TextStyle(fontWeight: FontWeight.w700),
             ),

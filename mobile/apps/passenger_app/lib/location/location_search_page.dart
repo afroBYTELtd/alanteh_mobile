@@ -7,8 +7,13 @@ enum LocationSearchKind { pickup, destination }
 
 extension LocationSearchKindLabel on LocationSearchKind {
   String get title => switch (this) {
-    LocationSearchKind.pickup => 'Choose pickup',
+    LocationSearchKind.pickup => 'Where are you?',
     LocationSearchKind.destination => 'Where to?',
+  };
+
+  String get fieldLabel => switch (this) {
+    LocationSearchKind.pickup => 'Your pickup location',
+    LocationSearchKind.destination => 'Your destination',
   };
 }
 
@@ -55,8 +60,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(title: Text(widget.kind.title)),
       body: SafeArea(
@@ -73,27 +76,6 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
-            const SizedBox(height: AsmSpacing.space12),
-            Container(
-              padding: const EdgeInsets.all(AsmSpacing.space12),
-              decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: BorderRadius.circular(AsmRadii.radius8),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.search_off_outlined),
-                  SizedBox(width: AsmSpacing.space12),
-                  Expanded(
-                    child: Text(
-                      'Local description only. No map search is connected.',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: AsmSpacing.space20),
             Form(
               key: _formKey,
@@ -107,12 +89,12 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                 textCapitalization: TextCapitalization.sentences,
                 onFieldSubmitted: (_) => _useDescription(),
                 decoration: InputDecoration(
-                  labelText: widget.kind.title,
-                  hintText: 'Enter a local place description',
+                  labelText: widget.kind.fieldLabel,
+                  hintText: 'e.g. Kotoka Airport, Kempinski Hotel',
                   border: const OutlineInputBorder(),
                 ),
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Enter a location description.'
+                    ? 'Please enter your location.'
                     : null,
               ),
             ),
@@ -121,7 +103,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               key: const Key('use-location-description'),
               onPressed: _useDescription,
               icon: const Icon(Icons.check),
-              label: const Text('Use this location description'),
+              label: const Text('Confirm location'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
               ),
@@ -129,7 +111,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
             if (widget.recentDescriptions.isNotEmpty) ...[
               const SizedBox(height: AsmSpacing.space24),
               Text(
-                'Recent this session',
+                'Recent places',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
