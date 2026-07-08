@@ -149,7 +149,7 @@ void main() {
     expect(await store.readAccessToken(), isNot('0000'));
     expect(await store.readRefreshToken(), isNot('0000'));
 
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
     expect(
       find.text(
         'The Control Center will review your request and confirm pickup details.',
@@ -256,8 +256,8 @@ void main() {
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Local QA route preview'), findsOneWidget);
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.text('Book a ride'), findsWidgets);
   });
 
   testWidgets('Passenger login rejects non-passenger account types', (
@@ -646,7 +646,9 @@ void main() {
     expect(passengerHomeLogo.width, greaterThanOrEqualTo(160));
     expect(passengerHomeLogo.width, lessThanOrEqualTo(190));
     expect(passengerHomeLogo.fit, BoxFit.contain);
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(passengerHomeLogo.semanticLabel, contains('ALANTEH'));
+    expect(find.text('ASM PASSENGER'), findsNothing);
+    expect(find.text('Book a ride'), findsWidgets);
     expect(
       find.text(
         'The Control Center will review your request and confirm pickup details.',
@@ -669,11 +671,9 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips to show yet.'), findsOneWidget);
+    expect(find.text('No trips yet'), findsOneWidget);
     expect(
-      find.text(
-        'After you request a ride, the Control Center will follow up with your pickup details.',
-      ),
+      find.text('Your ride history will appear here after your first trip.'),
       findsOneWidget,
     );
     expect(find.text('LOCAL DEMO'), findsNothing);
@@ -688,10 +688,14 @@ void main() {
     expect(find.textContaining('fake fare'), findsNothing);
     expect(find.textContaining('fare'), findsNothing);
     expect(find.textContaining('trip history'), findsNothing);
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
     await tester.tap(find.text('Book a ride'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+
+    expect(find.text('Support'), findsNothing);
+    expect(find.text('Need help?'), findsNothing);
+    expect(find.text('Contact us at contact@alanteh.io'), findsNothing);
 
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
@@ -768,7 +772,7 @@ void main() {
       MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
     );
 
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
     expect(
       find.text(
         'The Control Center will review your request and confirm pickup details.',
@@ -934,7 +938,7 @@ void main() {
     });
     expect(await store.readAccessToken(), 'restored-passenger-access');
     expect(await store.readRefreshToken(), 'stored-passenger-refresh');
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
     expect(
       find.text(
         'The Control Center will review your request and confirm pickup details.',
@@ -986,7 +990,7 @@ void main() {
     await tester.pumpWidget(PassengerApp(authTokenStore: store));
     await tester.pumpAndSettle();
 
-    expect(find.text('Book a ride'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
     expect(await store.readAccessToken(), isNull);
@@ -1182,6 +1186,15 @@ const _removedPassengerTexts = [
   'Close draft',
   'GHANA PILOT',
   'No ride service is connected',
+  'Local description only. No map search is connected.',
+  'No map search is connected',
+  'Plan a demo ride',
+  'Review local draft',
+  'Close draft',
+  'No trips connected',
+  'No trips to show yet.',
+  'Support not connected',
+  'Live support is unavailable',
 ];
 
 const _noLiveFeatureTexts = [

@@ -35,7 +35,7 @@ class PassengerRoutePlanner extends StatelessWidget {
       pickupInputTile: AsmRouteInputTile(
         key: const Key('choose-pickup'),
         markerColor: AsmColors.green,
-        placeholder: 'Choose pickup',
+        placeholder: 'Where are you?',
         description: pickupDescription,
         onTap: onChoosePickup,
       ),
@@ -56,13 +56,13 @@ class PassengerRoutePlanner extends StatelessWidget {
       ),
       validationNotice: locationsMatch
           ? const AsmRouteValidationNotice(
-              message: 'Pickup and destination must be different.',
+              message: 'Pickup and drop-off cannot be the same place.',
             )
           : null,
       actionArea: AsmPrimaryActionButton(
         key: const Key('continue-local-draft'),
         onPressed: canContinue ? onContinue : null,
-        label: 'Continue',
+        label: 'Book a ride',
       ),
     );
   }

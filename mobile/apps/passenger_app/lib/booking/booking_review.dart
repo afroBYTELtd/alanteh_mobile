@@ -67,17 +67,17 @@ class BookingReview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space24),
         AsmRideDetailRow(
-          label: 'Pickup',
+          label: 'From',
           value: draft.rideDraft.pickupDisplayText,
           selectableValue: true,
         ),
         AsmRideDetailRow(
-          label: 'Destination',
+          label: 'To',
           value: draft.rideDraft.destinationDisplayText,
           selectableValue: true,
         ),
         AsmRideDetailRow(
-          label: 'Passenger count',
+          label: 'Passengers',
           value: '${draft.passengerCount.value}',
           selectableValue: true,
         ),

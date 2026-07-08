@@ -183,9 +183,8 @@ class _PassengerShellState extends State<PassengerShell> {
       ),
       1 => _PassengerPlaceholder(
         icon: Icons.route_outlined,
-        title: 'No trips to show yet.',
-        message:
-            'After you request a ride, the Control Center will follow up with your pickup details.',
+        title: 'No trips yet',
+        message: 'Your ride history will appear here after your first trip.',
         actionLabel: 'Book a ride',
         onActionPressed: () => setState(() => _selectedIndex = 0),
       ),

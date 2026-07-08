@@ -21,11 +21,16 @@ void main() {
     await tester.pumpWidget(_bookingTestApp());
 
     expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsOneWidget);
+    expect(find.text('Where are you?'), findsWidgets);
+    expect(find.text('e.g. Kempinski Hotel, Accra Mall'), findsOneWidget);
     expect(find.text('Where to?'), findsOneWidget);
+    expect(
+      find.text('e.g. Kotoka Airport, University of Ghana'),
+      findsOneWidget,
+    );
     expect(find.text('How many passengers?'), findsOneWidget);
     expect(find.text('Special request (optional)'), findsOneWidget);
-    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('Review my ride'), findsOneWidget);
     expect(find.byKey(const Key('booking-service-context')), findsNothing);
     expect(find.text('Approved service context'), findsNothing);
 
@@ -65,8 +70,8 @@ void main() {
     await tester.tap(find.byKey(const Key('request-ride')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter pickup location.'), findsOneWidget);
-    expect(find.text('Enter destination.'), findsOneWidget);
+    expect(find.text('Please enter your pickup location.'), findsOneWidget);
+    expect(find.text('Please enter your destination.'), findsOneWidget);
     expect(find.text('Choose an approved service context.'), findsNothing);
     expect(find.text('No ride request has been sent.'), findsNothing);
   });
@@ -103,8 +108,8 @@ void main() {
       await tester.tap(find.byKey(const Key('request-ride')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Enter pickup location.'), findsOneWidget);
-      expect(find.text('Enter destination.'), findsOneWidget);
+      expect(find.text('Please enter your pickup location.'), findsOneWidget);
+      expect(find.text('Please enter your destination.'), findsOneWidget);
       expect(submitter.submissions, isEmpty);
       expect(find.text('Ride request received'), findsNothing);
 
@@ -121,7 +126,10 @@ void main() {
       await tester.tap(find.byKey(const Key('request-ride')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Pickup location is too long.'), findsOneWidget);
+      expect(
+        find.text('Location is too long. Please shorten it.'),
+        findsOneWidget,
+      );
       expect(submitter.submissions, isEmpty);
       expect(
         tester
@@ -141,7 +149,10 @@ void main() {
       await tester.tap(find.byKey(const Key('request-ride')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Destination is too long.'), findsOneWidget);
+      expect(
+        find.text('Destination is too long. Please shorten it.'),
+        findsOneWidget,
+      );
       expect(submitter.submissions, isEmpty);
       expect(
         tester
@@ -202,13 +213,16 @@ void main() {
     await tester.tap(find.byKey(const Key('request-ride')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Pickup location is too long.'), findsNothing);
-    expect(find.text('Destination is too long.'), findsNothing);
+    expect(find.text('Location is too long. Please shorten it.'), findsNothing);
+    expect(
+      find.text('Destination is too long. Please shorten it.'),
+      findsNothing,
+    );
     expect(find.text('Special request is too long.'), findsNothing);
     expect(find.text('Confirm your ride'), findsWidgets);
-    expect(find.text('Pickup'), findsOneWidget);
-    expect(find.text('Destination'), findsOneWidget);
-    expect(find.text('Passenger count'), findsOneWidget);
+    expect(find.text('From'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text('Passengers'), findsOneWidget);
     expect(submitter.submissions, isEmpty);
   });
 
@@ -621,8 +635,8 @@ void main() {
     expect(continueButton().onPressed, isNull);
     expect(swapButton().onPressed, isNull);
     expect(find.byKey(const Key('clear-route')), findsNothing);
-    expect(find.text('Book a ride'), findsOneWidget);
-    expect(find.text('Where are you?'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
+    expect(find.text('Where are you?'), findsWidgets);
 
     await _selectLocation(
       tester,
@@ -636,7 +650,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('choose-destination')));
     await tester.pumpAndSettle();
-    expect(find.text('Recent this session'), findsOneWidget);
+    expect(find.text('Recent places'), findsOneWidget);
     expect(find.byKey(const Key('recent-location-0')), findsOneWidget);
     expect(find.text('Solar Hotel'), findsOneWidget);
     await tester.enterText(
@@ -647,7 +661,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Pickup and destination must be different.'),
+      find.text('Pickup and drop-off cannot be the same place.'),
       findsOneWidget,
     );
     expect(continueButton().onPressed, isNull);
@@ -657,7 +671,7 @@ void main() {
     expect(find.text('Ghana'), findsOneWidget);
     expect(
       find.text('Local description only. No map search is connected.'),
-      findsOneWidget,
+      findsNothing,
     );
     await tester.enterText(
       find.byKey(const Key('location-description')),
@@ -692,7 +706,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsOneWidget);
+    expect(find.text('Where are you?'), findsWidgets);
     expect(find.text('Where to?'), findsOneWidget);
     expect(
       tester
@@ -719,12 +733,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Confirm your ride'), findsWidgets);
-    expect(find.text('Pickup'), findsOneWidget);
-    expect(find.text('Destination'), findsOneWidget);
-    expect(find.text('Passenger count'), findsOneWidget);
+    expect(find.text('From'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text('Passengers'), findsOneWidget);
     expect(find.text('Payment method'), findsOneWidget);
     expect(find.text('MTN MoMo'), findsOneWidget);
     expect(find.text('Edit details'), findsOneWidget);
+    expect(find.text('Cancel'), findsNothing);
     expect(find.text('Confirm and request'), findsOneWidget);
     expect(find.text('Solar Hotel'), findsOneWidget);
     expect(find.text('Accra Airport'), findsOneWidget);
@@ -733,11 +748,12 @@ void main() {
     expect(find.text('Service context'), findsNothing);
     expect(find.text('Operating market'), findsNothing);
     expect(find.text('Close draft'), findsNothing);
+    expect(find.text('No ride request has been sent.'), findsNothing);
 
     await tester.ensureVisible(find.byKey(const Key('edit-booking-details')));
     await tester.tap(find.byKey(const Key('edit-booking-details')));
     await tester.pumpAndSettle();
-    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('Review my ride'), findsOneWidget);
     expect(
       tester
           .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
@@ -780,9 +796,9 @@ void main() {
     await tester.tap(find.byKey(const Key('finish-ride-request')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Map preview unavailable.'), findsOneWidget);
-    expect(find.text('Book a ride'), findsOneWidget);
-    expect(find.text('Where are you?'), findsOneWidget);
+    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.text('Book a ride'), findsWidgets);
+    expect(find.text('Where are you?'), findsWidgets);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.text('Solar Hotel'), findsNothing);
     expect(find.text('Accra Airport'), findsNothing);
@@ -1682,8 +1698,8 @@ void main() {
     await tester.tap(find.byKey(const Key('clear-route')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Book a ride'), findsOneWidget);
-    expect(find.text('Where are you?'), findsOneWidget);
+    expect(find.text('Book a ride'), findsWidgets);
+    expect(find.text('Where are you?'), findsWidgets);
     expect(find.text('Where to?'), findsOneWidget);
     expect(find.byKey(const Key('clear-route')), findsNothing);
     expect(
@@ -1699,7 +1715,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('choose-pickup')));
     await tester.pumpAndSettle();
-    expect(find.text('Recent this session'), findsOneWidget);
+    expect(find.text('Recent places'), findsOneWidget);
     expect(find.text('Solar Hotel'), findsOneWidget);
     expect(find.text('Accra Airport'), findsOneWidget);
   });

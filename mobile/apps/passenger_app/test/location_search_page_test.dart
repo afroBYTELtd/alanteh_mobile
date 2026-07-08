@@ -4,20 +4,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/location/location_search_page.dart';
 
 void main() {
-  testWidgets('renders location search input for local descriptions only', (
+  testWidgets('renders pickup location search input in passenger language', (
     tester,
   ) async {
     await tester.pumpWidget(_pageApp(kind: LocationSearchKind.pickup));
 
-    expect(find.text('Choose pickup'), findsWidgets);
+    expect(find.text('Where are you?'), findsWidgets);
     expect(find.byKey(const Key('location-market-context')), findsOneWidget);
     expect(find.text('Ghana'), findsOneWidget);
     expect(find.byKey(const Key('location-description')), findsOneWidget);
-    expect(find.text('Use this location description'), findsOneWidget);
+    expect(find.text('Confirm location'), findsOneWidget);
     expect(
       find.text('Local description only. No map search is connected.'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('Your pickup location'), findsOneWidget);
+    expect(find.text('e.g. Kotoka Airport, Kempinski Hotel'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const Key('location-description')),
@@ -38,12 +40,14 @@ void main() {
   testWidgets('rejects a blank local description', (tester) async {
     await tester.pumpWidget(_pageApp(kind: LocationSearchKind.pickup));
 
-    expect(find.text('Choose pickup'), findsWidgets);
+    expect(find.text('Where are you?'), findsWidgets);
     expect(
       find.text('Local description only. No map search is connected.'),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('Recent this session'), findsNothing);
+    expect(find.text('Your pickup location'), findsOneWidget);
+    expect(find.text('e.g. Kotoka Airport, Kempinski Hotel'), findsOneWidget);
+    expect(find.text('Recent places'), findsNothing);
     await tester.enterText(
       find.byKey(const Key('location-description')),
       '   ',
@@ -51,7 +55,7 @@ void main() {
     await tester.tap(find.byKey(const Key('use-location-description')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Enter a location description.'), findsOneWidget);
+    expect(find.text('Please enter your location.'), findsOneWidget);
   });
 
   testWidgets('shows recent entries and returns a selected description', (
@@ -68,7 +72,8 @@ void main() {
     await tester.tap(find.text('Open destination search'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Recent this session'), findsOneWidget);
+    expect(find.text('Recent places'), findsOneWidget);
+    expect(find.text('Your destination'), findsOneWidget);
     expect(find.byKey(const ValueKey('recent-location-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('recent-location-1')), findsOneWidget);
     expect(find.text('Accra Airport'), findsOneWidget);
