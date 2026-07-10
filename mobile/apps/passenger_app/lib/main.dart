@@ -391,6 +391,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     }
 
     return Scaffold(
+      backgroundColor: AsmColors.passengerSurface,
       body: AsmScreenSurface(
         scrollable: true,
         padding: const EdgeInsets.fromLTRB(
@@ -413,76 +414,115 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                 alignment: Alignment.centerLeft,
                 semanticLabel: 'ALANTEH passenger logo',
               ),
-              const SizedBox(height: AsmSpacing.space8),
-              const Text(
-                'Passenger access',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: AsmSpacing.space20),
-              const Text(
-                'Sign in to ride',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: AsmSpacing.space8),
-              const Text('Enter your phone number and PIN to continue.'),
-              const SizedBox(height: AsmSpacing.space20),
-              TextFormField(
-                key: const Key('passenger-phone-field'),
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: AsmSpacing.space16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AsmSpacing.space20),
+                decoration: BoxDecoration(
+                  color: AsmColors.passengerCard,
+                  borderRadius: BorderRadius.circular(AsmRadii.radius28),
+                  border: Border.all(color: AsmColors.passengerLine),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x16000000),
+                      blurRadius: 28,
+                      offset: Offset(0, 14),
+                    ),
+                  ],
                 ),
-                validator: (value) =>
-                    validateGhanaPhoneNumberForLogin(value ?? ''),
-              ),
-              const SizedBox(height: AsmSpacing.space12),
-              TextFormField(
-                key: const Key('passenger-pin-field'),
-                controller: _pinController,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _signIn(),
-                decoration: const InputDecoration(
-                  labelText: 'PIN',
-                  border: OutlineInputBorder(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Passenger access',
+                      style: TextStyle(
+                        color: AsmColors.brandGreen,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(height: AsmSpacing.space16),
+                    const Text(
+                      'Sign in to ride',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        height: 1.08,
+                      ),
+                    ),
+                    const SizedBox(height: AsmSpacing.space8),
+                    Text(
+                      'Enter your phone number and PIN to continue.',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: AsmSpacing.space20),
+                    TextFormField(
+                      key: const Key('passenger-phone-field'),
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone number',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) =>
+                          validateGhanaPhoneNumberForLogin(value ?? ''),
+                    ),
+                    const SizedBox(height: AsmSpacing.space12),
+                    TextFormField(
+                      key: const Key('passenger-pin-field'),
+                      controller: _pinController,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _signIn(),
+                      decoration: const InputDecoration(
+                        labelText: 'PIN',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) => validatePinForLogin(value ?? ''),
+                    ),
+                    if (_loginErrorMessage != null) ...[
+                      const SizedBox(height: AsmSpacing.space12),
+                      _LoginErrorPanel(message: _loginErrorMessage!),
+                    ],
+                    const SizedBox(height: AsmSpacing.space20),
+                    AsmPrimaryActionButton(
+                      key: const Key('passenger-sign-in'),
+                      onPressed: _isSigningIn ? null : _signIn,
+                      icon: Icons.login_outlined,
+                      label: _isSigningIn ? 'Signing in...' : 'Sign in',
+                    ),
+                    const SizedBox(height: AsmSpacing.space8),
+                    AsmPrimaryActionButton(
+                      key: const Key('passenger-clear-form'),
+                      onPressed: _isSigningIn ? null : _clearForm,
+                      variant: AsmActionButtonVariant.text,
+                      icon: Icons.clear_outlined,
+                      label: 'Clear form',
+                      minimumHeight: 48,
+                    ),
+                    if (widget.localQaEnabled) ...[
+                      const SizedBox(height: AsmSpacing.space8),
+                      AsmPrimaryActionButton(
+                        key: const Key('passenger-continue-local-qa'),
+                        onPressed: _isSigningIn ? null : _continueLocalQa,
+                        variant: AsmActionButtonVariant.text,
+                        icon: Icons.play_arrow_outlined,
+                        label: 'Continue without signing in',
+                        minimumHeight: 48,
+                      ),
+                    ],
+                  ],
                 ),
-                validator: (value) => validatePinForLogin(value ?? ''),
               ),
-              if (_loginErrorMessage != null) ...[
-                const SizedBox(height: AsmSpacing.space12),
-                _LoginErrorPanel(message: _loginErrorMessage!),
-              ],
-              const SizedBox(height: AsmSpacing.space20),
-              AsmPrimaryActionButton(
-                key: const Key('passenger-sign-in'),
-                onPressed: _isSigningIn ? null : _signIn,
-                icon: Icons.login_outlined,
-                label: _isSigningIn ? 'Signing in...' : 'Sign in',
-              ),
-              const SizedBox(height: AsmSpacing.space8),
-              AsmPrimaryActionButton(
-                key: const Key('passenger-clear-form'),
-                onPressed: _isSigningIn ? null : _clearForm,
-                variant: AsmActionButtonVariant.text,
-                icon: Icons.clear_outlined,
-                label: 'Clear form',
-                minimumHeight: 48,
-              ),
-              if (widget.localQaEnabled) ...[
-                const SizedBox(height: AsmSpacing.space8),
-                AsmPrimaryActionButton(
-                  key: const Key('passenger-continue-local-qa'),
-                  onPressed: _isSigningIn ? null : _continueLocalQa,
-                  variant: AsmActionButtonVariant.text,
-                  icon: Icons.play_arrow_outlined,
-                  label: 'Continue without signing in',
-                  minimumHeight: 48,
-                ),
-              ],
+              const SizedBox(height: AsmSpacing.space16),
+              const _PassengerLoginAccentCard(),
               const SizedBox(height: AsmSpacing.space20),
               const AsmPilotNoticeBanner(
                 message: 'Use your passenger phone and PIN to sign in.',
@@ -490,6 +530,46 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PassengerLoginAccentCard extends StatelessWidget {
+  const _PassengerLoginAccentCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('passenger-login-clean-energy-card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: AsmColors.passengerMintSurface,
+        borderRadius: BorderRadius.circular(AsmRadii.radius20),
+        border: Border.all(color: const Color(0xFFBFE3CF)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.bolt_outlined, color: AsmColors.solarYellow),
+          SizedBox(width: AsmSpacing.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Ride electric today',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: AsmSpacing.space4),
+                Text(
+                  'Clean energy, lower emissions, same comfort.',
+                  style: TextStyle(height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -736,8 +736,6 @@ void main() {
     expect(find.text('From'), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
     expect(find.text('Passengers'), findsOneWidget);
-    expect(find.text('Payment method'), findsOneWidget);
-    expect(find.text('MTN MoMo'), findsOneWidget);
     expect(find.text('Edit details'), findsOneWidget);
     expect(find.text('Cancel'), findsNothing);
     expect(find.text('Confirm and request'), findsOneWidget);

@@ -9,8 +9,19 @@ abstract final class AsmColors {
   static const Color solarYellow = Color(0xFFFFC928);
 
   static const Color passengerScaffold = Color(0xFFFAFBF8);
+  static const Color passengerSurface = Color(0xFFF7F5F0);
+  static const Color passengerCard = brandWhite;
+  static const Color passengerMintSurface = Color(0xFFE8F5EE);
+  static const Color passengerLine = Color(0xFFE6E2D4);
+  static const Color brandDeepGreen = Color(0xFF123C29);
+
   static const Color driverScaffold = brandBlack;
+  static const Color driverVisualSurface = Color(0xFF080B08);
   static const Color driverPanelMuted = Color(0xFF111A14);
+  static const Color driverCard = Color(0xFF141A14);
+  static const Color driverCardElevated = Color(0xFF181F18);
+  static const Color driverLine = Color(0xFF232B23);
+  static const Color driverMintAction = Color(0xFFA9E0C0);
   static const Color driverTextSecondary = Color(0xFFD6DED8);
   static const Color driverWarningSurface = Color(0xFFFFD968);
 }
@@ -28,11 +39,15 @@ abstract final class AsmSpacing {
 abstract final class AsmRadii {
   static const double radius6 = 6;
   static const double radius8 = 8;
+  static const double radius16 = 16;
+  static const double radius20 = 20;
+  static const double radius24 = 24;
+  static const double radius28 = 28;
 }
 
 abstract final class AsmThemes {
   static ThemeData get passenger {
-    return ThemeData(
+    final base = ThemeData(
       colorScheme: ColorScheme.fromSeed(
         seedColor: AsmColors.brandGreen,
         brightness: Brightness.light,
@@ -40,16 +55,144 @@ abstract final class AsmThemes {
       scaffoldBackgroundColor: AsmColors.passengerScaffold,
       useMaterial3: true,
     );
+
+    return base.copyWith(
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AsmColors.passengerCard,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+        hintStyle: const TextStyle(color: Color(0xFF6D7568)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space16,
+          vertical: AsmSpacing.space16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(color: AsmColors.passengerLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(color: AsmColors.passengerLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(color: AsmColors.brandGreen, width: 1.6),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: BorderSide(color: base.colorScheme.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: BorderSide(color: base.colorScheme.error, width: 1.6),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AsmRadii.radius24),
+          ),
+          backgroundColor: AsmColors.brandGreen,
+          foregroundColor: AsmColors.brandWhite,
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AsmRadii.radius24),
+          ),
+          foregroundColor: AsmColors.brandGreen,
+          side: const BorderSide(color: AsmColors.passengerLine),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AsmColors.brandGreen,
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
   }
 
   static ThemeData get driver {
-    return ThemeData(
+    final base = ThemeData(
       colorScheme: ColorScheme.fromSeed(
         seedColor: AsmColors.brandGreen,
         brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: AsmColors.driverScaffold,
       useMaterial3: true,
+    );
+
+    return base.copyWith(
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AsmColors.driverCard,
+        labelStyle: const TextStyle(
+          color: AsmColors.driverTextSecondary,
+          fontWeight: FontWeight.w700,
+        ),
+        hintStyle: const TextStyle(color: Color(0xFF8FA091)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space16,
+          vertical: AsmSpacing.space16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(color: AsmColors.driverLine),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(color: AsmColors.driverLine),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: const BorderSide(
+            color: AsmColors.driverMintAction,
+            width: 1.6,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: BorderSide(color: base.colorScheme.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AsmRadii.radius16),
+          borderSide: BorderSide(color: base.colorScheme.error, width: 1.6),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AsmRadii.radius24),
+          ),
+          backgroundColor: AsmColors.driverMintAction,
+          foregroundColor: const Color(0xFF0C2A1A),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AsmRadii.radius24),
+          ),
+          foregroundColor: AsmColors.driverMintAction,
+          side: const BorderSide(color: AsmColors.driverLine),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AsmColors.driverMintAction,
+          textStyle: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
     );
   }
 }

@@ -81,11 +81,6 @@ class BookingReview extends StatelessWidget {
           value: '${draft.passengerCount.value}',
           selectableValue: true,
         ),
-        const AsmRideDetailRow(
-          label: 'Payment method',
-          value: 'MTN MoMo',
-          selectableValue: true,
-        ),
         if (draft.assistanceNote != null)
           AsmRideDetailRow(
             label: 'Special request',

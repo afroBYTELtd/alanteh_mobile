@@ -10,8 +10,18 @@ void main() {
     expect(AsmColors.green, AsmColors.brandGreen);
     expect(AsmColors.solarYellow, const Color(0xFFFFC928));
     expect(AsmColors.passengerScaffold, const Color(0xFFFAFBF8));
+    expect(AsmColors.passengerSurface, const Color(0xFFF7F5F0));
+    expect(AsmColors.passengerCard, AsmColors.brandWhite);
+    expect(AsmColors.passengerMintSurface, const Color(0xFFE8F5EE));
+    expect(AsmColors.passengerLine, const Color(0xFFE6E2D4));
+    expect(AsmColors.brandDeepGreen, const Color(0xFF123C29));
     expect(AsmColors.driverScaffold, AsmColors.brandBlack);
+    expect(AsmColors.driverVisualSurface, const Color(0xFF080B08));
     expect(AsmColors.driverPanelMuted, const Color(0xFF111A14));
+    expect(AsmColors.driverCard, const Color(0xFF141A14));
+    expect(AsmColors.driverCardElevated, const Color(0xFF181F18));
+    expect(AsmColors.driverLine, const Color(0xFF232B23));
+    expect(AsmColors.driverMintAction, const Color(0xFFA9E0C0));
     expect(AsmColors.driverTextSecondary, const Color(0xFFD6DED8));
     expect(AsmColors.driverWarningSurface, const Color(0xFFFFD968));
 
@@ -27,7 +37,17 @@ void main() {
       ],
       [4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 32.0],
     );
-    expect([AsmRadii.radius6, AsmRadii.radius8], [6.0, 8.0]);
+    expect(
+      [
+        AsmRadii.radius6,
+        AsmRadii.radius8,
+        AsmRadii.radius16,
+        AsmRadii.radius20,
+        AsmRadii.radius24,
+        AsmRadii.radius28,
+      ],
+      [6.0, 8.0, 16.0, 20.0, 24.0, 28.0],
+    );
 
     final passenger = AsmThemes.passenger;
     final driver = AsmThemes.driver;
@@ -35,6 +55,8 @@ void main() {
     expect(passenger.useMaterial3, isTrue);
     expect(passenger.brightness, Brightness.light);
     expect(passenger.scaffoldBackgroundColor, AsmColors.passengerScaffold);
+    expect(passenger.inputDecorationTheme.filled, isTrue);
+    expect(passenger.inputDecorationTheme.fillColor, AsmColors.passengerCard);
     expect(
       passenger.colorScheme.primary,
       ColorScheme.fromSeed(seedColor: AsmColors.brandGreen).primary,
@@ -43,6 +65,8 @@ void main() {
     expect(driver.useMaterial3, isTrue);
     expect(driver.brightness, Brightness.dark);
     expect(driver.scaffoldBackgroundColor, AsmColors.driverScaffold);
+    expect(driver.inputDecorationTheme.filled, isTrue);
+    expect(driver.inputDecorationTheme.fillColor, AsmColors.driverCard);
     expect(
       driver.colorScheme.primary,
       ColorScheme.fromSeed(
