@@ -291,6 +291,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
 
     return Scaffold(
+      backgroundColor: AsmColors.driverVisualSurface,
       body: AsmScreenSurface(
         scrollable: true,
         expandToViewport: true,
@@ -314,90 +315,108 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                 alignment: Alignment.centerLeft,
                 semanticLabel: 'ALANTEH driver logo',
               ),
-              const SizedBox(height: AsmSpacing.space8),
-              const Text(
-                'Driver',
-                style: TextStyle(
-                  color: AsmColors.driverTextSecondary,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(height: AsmSpacing.space16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AsmSpacing.space20),
+                decoration: BoxDecoration(
+                  color: AsmColors.driverCard,
+                  borderRadius: BorderRadius.circular(AsmRadii.radius28),
+                  border: Border.all(color: AsmColors.driverLine),
                 ),
-              ),
-              const SizedBox(height: 48),
-              const Icon(
-                Icons.verified_user_outlined,
-                color: AsmColors.brandGreen,
-                size: 44,
-              ),
-              const SizedBox(height: AsmSpacing.space20),
-              const Text(
-                'Driver access',
-                style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Enter your phone number and PIN to continue.',
-                style: TextStyle(
-                  color: AsmColors.driverTextSecondary,
-                  height: 1.45,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Driver',
+                      style: TextStyle(
+                        color: AsmColors.driverMintAction,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: AsmSpacing.space20),
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      color: AsmColors.driverMintAction,
+                      size: 44,
+                    ),
+                    const SizedBox(height: AsmSpacing.space20),
+                    const Text(
+                      'Driver access',
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Enter your phone number and PIN to continue.',
+                      style: TextStyle(
+                        color: AsmColors.driverTextSecondary,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: AsmSpacing.space20),
+                    TextFormField(
+                      key: const Key('driver-phone-field'),
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone number',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) =>
+                          validateGhanaPhoneNumberForLogin(value ?? ''),
+                    ),
+                    const SizedBox(height: AsmSpacing.space12),
+                    TextFormField(
+                      key: const Key('driver-pin-field'),
+                      controller: _pinController,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _signIn(),
+                      decoration: const InputDecoration(
+                        labelText: 'PIN',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) => validatePinForLogin(value ?? ''),
+                    ),
+                    if (_loginError != null) ...[
+                      const SizedBox(height: AsmSpacing.space16),
+                      _DriverLoginErrorPanel(message: _loginError!),
+                    ],
+                    const SizedBox(height: AsmSpacing.space20),
+                    AsmPrimaryActionButton(
+                      key: const Key('driver-sign-in'),
+                      onPressed: _isSigningIn ? null : _signIn,
+                      icon: Icons.login_outlined,
+                      label: _isSigningIn ? 'Signing in...' : 'Sign in',
+                    ),
+                    const SizedBox(height: AsmSpacing.space8),
+                    if (widget.localQaEnabled) ...[
+                      AsmPrimaryActionButton(
+                        key: const Key('driver-continue-local-demo'),
+                        onPressed: _isSigningIn ? null : _continueLocalDemo,
+                        variant: AsmActionButtonVariant.text,
+                        icon: Icons.play_arrow_outlined,
+                        label: 'Continue without signing in',
+                        minimumHeight: 48,
+                      ),
+                      const SizedBox(height: AsmSpacing.space8),
+                    ],
+                    AsmPrimaryActionButton(
+                      key: const Key('driver-clear-form'),
+                      onPressed: _isSigningIn ? null : _clearForm,
+                      variant: AsmActionButtonVariant.text,
+                      icon: Icons.clear_outlined,
+                      label: 'Clear form',
+                      minimumHeight: 48,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: AsmSpacing.space20),
-              TextFormField(
-                key: const Key('driver-phone-field'),
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Phone number',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) =>
-                    validateGhanaPhoneNumberForLogin(value ?? ''),
-              ),
-              const SizedBox(height: AsmSpacing.space12),
-              TextFormField(
-                key: const Key('driver-pin-field'),
-                controller: _pinController,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _signIn(),
-                decoration: const InputDecoration(
-                  labelText: 'PIN',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) => validatePinForLogin(value ?? ''),
-              ),
-              if (_loginError != null) ...[
-                const SizedBox(height: AsmSpacing.space16),
-                _DriverLoginErrorPanel(message: _loginError!),
-              ],
-              const SizedBox(height: AsmSpacing.space20),
-              AsmPrimaryActionButton(
-                key: const Key('driver-sign-in'),
-                onPressed: _isSigningIn ? null : _signIn,
-                icon: Icons.login_outlined,
-                label: _isSigningIn ? 'Signing in...' : 'Sign in',
-              ),
-              const SizedBox(height: AsmSpacing.space8),
-              if (widget.localQaEnabled) ...[
-                AsmPrimaryActionButton(
-                  key: const Key('driver-continue-local-demo'),
-                  onPressed: _isSigningIn ? null : _continueLocalDemo,
-                  variant: AsmActionButtonVariant.text,
-                  icon: Icons.play_arrow_outlined,
-                  label: 'Continue without signing in',
-                  minimumHeight: 48,
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-              ],
-              AsmPrimaryActionButton(
-                key: const Key('driver-clear-form'),
-                onPressed: _isSigningIn ? null : _clearForm,
-                variant: AsmActionButtonVariant.text,
-                icon: Icons.clear_outlined,
-                label: 'Clear form',
-                minimumHeight: 48,
               ),
             ],
           ),
