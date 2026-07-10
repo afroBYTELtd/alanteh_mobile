@@ -178,10 +178,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _continueLocalDemo() async {
-    final form = _formKey.currentState;
-    if (form == null || !form.validate()) {
-      return;
-    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    _phoneController.clear();
+    _pinController.clear();
+    _formKey.currentState?.reset();
 
     await widget.authTokenStore.clearTokens();
     if (!mounted) {
