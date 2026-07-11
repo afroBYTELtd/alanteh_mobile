@@ -17,6 +17,7 @@ class PassengerHome extends StatelessWidget {
     required this.onChooseDestination,
     required this.onContinue,
     required this.onStartRequest,
+    required this.onOpenRequests,
     required this.onSwap,
     required this.onClear,
     super.key,
@@ -34,6 +35,7 @@ class PassengerHome extends StatelessWidget {
   final VoidCallback onChooseDestination;
   final VoidCallback onContinue;
   final VoidCallback onStartRequest;
+  final VoidCallback onOpenRequests;
   final VoidCallback onSwap;
   final VoidCallback onClear;
 
@@ -147,6 +149,16 @@ class PassengerHome extends StatelessWidget {
                       minimumSize: const Size.fromHeight(52),
                     ),
                   ),
+                const SizedBox(height: AsmSpacing.space12),
+                OutlinedButton.icon(
+                  key: const Key('open-ride-request-history'),
+                  onPressed: onOpenRequests,
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('My Ride Requests'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                  ),
+                ),
               ],
             ),
           ),

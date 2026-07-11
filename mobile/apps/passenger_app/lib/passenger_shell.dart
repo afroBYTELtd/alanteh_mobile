@@ -7,12 +7,14 @@ import 'booking/booking_submission.dart';
 import 'location/location_search_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
+import 'ride_requests/ride_request_history.dart';
 
 class PassengerShell extends StatefulWidget {
   const PassengerShell({
     this.configuration = AsmAppConfig.localGhana,
     this.localQaEnabled = false,
     this.rideRequestSubmitter,
+    this.rideRequestHistoryRepository,
     this.onSignInRequired,
     this.onSignOut,
     super.key,
@@ -21,6 +23,7 @@ class PassengerShell extends StatefulWidget {
   final AsmAppConfig configuration;
   final bool localQaEnabled;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
 
@@ -138,6 +141,9 @@ class _PassengerShellState extends State<PassengerShell> {
         _pickupDescription = null;
         _destinationDescription = null;
       });
+      if (widget.rideRequestHistoryRepository != null) {
+        await _openRideRequests();
+      }
     }
   }
 
@@ -159,7 +165,29 @@ class _PassengerShellState extends State<PassengerShell> {
         _pickupDescription = null;
         _destinationDescription = null;
       });
+      if (widget.rideRequestHistoryRepository != null) {
+        await _openRideRequests();
+      }
     }
+  }
+
+  Future<void> _openRideRequests() {
+    final repository =
+        widget.rideRequestHistoryRepository ??
+        const UnavailablePassengerRideRequestHistoryRepository();
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerRideRequestHistoryPage(
+          repository: repository,
+          onSignInRequired: widget.onSignInRequired,
+          onBookRide: () {
+            Navigator.of(context).pop();
+            setState(() => _selectedIndex = 0);
+          },
+        ),
+      ),
+    );
   }
 
   Widget get _selectedPage {
@@ -178,15 +206,16 @@ class _PassengerShellState extends State<PassengerShell> {
             _chooseLocation(LocationSearchKind.destination),
         onContinue: _continueToDraft,
         onStartRequest: _openRequestForm,
+        onOpenRequests: _openRideRequests,
         onSwap: _swapRoute,
         onClear: _clearRoute,
       ),
-      1 => _PassengerPlaceholder(
-        icon: Icons.route_outlined,
-        title: 'No trips yet',
-        message: 'Your ride history will appear here after your first trip.',
-        actionLabel: 'Book a ride',
-        onActionPressed: () => setState(() => _selectedIndex = 0),
+      1 => PassengerRideRequestHistoryPage(
+        repository:
+            widget.rideRequestHistoryRepository ??
+            const EmptyPassengerRideRequestHistoryRepository(),
+        onSignInRequired: widget.onSignInRequired,
+        onBookRide: () => setState(() => _selectedIndex = 0),
       ),
       _ => _PassengerPlaceholder(
         icon: Icons.account_circle_outlined,

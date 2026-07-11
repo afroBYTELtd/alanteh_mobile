@@ -114,8 +114,8 @@ class BookingReview extends StatelessWidget {
           OutlinedButton.icon(
             key: const Key('finish-ride-request'),
             onPressed: onFinish,
-            icon: const Icon(Icons.home_outlined),
-            label: const Text('Back to home'),
+            icon: const Icon(Icons.receipt_long_outlined),
+            label: const Text('View my requests'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
             ),
