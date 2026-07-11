@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'booking/booking_submission.dart';
 import 'passenger_shell.dart';
+import 'ride_requests/ride_request_history.dart';
 
 void main() {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
@@ -39,6 +40,11 @@ class PassengerApp extends StatelessWidget {
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
+    final resolvedRideRequestHistoryRepository =
+        ApiPassengerRideRequestHistoryRepository.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
     final resolvedAuthService =
         authService ??
         _authServiceFor(
@@ -57,6 +63,8 @@ class PassengerApp extends StatelessWidget {
               authService: resolvedAuthService,
               authTokenStore: tokenStore,
               rideRequestSubmitter: resolvedRideRequestSubmitter,
+              rideRequestHistoryRepository:
+                  resolvedRideRequestHistoryRepository,
               localQaEnabled: configuration.localQaEnabled,
             )
           : PassengerShell(
@@ -74,6 +82,7 @@ class PassengerLoginShell extends StatefulWidget {
     this.authService,
     this.authTokenStore,
     this.rideRequestSubmitter,
+    required this.rideRequestHistoryRepository,
     this.localQaEnabled = false,
     super.key,
   });
@@ -82,6 +91,7 @@ class PassengerLoginShell extends StatefulWidget {
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final PassengerRideRequestHistoryRepository rideRequestHistoryRepository;
   final bool localQaEnabled;
 
   @override
@@ -385,6 +395,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         configuration: widget.configuration,
         localQaEnabled: widget.configuration.localQaEnabled,
         rideRequestSubmitter: _rideRequestSubmitter,
+        rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,
       );
