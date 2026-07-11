@@ -192,10 +192,11 @@ class AuthTokens {
 
 /// Authenticated session value used by future app auth state.
 class AuthSession {
-  const AuthSession({required this.tokens, this.accountType});
+  const AuthSession({required this.tokens, this.accountType, this.account});
 
   final AuthTokens tokens;
   final AuthAccountType? accountType;
+  final Map<String, Object?>? account;
 
   bool get isAuthenticated => tokens.isValid;
 }
@@ -458,9 +459,14 @@ class AuthService {
   AuthSession _sessionFromLoginResponse(Map<String, Object?> json) {
     final tokens = _tokensFromResponse(json);
     final accountType = AuthAccountType.parse(json['account_type']);
+    final account = _mapField(json, 'account');
     _appContext?.validateAccountType(accountType);
 
-    return AuthSession(tokens: tokens, accountType: accountType);
+    return AuthSession(
+      tokens: tokens,
+      accountType: accountType,
+      account: account,
+    );
   }
 
   AuthTokens _tokensFromResponse(
@@ -490,6 +496,19 @@ class AuthService {
   String? _stringField(Map<String, Object?> json, String key) {
     final value = json[key];
     return value is String ? value : null;
+  }
+
+  Map<String, Object?>? _mapField(Map<String, Object?> json, String key) {
+    final value = json[key];
+    if (value is Map<String, Object?>) {
+      return Map<String, Object?>.unmodifiable(value);
+    }
+    if (value is Map) {
+      return Map<String, Object?>.unmodifiable(
+        value.map((key, value) => MapEntry(key.toString(), value)),
+      );
+    }
+    return null;
   }
 
   AuthException _authError(ApiResponse<dynamic> response) {

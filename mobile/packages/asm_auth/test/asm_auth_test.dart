@@ -221,6 +221,10 @@ void main() {
 
         expect(state.status, AuthStatus.authenticated);
         expect(state.session?.accountType, AuthAccountType.passenger);
+        expect(state.session?.account, <String, Object?>{
+          'id': 'passenger-test-account',
+          'display_name': 'Test Passenger',
+        });
         expect(api.paths, <String>[AuthService.tokenPath]);
         expect(api.bodies.single, <String, Object?>{
           'phone': '+233000000000',
@@ -499,11 +503,16 @@ AuthService _serviceWithResponse(Map<String, Object?> responseData) {
 
 Map<String, Object?> _successLoginResponse({
   Object? accountType = 'passenger',
+  Object? account = const <String, Object?>{
+    'id': 'passenger-test-account',
+    'display_name': 'Test Passenger',
+  },
 }) {
   return <String, Object?>{
     'access': 'access-one',
     'refresh': 'refresh-one',
     if (accountType != null) 'account_type': accountType,
+    if (account != null) 'account': account,
   };
 }
 
