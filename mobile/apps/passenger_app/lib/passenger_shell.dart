@@ -2,6 +2,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'account/passenger_account_screen.dart';
 import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'location/location_search_page.dart';
@@ -15,6 +16,7 @@ class PassengerShell extends StatefulWidget {
     this.localQaEnabled = false,
     this.rideRequestSubmitter,
     this.rideRequestHistoryRepository,
+    this.phoneNumber,
     this.onSignInRequired,
     this.onSignOut,
     super.key,
@@ -24,6 +26,7 @@ class PassengerShell extends StatefulWidget {
   final bool localQaEnabled;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
+  final String? phoneNumber;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
 
@@ -108,6 +111,10 @@ class _PassengerShellState extends State<PassengerShell> {
       _pickupDescription = null;
       _destinationDescription = null;
     });
+  }
+
+  void _openTripsTab() {
+    setState(() => _selectedIndex = 1);
   }
 
   Future<void> _signOut() async {
@@ -217,15 +224,10 @@ class _PassengerShellState extends State<PassengerShell> {
         onSignInRequired: widget.onSignInRequired,
         onBookRide: () => setState(() => _selectedIndex = 0),
       ),
-      _ => _PassengerPlaceholder(
-        icon: Icons.account_circle_outlined,
-        title: 'Passenger account',
-        message: 'Your ALANTEH account details will appear here.',
-        actionLabel: widget.onSignOut == null ? null : 'Sign out',
-        actionKey: widget.onSignOut == null
-            ? null
-            : const Key('passenger-account-sign-out'),
-        onActionPressed: widget.onSignOut == null ? null : _signOut,
+      _ => PassengerAccountScreen(
+        phoneNumber: widget.phoneNumber,
+        onOpenTrips: _openTripsTab,
+        onSignOut: _signOut,
       ),
     };
   }
@@ -234,14 +236,6 @@ class _PassengerShellState extends State<PassengerShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _selectedPage,
-      floatingActionButton: widget.onSignOut == null
-          ? null
-          : FloatingActionButton.extended(
-              key: const Key('passenger-sign-out'),
-              onPressed: _signOut,
-              icon: const Icon(Icons.exit_to_app_outlined),
-              label: const Text('Sign out'),
-            ),
       bottomNavigationBar: AsmBottomNavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
@@ -259,71 +253,11 @@ class _PassengerShellState extends State<PassengerShell> {
             label: 'Trips',
           ),
           AsmBottomNavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle),
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
             label: 'Account',
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PassengerPlaceholder extends StatelessWidget {
-  const _PassengerPlaceholder({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.actionLabel,
-    this.actionKey,
-    this.onActionPressed,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final String? actionLabel;
-  final Key? actionKey;
-  final VoidCallback? onActionPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return AsmScreenSurface(
-      padding: const EdgeInsets.all(AsmSpacing.space20),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 48, color: colors.primary),
-            const SizedBox(height: AsmSpacing.space16),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: colors.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-            if (actionLabel != null && onActionPressed != null) ...[
-              const SizedBox(height: AsmSpacing.space16),
-              FilledButton(
-                key: actionKey,
-                onPressed: onActionPressed,
-                child: Text(actionLabel!),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }

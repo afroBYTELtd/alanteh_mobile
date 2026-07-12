@@ -104,6 +104,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   final _pinController = TextEditingController();
 
   late final AuthTokenStore _tokenStore;
+  String? _passengerPhoneNumber;
   late final AuthService _authService;
   late final PassengerRideRequestSubmitter _rideRequestSubmitter;
 
@@ -157,6 +158,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
       setState(() {
         _signedIn = false;
+        _passengerPhoneNumber = null;
         _isSigningIn = false;
         _loginErrorMessage = hadStoredSession
             ? 'Please sign in again to continue.'
@@ -176,6 +178,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
       setState(() {
         _signedIn = false;
+        _passengerPhoneNumber = null;
         _isSigningIn = false;
         _loginErrorMessage = 'Please sign in again to continue.';
       });
@@ -204,6 +207,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
     setState(() {
       _signedIn = false;
+      _passengerPhoneNumber = null;
       _isSigningIn = false;
       _loginErrorMessage = 'Please sign in again to continue.';
     });
@@ -240,9 +244,15 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
       if (state.isAuthenticated &&
           state.session?.accountType == AuthAccountType.passenger) {
+        final enteredPhoneNumber = _phoneController.text.trim();
+        final sessionPhoneNumber =
+            _phoneNumberFromSession(state.session) ?? enteredPhoneNumber;
         _phoneController.clear();
         _pinController.clear();
         setState(() {
+          _passengerPhoneNumber = sessionPhoneNumber.isEmpty
+              ? null
+              : sessionPhoneNumber;
           _signedIn = true;
           _isSigningIn = false;
           _loginErrorMessage = null;
@@ -298,6 +308,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = true;
       _signedIn = false;
+      _passengerPhoneNumber = null;
       _loginErrorMessage = null;
     });
   }
@@ -311,6 +322,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = false;
       _signedIn = false;
+      _passengerPhoneNumber = null;
       _isSigningIn = false;
       _loginErrorMessage =
           PassengerRideRequestSubmissionException.signInRequiredMessage;
@@ -330,6 +342,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = false;
       _signedIn = false;
+      _passengerPhoneNumber = null;
       _isSigningIn = false;
       _loginErrorMessage = null;
     });
@@ -388,6 +401,29 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     return _signInFailedMessage;
   }
 
+  String? _phoneNumberFromSession(AuthSession? session) {
+    final account = session?.account;
+    if (account == null) {
+      return null;
+    }
+
+    for (final key in const [
+      'phone',
+      'phone_number',
+      'phoneNumber',
+      'mobile',
+      'mobile_number',
+      'mobileNumber',
+    ]) {
+      final value = account[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_localQaOpened || _signedIn) {
@@ -396,6 +432,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         localQaEnabled: widget.configuration.localQaEnabled,
         rideRequestSubmitter: _rideRequestSubmitter,
         rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
+        phoneNumber: _passengerPhoneNumber,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,
       );
