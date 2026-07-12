@@ -103,6 +103,16 @@ class PassengerAccountScreen extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Riding clean with ALANTEH.',
+            key: const Key('passenger-account-tagline'),
+            textAlign: TextAlign.center,
+            style: textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: AsmSpacing.space24),
           Card(
             elevation: 0,

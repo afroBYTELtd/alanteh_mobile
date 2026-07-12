@@ -191,7 +191,7 @@ class _PassengerHomeAccentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ride electric today',
+                  "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
                   style: TextStyle(
                     color: AsmColors.brandWhite,
                     fontWeight: FontWeight.w800,

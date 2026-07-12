@@ -80,6 +80,7 @@ void main() {
 
       expect(find.byType(PassengerAccountScreen), findsOneWidget);
       expect(find.text('+233 55 ****234'), findsOneWidget);
+      expect(find.text('Riding clean with ALANTEH.'), findsOneWidget);
       expect(find.text('+233559991234'), findsNothing);
       expect(
         find.byKey(const Key('passenger-account-my-trips')),
@@ -257,6 +258,12 @@ void main() {
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
     expect(find.text('Route preview'), findsOneWidget);
+    expect(
+      find.text(
+        "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
