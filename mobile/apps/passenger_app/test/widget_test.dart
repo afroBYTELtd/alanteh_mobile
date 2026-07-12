@@ -20,10 +20,7 @@ void main() {
     final source = _readM3aDartSources('lib');
 
     expect(source, contains('Passenger account'));
-    expect(
-      source,
-      contains('Your account details are managed by the Control Center.'),
-    );
+    expect(source, contains('Your ALANTEH account details will appear here.'));
     expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
     expect(source, isNot(contains('/api/trips')));
     expect(source, isNot(contains('/api/rides/status')));
@@ -151,9 +148,7 @@ void main() {
 
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
@@ -650,9 +645,7 @@ void main() {
     expect(find.text('ASM PASSENGER'), findsNothing);
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
@@ -671,9 +664,9 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('No ride requests yet'), findsOneWidget);
     expect(
-      find.text('Your ride history will appear here after your first trip.'),
+      find.text('Your ride requests will appear here after you book.'),
       findsOneWidget,
     );
     expect(find.text('LOCAL DEMO'), findsNothing);
@@ -701,7 +694,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsNothing);
@@ -774,9 +767,7 @@ void main() {
 
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
@@ -832,7 +823,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsWidgets);
@@ -940,9 +931,7 @@ void main() {
     expect(await store.readRefreshToken(), 'stored-passenger-refresh');
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.text('Map preview unavailable.'), findsNothing);
@@ -1034,7 +1023,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsWidgets);

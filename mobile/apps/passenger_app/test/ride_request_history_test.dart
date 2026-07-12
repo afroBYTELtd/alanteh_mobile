@@ -66,7 +66,7 @@ void main() {
       createdAt: DateTime.utc(2026, 7, 11, 13),
       pickup: 'Accra Mall',
       destination: 'Kotoka International Airport',
-      latestStaffState: 'Passenger app request received.',
+      latestStaffState: 'Request received.',
     );
     final older = _record(
       reference: 'RR-APP-OLDER',
@@ -89,8 +89,8 @@ void main() {
     );
     expect(find.text('RR-APP-NEWEST'), findsOneWidget);
     expect(find.text('RR-APP-OLDER'), findsOneWidget);
-    expect(find.text('Mobile receipt confirmed'), findsWidgets);
-    expect(find.text('Passenger app request received.'), findsOneWidget);
+    expect(find.text('Request received'), findsWidgets);
+    expect(find.text('Request received.'), findsWidgets);
 
     final newestTop = tester.getTopLeft(
       find.byKey(const ValueKey<String>('ride-request-RR-APP-NEWEST')),
@@ -112,7 +112,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-history-empty')), findsOneWidget);
-    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('No ride requests yet'), findsOneWidget);
   });
 
   testWidgets('request history shows safe error state', (tester) async {
@@ -208,7 +208,7 @@ void main() {
     expect(find.text('Accra Mall'), findsOneWidget);
     expect(find.text('Kotoka International Airport'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
-    expect(find.text('Under Review'), findsOneWidget);
+    expect(find.text('Being reviewed'), findsOneWidget);
     expect(find.text('Confirmed'), findsOneWidget);
     expect(find.text('Not yet converted into a trip'), findsOneWidget);
     expect(find.text('Your request is being reviewed.'), findsOneWidget);
@@ -219,7 +219,7 @@ void main() {
       reference: 'RR-APP-SAFE',
       pickup: 'Accra Mall',
       destination: 'Airport City',
-      controlCenterMessage: 'Passenger-safe Control Center update.',
+      controlCenterMessage: 'Passenger-safe ALANTEH update.',
     );
 
     await _pumpHistory(
@@ -343,7 +343,7 @@ void main() {
       shellSource,
       contains('const EmptyPassengerRideRequestHistoryRepository()'),
     );
-    expect(shellSource, isNot(contains("title: 'No trips yet'")));
+    expect(shellSource, isNot(contains("title: 'No ride requests yet'")));
   });
 
   test('Driver app remains free of Passenger history integration', () {
@@ -428,7 +428,7 @@ Map<String, Object?> _recordJson({
     'updated_at': '2026-07-11T13:00:00Z',
     'source_channel': 'passenger_app',
     'has_mobile_receipt': true,
-    'latest_staff_state': 'Passenger app request received.',
+    'latest_staff_state': 'Request received.',
     'trip_created': false,
   };
   if (controlCenterMessage != null) {

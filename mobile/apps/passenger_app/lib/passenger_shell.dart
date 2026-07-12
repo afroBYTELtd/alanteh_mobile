@@ -220,7 +220,7 @@ class _PassengerShellState extends State<PassengerShell> {
       _ => _PassengerPlaceholder(
         icon: Icons.account_circle_outlined,
         title: 'Passenger account',
-        message: 'Your account details are managed by the Control Center.',
+        message: 'Your ALANTEH account details will appear here.',
         actionLabel: widget.onSignOut == null ? null : 'Sign out',
         actionKey: widget.onSignOut == null
             ? null

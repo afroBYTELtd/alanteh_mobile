@@ -33,7 +33,7 @@ void main() {
               .having(
                 (error) => error.message,
                 'message',
-                'Enter a location description.',
+                'Please enter your location.',
               ),
         ),
       );

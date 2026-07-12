@@ -271,11 +271,8 @@ void main() {
 
     expect(find.text('Ride request received'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
-    expect(find.text('Status: requested'), findsOneWidget);
-    expect(
-      find.text('Ride request received by the Control Center.'),
-      findsOneWidget,
-    );
+    expect(find.text('Request status: Received by ALANTEH'), findsOneWidget);
+    expect(find.text('Your ride request was received.'), findsOneWidget);
     expect(find.byKey(const Key('start-new-request')), findsOneWidget);
     expect(find.byKey(const Key('confirm-and-request')), findsNothing);
     expect(submitter.submissions, hasLength(1));
@@ -395,9 +392,7 @@ void main() {
     expect(find.text('Ride request received'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
     expect(
-      find.text(
-        'Keep this reference. The Control Center can use it to follow up.',
-      ),
+      find.text('Keep this reference. ALANTEH can use it to follow up.'),
       findsOneWidget,
     );
     expect(find.text('Copy reference'), findsOneWidget);
@@ -424,7 +419,7 @@ void main() {
       final submitter = _FakeRideRequestSubmitter.success(
         result: const PassengerRideRequestResult(
           status: 'requested',
-          message: 'Ride request received by the Control Center.',
+          message: 'Your ride request was received.',
         ),
       );
 
@@ -439,9 +434,7 @@ void main() {
       expect(find.text('Copy reference'), findsNothing);
       expect(find.text('Reference copied.'), findsNothing);
       expect(
-        find.text(
-          'Keep this reference. The Control Center can use it to follow up.',
-        ),
+        find.text('Keep this reference. ALANTEH can use it to follow up.'),
         findsNothing,
       );
       expect(
@@ -768,16 +761,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsOneWidget);
-    expect(
-      find.text('Ride request received by the Control Center.'),
-      findsOneWidget,
-    );
+    expect(find.text('Your ride request was received.'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
-    expect(find.text('Status: requested'), findsOneWidget);
-    expect(
-      find.text('Ride request received by the Control Center.'),
-      findsOneWidget,
-    );
+    expect(find.text('Request status: Received by ALANTEH'), findsOneWidget);
+    expect(find.text('Your ride request was received.'), findsOneWidget);
     expect(submitter.submissions, hasLength(1));
     expect(submitter.submissions.single.pickupDescription.value, 'Solar Hotel');
     expect(
@@ -845,18 +832,15 @@ void main() {
       const PassengerRideRequestResult(
         requestReference: 'RR-APP-3A9F1C2B4E5D',
         status: 'requested',
-        message: 'Ride request received by the Control Center.',
+        message: 'Your ride request was received.',
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
-    expect(find.text('Status: requested'), findsOneWidget);
-    expect(
-      find.text('Ride request received by the Control Center.'),
-      findsOneWidget,
-    );
+    expect(find.text('Request status: Received by ALANTEH'), findsOneWidget);
+    expect(find.text('Your ride request was received.'), findsOneWidget);
     expect(submitter.idempotencyKeys, [
       'APP-11111111-2222-4333-8444-555555555555',
     ]);
@@ -869,7 +853,7 @@ void main() {
     final submitter = _FakeRideRequestSubmitter.success(
       result: const PassengerRideRequestResult(
         status: 'requested',
-        message: 'Ride request received by the Control Center.',
+        message: 'Your ride request was received.',
       ),
     );
 
@@ -1037,7 +1021,7 @@ void main() {
         ApiResponse.success(
           const PassengerRideRequestResult(
             status: 'requested',
-            message: 'Ride request received by the Control Center.',
+            message: 'Your ride request was received.',
           ),
           statusCode: 201,
         ),
@@ -1151,7 +1135,7 @@ void main() {
             const PassengerRideRequestResult(
               requestReference: 'RR-APP-3A9F1C2B4E5D',
               status: 'requested',
-              message: 'Ride request received by the Control Center.',
+              message: 'Your ride request was received.',
             ),
             statusCode: 201,
           ),
@@ -1808,7 +1792,7 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     this.result = const PassengerRideRequestResult(
       requestReference: 'RR-APP-3A9F1C2B4E5D',
       status: 'requested',
-      message: 'Ride request received by the Control Center.',
+      message: 'Your ride request was received.',
     ),
     this.failFirst = false,
     this.pending = false,
@@ -1819,7 +1803,7 @@ class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
     PassengerRideRequestResult result = const PassengerRideRequestResult(
       requestReference: 'RR-APP-3A9F1C2B4E5D',
       status: 'requested',
-      message: 'Ride request received by the Control Center.',
+      message: 'Your ride request was received.',
     ),
   }) {
     return _FakeRideRequestSubmitter._(result: result);
@@ -1955,7 +1939,7 @@ class _RecordingApiClient extends AsmApiClient {
       const PassengerRideRequestResult(
         requestReference: 'RR-APP-3A9F1C2B4E5D',
         status: 'requested',
-        message: 'Ride request received by the Control Center.',
+        message: 'Your ride request was received.',
       ),
       statusCode: 201,
     );

@@ -286,7 +286,7 @@ class _SubmissionPanelState extends State<_SubmissionPanel> {
           ),
           const SizedBox(height: AsmSpacing.space8),
           Text(
-            widget.message,
+            _safeSubmissionMessage(widget.message, widget.status),
             style: TextStyle(color: widget.foregroundColor, height: 1.35),
           ),
           if (hasReference) ...[
@@ -301,7 +301,7 @@ class _SubmissionPanelState extends State<_SubmissionPanel> {
             ),
             const SizedBox(height: AsmSpacing.space8),
             Text(
-              'Keep this reference. The Control Center can use it to follow up.',
+              'Keep this reference. ALANTEH can use it to follow up.',
               key: const Key('ride-request-reference-support'),
               style: TextStyle(color: widget.foregroundColor, height: 1.35),
             ),
@@ -331,7 +331,7 @@ class _SubmissionPanelState extends State<_SubmissionPanel> {
           if (widget.status != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             Text(
-              'Status: ${widget.status}',
+              _submissionStatusText(widget.status),
               key: const Key('ride-request-status'),
               style: TextStyle(
                 color: widget.foregroundColor,
@@ -343,4 +343,50 @@ class _SubmissionPanelState extends State<_SubmissionPanel> {
       ),
     );
   }
+}
+
+String _safeSubmissionMessage(String? message, String? status) {
+  final trimmed = message?.trim() ?? '';
+  if (trimmed.isEmpty) {
+    return _submissionDefaultMessage(status);
+  }
+
+  final lower = trimmed.toLowerCase();
+  final mentionsInternalOps = RegExp(
+    r'control\s+center',
+    caseSensitive: false,
+  ).hasMatch(trimmed);
+  final isPassengerAppReceipt = lower.contains(
+    'passenger app request received',
+  );
+
+  if (mentionsInternalOps || isPassengerAppReceipt) {
+    return _submissionDefaultMessage(status);
+  }
+
+  return trimmed;
+}
+
+String _submissionDefaultMessage(String? status) {
+  return switch ((status ?? '').trim().toLowerCase()) {
+    'requested' => 'Your ride request was received.',
+    'under_review' => 'Your ride request is being reviewed.',
+    'accepted' || 'approved' => 'Your ride is being prepared.',
+    'rejected' || 'declined' => 'This ride request could not be accepted.',
+    'cancelled' || 'canceled' => 'This ride request was cancelled.',
+    'trip_created' => 'Your trip record has been created.',
+    _ => 'Your ride request was updated.',
+  };
+}
+
+String _submissionStatusText(String? status) {
+  return switch ((status ?? '').trim().toLowerCase()) {
+    'requested' => 'Request status: Received by ALANTEH',
+    'under_review' => 'Request status: Being reviewed',
+    'accepted' || 'approved' => 'Request status: Accepted for trip preparation',
+    'rejected' || 'declined' => 'Request status: Could not be accepted',
+    'cancelled' || 'canceled' => 'Request status: Cancelled',
+    'trip_created' => 'Request status: Trip record created',
+    _ => 'Request status: Updated',
+  };
 }
