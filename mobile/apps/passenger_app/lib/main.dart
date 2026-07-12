@@ -610,10 +610,6 @@ class _PassengerLoginAccentCard extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 SizedBox(height: AsmSpacing.space4),
-                Text(
-                  'Clean energy, lower emissions, same comfort.',
-                  style: TextStyle(height: 1.35),
-                ),
               ],
             ),
           ),

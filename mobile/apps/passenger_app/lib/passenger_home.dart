@@ -198,10 +198,6 @@ class _PassengerHomeAccentCard extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: AsmSpacing.space4),
-                Text(
-                  'Clean energy, lower emissions, same comfort.',
-                  style: TextStyle(color: Color(0xFFDDE8E0), height: 1.35),
-                ),
               ],
             ),
           ),
