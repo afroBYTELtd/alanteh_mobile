@@ -103,7 +103,7 @@ class PassengerHome extends StatelessWidget {
                 const SizedBox(height: AsmSpacing.space16),
                 if (localQaEnabled) ...[
                   Text(
-                    'Local QA route preview',
+                    'Route preview',
                     key: const Key('local-qa-route-preview-label'),
                     style: textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
