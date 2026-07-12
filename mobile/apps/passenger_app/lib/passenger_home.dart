@@ -1,6 +1,7 @@
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:passenger_app/map/passenger_map.dart';
 import 'package:passenger_app/passenger_route_planner.dart';
 
 class PassengerHome extends StatelessWidget {
@@ -101,23 +102,21 @@ class PassengerHome extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AsmSpacing.space16),
+                Text(
+                  'Route preview',
+                  key: const Key('passenger-route-preview-label'),
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                AsmPassengerMap(
+                  key: const Key('passenger-home-map'),
+                  pickupDescription: pickupDescription,
+                  minHeight: 190,
+                ),
+                const SizedBox(height: AsmSpacing.space16),
                 if (localQaEnabled) ...[
-                  Text(
-                    'Route preview',
-                    key: const Key('local-qa-route-preview-label'),
-                    style: textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: AsmSpacing.space8),
-                  AsmLocalMapPreviewSurface(
-                    key: const Key('local-map-preview'),
-                    icon: Icons.map_outlined,
-                    title: '',
-                    minHeight: 190,
-                    titleStyle: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: AsmSpacing.space16),
                   Text(
                     'Where are you?',
                     style: textTheme.bodyMedium?.copyWith(
@@ -192,17 +191,13 @@ class _PassengerHomeAccentCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ride electric today',
+                  "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
                   style: TextStyle(
                     color: AsmColors.brandWhite,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 SizedBox(height: AsmSpacing.space4),
-                Text(
-                  'Clean energy, lower emissions, same comfort.',
-                  style: TextStyle(color: Color(0xFFDDE8E0), height: 1.35),
-                ),
               ],
             ),
           ),

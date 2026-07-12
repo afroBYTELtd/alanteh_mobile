@@ -5,9 +5,12 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:passenger_app/account/passenger_account_screen.dart';
 import 'package:passenger_app/main.dart';
+import 'package:passenger_app/map/passenger_map.dart';
 import 'package:passenger_app/passenger_shell.dart';
 
 void main() {
@@ -19,8 +22,8 @@ void main() {
   test('M3A keeps Passenger runtime free of unaccepted backend endpoints', () {
     final source = _readM3aDartSources('lib');
 
-    expect(source, contains('Passenger account'));
-    expect(source, contains('Your ALANTEH account details will appear here.'));
+    expect(source, contains('PassengerAccountScreen'));
+    expect(source, contains('AsmPassengerMap'));
     expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
     expect(source, isNot(contains('/api/trips')));
     expect(source, isNot(contains('/api/rides/status')));
@@ -56,6 +59,108 @@ void main() {
   test('Passenger ALANTEH in-app logo asset is bundled', () async {
     final logo = await rootBundle.load('assets/brand/alanteh_header_dark.png');
     expect(logo.lengthInBytes, greaterThan(0));
+  });
+
+  testWidgets(
+    'PassengerAccountScreen masks phone and exposes account actions',
+    (tester) async {
+      var openedTrips = false;
+      var signedOut = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: PassengerAccountScreen(
+            phoneNumber: '+233559991234',
+            onOpenTrips: () => openedTrips = true,
+            onSignOut: () => signedOut = true,
+          ),
+        ),
+      );
+
+      expect(find.byType(PassengerAccountScreen), findsOneWidget);
+      expect(find.text('+233 55 ****234'), findsOneWidget);
+      expect(find.text('Riding clean with ALANTEH.'), findsOneWidget);
+      expect(find.text('+233559991234'), findsNothing);
+      expect(
+        find.byKey(const Key('passenger-account-my-trips')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('passenger-account-help')), findsOneWidget);
+      expect(find.text('Sign out'), findsOneWidget);
+      expect(
+        find.byKey(const Key('passenger-account-sign-out')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Control Center'), findsNothing);
+      expect(find.textContaining('profile endpoint'), findsNothing);
+      expect(find.textContaining('account endpoint'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('passenger-account-my-trips')));
+      expect(openedTrips, isTrue);
+
+      await tester.tap(find.byKey(const Key('passenger-account-help')));
+      await tester.pumpAndSettle();
+      expect(find.text('Contact us at contact@alanteh.io'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('passenger-account-help-close')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('passenger-account-sign-out')));
+      expect(signedOut, isTrue);
+    },
+  );
+
+  testWidgets('PassengerAccountScreen shows safe phone fallback', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        home: PassengerAccountScreen(
+          phoneNumber: null,
+          onOpenTrips: () {},
+          onSignOut: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Phone number unavailable'), findsOneWidget);
+    expect(find.textContaining('Control Center'), findsNothing);
+  });
+
+  testWidgets('AsmPassengerMap uses Accra center and renders without marker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AsmPassengerMap())),
+    );
+
+    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byType(FlutterMap), findsOneWidget);
+    final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
+    expect(map.options.initialCenter.latitude, accraCenter.latitude);
+    expect(map.options.initialCenter.longitude, accraCenter.longitude);
+    expect(map.options.initialZoom, initialZoom);
+    expect(find.byKey(const Key('passenger-map-pickup-marker')), findsNothing);
+  });
+
+  testWidgets('AsmPassengerMap renders pickup marker when description exists', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AsmPassengerMap(pickupDescription: 'Airport pickup'),
+        ),
+      ),
+    );
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-map-pickup-marker')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Passenger phone PIN login stores tokens and opens home', (
@@ -152,7 +257,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Route preview'), findsNothing);
+    expect(find.text('Route preview'), findsOneWidget);
+    expect(
+      find.text(
+        "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
@@ -649,7 +760,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Route preview'), findsNothing);
+    expect(find.text('Route preview'), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
@@ -692,13 +803,10 @@ void main() {
 
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
-    expect(find.text('Passenger account'), findsOneWidget);
-    expect(
-      find.text('Your ALANTEH account details will appear here.'),
-      findsOneWidget,
-    );
-    expect(find.text('Sign out'), findsNothing);
-    expect(find.byKey(const Key('passenger-account-sign-out')), findsNothing);
+    expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
+    expect(find.text('Phone number unavailable'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
     expect(find.textContaining('fake passenger name'), findsNothing);
     expect(find.textContaining('passenger phone'), findsNothing);
     expect(find.textContaining('fake phone number'), findsNothing);
@@ -755,34 +863,38 @@ void main() {
     }
   });
 
-  testWidgets('Passenger live home hides local route preview by default', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 900));
+  testWidgets(
+    'Passenger live home shows map foundation and hides local route inputs by default',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
 
-    await tester.pumpWidget(
-      MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
-    );
+      await tester.pumpWidget(
+        MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
+      );
 
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(
-      find.text('ALANTEH will review your request and confirm pickup details.'),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Route preview'), findsNothing);
-    expect(find.byKey(const Key('local-map-preview')), findsNothing);
-    expect(find.byKey(const Key('choose-pickup')), findsNothing);
-    expect(find.byKey(const Key('choose-destination')), findsNothing);
-    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
-    expect(find.textContaining('ETA'), findsNothing);
-    expect(find.textContaining('fare'), findsNothing);
-    expect(find.textContaining('estimate'), findsNothing);
-    expect(find.textContaining('driver assignment'), findsNothing);
-    expect(find.textContaining('active trip'), findsNothing);
-    expect(find.textContaining('completed trip'), findsNothing);
-    expect(find.textContaining('trip history'), findsNothing);
-  });
+      expect(find.text('Book a ride'), findsWidgets);
+      expect(
+        find.text(
+          'ALANTEH will review your request and confirm pickup details.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+      expect(find.text('Route preview'), findsOneWidget);
+      expect(find.byType(AsmPassengerMap), findsOneWidget);
+      expect(find.byKey(const Key('passenger-home-map')), findsOneWidget);
+      expect(find.byKey(const Key('choose-pickup')), findsNothing);
+      expect(find.byKey(const Key('choose-destination')), findsNothing);
+      expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+      expect(find.textContaining('ETA'), findsNothing);
+      expect(find.textContaining('fare'), findsNothing);
+      expect(find.textContaining('estimate'), findsNothing);
+      expect(find.textContaining('driver assignment'), findsNothing);
+      expect(find.textContaining('active trip'), findsNothing);
+      expect(find.textContaining('completed trip'), findsNothing);
+      expect(find.textContaining('trip history'), findsNothing);
+    },
+  );
 
   testWidgets('Passenger route preview is gated and local only', (
     tester,
@@ -805,7 +917,8 @@ void main() {
 
     expect(api.paths, isEmpty);
     expect(find.text('Route preview'), findsOneWidget);
-    expect(find.byKey(const Key('local-map-preview')), findsOneWidget);
+    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-map')), findsOneWidget);
     expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
     expect(find.byKey(const Key('choose-destination')), findsOneWidget);
     expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
@@ -820,12 +933,9 @@ void main() {
 
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
-    expect(find.text('Passenger account'), findsOneWidget);
-    expect(
-      find.text('Your ALANTEH account details will appear here.'),
-      findsOneWidget,
-    );
-    expect(find.text('Sign out'), findsWidgets);
+    expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
+    expect(find.text('Phone number unavailable'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
     expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
     expect(find.textContaining('fake passenger name'), findsNothing);
     expect(find.textContaining('passenger phone'), findsNothing);
@@ -934,7 +1044,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Map preview unavailable.'), findsNothing);
-    expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
     expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
@@ -953,7 +1063,9 @@ void main() {
 
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('passenger-sign-out')));
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('passenger-account-sign-out')));
     await tester.pumpAndSettle();
 
     expect(await store.readAccessToken(), isNull);
@@ -1016,16 +1128,14 @@ void main() {
 
     expect(await store.readAccessToken(), 'passenger-access-token');
     expect(await store.readRefreshToken(), 'passenger-refresh-token');
-    expect(find.byKey(const Key('passenger-sign-out')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
 
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
-    expect(find.text('Passenger account'), findsOneWidget);
-    expect(
-      find.text('Your ALANTEH account details will appear here.'),
-      findsOneWidget,
-    );
-    expect(find.text('Sign out'), findsWidgets);
+    expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
+    expect(find.text('+233 55 ****234'), findsOneWidget);
+    expect(find.text('+233559991234'), findsNothing);
+    expect(find.text('Sign out'), findsOneWidget);
     expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('passenger-account-sign-out')));
@@ -1056,15 +1166,25 @@ Widget _loginTestApp({
   );
 }
 
-Map<String, Object?> _loginResponse({Object? accountType = 'passenger'}) {
+Map<String, Object?> _loginResponse({
+  Object? accountType = 'passenger',
+  String? phoneNumber = '+233559991234',
+}) {
+  final account = <String, Object?>{};
+  if (phoneNumber != null) {
+    account['phone'] = phoneNumber;
+  }
+
   final response = <String, Object?>{
     'access': 'passenger-access-token',
     'refresh': 'passenger-refresh-token',
-    'account': <String, Object?>{},
+    'account': account,
   };
+
   if (accountType != null) {
     response['account_type'] = accountType;
   }
+
   return response;
 }
 
