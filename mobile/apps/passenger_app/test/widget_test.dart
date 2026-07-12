@@ -20,10 +20,7 @@ void main() {
     final source = _readM3aDartSources('lib');
 
     expect(source, contains('Passenger account'));
-    expect(
-      source,
-      contains('Your account details are managed by the Control Center.'),
-    );
+    expect(source, contains('Your ALANTEH account details will appear here.'));
     expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
     expect(source, isNot(contains('/api/trips')));
     expect(source, isNot(contains('/api/rides/status')));
@@ -151,13 +148,11 @@ void main() {
 
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
@@ -227,7 +222,7 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
   });
 
-  testWidgets('Passenger login shows local QA entry only when enabled', (
+  testWidgets('Passenger login shows route preview entry only when enabled', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
@@ -255,7 +250,7 @@ void main() {
     expect(api.paths, isEmpty);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
-    expect(find.text('Local QA route preview'), findsOneWidget);
+    expect(find.text('Route preview'), findsOneWidget);
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.text('Book a ride'), findsWidgets);
   });
@@ -650,13 +645,11 @@ void main() {
     expect(find.text('ASM PASSENGER'), findsNothing);
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.text('Map preview unavailable.'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
@@ -671,9 +664,9 @@ void main() {
 
     await tester.tap(find.text('Trips'));
     await tester.pumpAndSettle();
-    expect(find.text('No trips yet'), findsOneWidget);
+    expect(find.text('No ride requests yet'), findsOneWidget);
     expect(
-      find.text('Your ride history will appear here after your first trip.'),
+      find.text('Your ride requests will appear here after you book.'),
       findsOneWidget,
     );
     expect(find.text('LOCAL DEMO'), findsNothing);
@@ -701,7 +694,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsNothing);
@@ -720,33 +713,32 @@ void main() {
     expect(find.text('Map preview unavailable.'), findsNothing);
   });
 
-  testWidgets(
-    'local QA route preview remains reachable on a small scaled screen',
-    (tester) async {
-      _useSurface(tester, const Size(320, 568));
+  testWidgets('route preview remains reachable on a small scaled screen', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(320, 568));
 
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AsmThemes.passenger,
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: const TextScaler.linear(1.5)),
-            child: child!,
-          ),
-          home: const PassengerShell(localQaEnabled: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.5)),
+          child: child!,
         ),
-      );
+        home: const PassengerShell(localQaEnabled: true),
+      ),
+    );
 
-      expect(find.text('LOCAL DEMO'), findsNothing);
-      expect(find.text('Local QA route preview'), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const Key('choose-pickup')));
-      expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const Key('continue-local-draft')));
-      expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.text('LOCAL DEMO'), findsNothing);
+    expect(find.text('Route preview'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('choose-pickup')));
+    expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('continue-local-draft')));
+    expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('passenger shell hides internal and no live feature wording', (
     tester,
@@ -774,13 +766,11 @@ void main() {
 
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Local QA route preview'), findsNothing);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.byKey(const Key('local-map-preview')), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('choose-destination')), findsNothing);
@@ -794,7 +784,7 @@ void main() {
     expect(find.textContaining('trip history'), findsNothing);
   });
 
-  testWidgets('Passenger local QA route preview is gated and local only', (
+  testWidgets('Passenger route preview is gated and local only', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
@@ -814,7 +804,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.paths, isEmpty);
-    expect(find.text('Local QA route preview'), findsOneWidget);
+    expect(find.text('Route preview'), findsOneWidget);
     expect(find.byKey(const Key('local-map-preview')), findsOneWidget);
     expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
     expect(find.byKey(const Key('choose-destination')), findsOneWidget);
@@ -832,7 +822,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsWidgets);
@@ -940,9 +930,7 @@ void main() {
     expect(await store.readRefreshToken(), 'stored-passenger-refresh');
     expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text(
-        'The Control Center will review your request and confirm pickup details.',
-      ),
+      find.text('ALANTEH will review your request and confirm pickup details.'),
       findsOneWidget,
     );
     expect(find.text('Map preview unavailable.'), findsNothing);
@@ -1034,7 +1022,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Passenger account'), findsOneWidget);
     expect(
-      find.text('Your account details are managed by the Control Center.'),
+      find.text('Your ALANTEH account details will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Sign out'), findsWidgets);
@@ -1174,6 +1162,7 @@ const _removedPassengerTexts = [
   'Africa Solar Mobility',
   'Approved service context',
   'LOCAL DEMO',
+  'Local QA',
   'Plan a demo ride',
   'Local draft',
   'local draft',

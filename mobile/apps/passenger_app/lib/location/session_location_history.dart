@@ -29,7 +29,7 @@ final class SessionLocationHistory {
     if (normalizedDescription.isEmpty) {
       throw const SessionLocationHistoryValidationException(
         field: 'description',
-        message: 'Enter a location description.',
+        message: 'Please enter your location.',
       );
     }
 

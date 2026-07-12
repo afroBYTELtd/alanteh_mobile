@@ -92,7 +92,7 @@ class PassengerHome extends StatelessWidget {
                 ),
                 const SizedBox(height: AsmSpacing.space8),
                 Text(
-                  'The Control Center will review your request and confirm pickup details.',
+                  'ALANTEH will review your request and confirm pickup details.',
                   key: const Key('passenger-live-request-safety-copy'),
                   style: textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -103,7 +103,7 @@ class PassengerHome extends StatelessWidget {
                 const SizedBox(height: AsmSpacing.space16),
                 if (localQaEnabled) ...[
                   Text(
-                    'Local QA route preview',
+                    'Route preview',
                     key: const Key('local-qa-route-preview-label'),
                     style: textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,

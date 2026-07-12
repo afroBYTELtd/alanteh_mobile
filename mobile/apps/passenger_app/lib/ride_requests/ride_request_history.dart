@@ -534,13 +534,13 @@ class _PassengerRideRequestHistoryPageState
             const Icon(Icons.receipt_long_outlined, size: 56),
             const SizedBox(height: AsmSpacing.space16),
             const Text(
-              'No trips yet',
+              'No ride requests yet',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: AsmSpacing.space8),
             const Text(
-              'Your ride history will appear here after your first trip.',
+              'Your ride requests will appear here after you book.',
               textAlign: TextAlign.center,
             ),
             if (widget.onBookRide != null) ...[
@@ -648,7 +648,7 @@ class _RideRequestCard extends StatelessWidget {
                   children: [
                     Icon(Icons.verified_outlined, size: 18),
                     SizedBox(width: AsmSpacing.space4),
-                    Expanded(child: Text('Mobile receipt confirmed')),
+                    Expanded(child: Text('Request received')),
                   ],
                 ),
               ],
@@ -785,7 +785,7 @@ class _PassengerRideRequestDetailPageState
         _DetailRow(label: 'Created', value: _formatDateTime(record.createdAt)),
         _DetailRow(label: 'Updated', value: _formatDateTime(record.updatedAt)),
         _DetailRow(
-          label: 'Mobile receipt',
+          label: 'Request receipt',
           value: record.hasMobileReceipt ? 'Confirmed' : 'Not available',
         ),
         _DetailRow(
@@ -803,7 +803,7 @@ class _PassengerRideRequestDetailPageState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Control Center update',
+                  'ALANTEH update',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: AsmSpacing.space8),
@@ -915,34 +915,53 @@ class _HistoryErrorState extends StatelessWidget {
 }
 
 String _safeStatusMessage(String status, {String? preferredMessage}) {
-  final preferred = preferredMessage?.trim();
-  if (preferred != null && preferred.isNotEmpty) {
-    return preferred;
+  final safePreferredMessage = preferredMessage?.trim();
+  if (safePreferredMessage != null && safePreferredMessage.isNotEmpty) {
+    final lower = safePreferredMessage.toLowerCase();
+    final mentionsInternalOps = RegExp(
+      r'control\s+center',
+      caseSensitive: false,
+    ).hasMatch(safePreferredMessage);
+    final isPassengerAppReceipt = lower.contains(
+      'passenger app request received',
+    );
+    final isMobileReceiptMessage = lower.contains('mobile receipt confirmed');
+
+    if (isPassengerAppReceipt || isMobileReceiptMessage) {
+      return 'Request received.';
+    }
+
+    if (mentionsInternalOps) {
+      return safePreferredMessage.replaceAll(
+        RegExp(r'control\s+center', caseSensitive: false),
+        'ALANTEH',
+      );
+    }
+
+    return safePreferredMessage;
   }
 
   return switch (status.trim().toLowerCase()) {
-    'requested' => 'Received by Control Center',
-    'under_review' => 'Being reviewed',
-    'accepted_for_trip' => 'Accepted for trip preparation',
-    'rejected' => 'Could not be accepted',
-    'cancelled' => 'Cancelled',
-    'converted' => 'Converted into trip record',
-    _ => 'Status available from Control Center',
+    'requested' => 'Request received.',
+    'under_review' => 'Being reviewed.',
+    'accepted' || 'approved' => 'Accepted for trip preparation.',
+    'rejected' || 'declined' => 'Could not be accepted.',
+    'cancelled' || 'canceled' => 'Cancelled.',
+    'trip_created' => 'Trip record created.',
+    _ => 'Request update available.',
   };
 }
 
 String _statusLabel(String status) {
-  final words = status
-      .trim()
-      .replaceAll('_', ' ')
-      .split(' ')
-      .where((word) => word.isNotEmpty)
-      .map(
-        (word) => '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
-      )
-      .toList(growable: false);
-
-  return words.isEmpty ? 'Status unavailable' : words.join(' ');
+  return switch (status.trim().toLowerCase()) {
+    'requested' => 'Received by ALANTEH',
+    'under_review' => 'Being reviewed',
+    'accepted' || 'approved' => 'Accepted for trip preparation',
+    'rejected' || 'declined' => 'Could not be accepted',
+    'cancelled' || 'canceled' => 'Cancelled',
+    'trip_created' => 'Trip record created',
+    _ => 'Request update',
+  };
 }
 
 String _formatDateTime(DateTime? value) {
