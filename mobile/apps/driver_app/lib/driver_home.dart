@@ -2,6 +2,8 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'driver_duty_trips.dart';
+
 class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
@@ -10,6 +12,8 @@ class DriverHome extends StatelessWidget {
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
     required this.localQaEnabled,
+    required this.dutyGateway,
+    required this.onOpenAssignedTrips,
     this.onSignOut,
     super.key,
   });
@@ -20,6 +24,8 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
   final bool localQaEnabled;
+  final DriverDutyGateway? dutyGateway;
+  final VoidCallback onOpenAssignedTrips;
   final VoidCallback? onSignOut;
 
   @override
@@ -38,56 +44,23 @@ class DriverHome extends StatelessWidget {
         children: [
           _DriverHomeBrandHeader(onSignOut: onSignOut),
           const SizedBox(height: AsmSpacing.space20),
-          Container(
-            key: const Key('driver-home-ready-card'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(AsmSpacing.space20),
-            decoration: BoxDecoration(
-              color: AsmColors.driverCard,
-              borderRadius: BorderRadius.circular(AsmRadii.radius28),
-              border: Border.all(color: AsmColors.driverLine),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.verified_user_outlined,
-                  color: AsmColors.driverMintAction,
-                  size: 44,
-                ),
-                SizedBox(height: AsmSpacing.space20),
-                Text(
-                  'Driver app ready',
-                  style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w900,
-                    height: 1.05,
-                  ),
-                ),
-                SizedBox(height: 14),
-                Text(
-                  'Keep your phone nearby.',
-                  style: TextStyle(
-                    color: AsmColors.driverTextSecondary,
-                    fontSize: 17,
-                    height: 1.45,
-                  ),
-                ),
-                SizedBox(height: AsmSpacing.space20),
-                AsmSectionLabel(
-                  key: Key('driver-market'),
-                  text: 'Accra, Ghana',
-                  icon: Icons.location_on_outlined,
-                  iconColor: AsmColors.driverMintAction,
-                  textStyle: TextStyle(fontWeight: FontWeight.w800),
-                  textMaxLines: null,
-                ),
-              ],
-            ),
+          const Text(
+            'Driver app ready',
+            key: Key('driver-home-title'),
+            style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const AsmSectionLabel(
+            key: Key('driver-market'),
+            text: 'Accra, Ghana',
+            icon: Icons.location_on_outlined,
+            iconColor: AsmColors.driverMintAction,
+            textStyle: TextStyle(fontWeight: FontWeight.w800),
+            textMaxLines: null,
           ),
           const SizedBox(height: AsmSpacing.space16),
           Container(
-            key: const Key('driver-home-safe-tools-card'),
+            key: const Key('driver-home-assigned-trips-card'),
             width: double.infinity,
             padding: const EdgeInsets.all(AsmSpacing.space16),
             decoration: BoxDecoration(
@@ -103,32 +76,14 @@ class DriverHome extends StatelessWidget {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: AsmSpacing.space8),
-                const AsmEmptyStatePanel(
-                  key: Key('driver-live-safe-waiting'),
-                  compact: true,
-                  padding: EdgeInsets.all(18),
-                  backgroundColor: AsmColors.driverCard,
-                  borderColor: AsmColors.driverLine,
+                AsmPrimaryActionButton(
+                  key: const Key('open-assigned-trips'),
+                  onPressed: onOpenAssignedTrips,
+                  variant: AsmActionButtonVariant.outlined,
                   icon: Icons.route_outlined,
-                  iconColor: AsmColors.driverMintAction,
-                  title:
-                      'Trip and shift tools will appear after Control Center activation.',
-                  message: 'Keep your phone nearby.',
-                  titleStyle: TextStyle(fontWeight: FontWeight.w700),
-                  messageStyle: TextStyle(color: AsmColors.driverTextSecondary),
-                  textSpacing: 3,
+                  label: 'My Assigned Trips',
                 ),
-                const SizedBox(height: AsmSpacing.space16),
-                if (localQaEnabled) ...[
-                  AsmPrimaryActionButton(
-                    key: const Key('open-readiness'),
-                    onPressed: onOpenReadiness,
-                    variant: AsmActionButtonVariant.outlined,
-                    icon: Icons.fact_check_outlined,
-                    label: 'Local QA readiness preview',
-                  ),
-                  const SizedBox(height: AsmSpacing.space8),
-                ],
+                const SizedBox(height: AsmSpacing.space8),
                 AsmPrimaryActionButton(
                   key: const Key('open-concern'),
                   onPressed: onRecordConcern,
@@ -138,6 +93,15 @@ class DriverHome extends StatelessWidget {
                   minimumHeight: 48,
                 ),
                 if (localQaEnabled) ...[
+                  const SizedBox(height: AsmSpacing.space8),
+                  AsmPrimaryActionButton(
+                    key: const Key('open-readiness'),
+                    onPressed: onOpenReadiness,
+                    variant: AsmActionButtonVariant.text,
+                    icon: Icons.fact_check_outlined,
+                    label: 'Local QA readiness preview',
+                    minimumHeight: 48,
+                  ),
                   const SizedBox(height: AsmSpacing.space4),
                   AsmPrimaryActionButton(
                     key: const Key('open-ride-offer-preview'),
@@ -151,6 +115,8 @@ class DriverHome extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: AsmSpacing.space16),
+          DriverDutySummaryPanel(gateway: dutyGateway),
         ],
       ),
     );

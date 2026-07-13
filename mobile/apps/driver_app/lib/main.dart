@@ -4,6 +4,7 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'driver_duty_trips.dart';
 import 'driver_shell.dart';
 
 export 'driver_shell.dart';
@@ -19,6 +20,7 @@ class DriverApp extends StatelessWidget {
     this.showLoginShell = false,
     this.authService,
     this.authTokenStore,
+    this.driverDutyGateway,
     super.key,
   });
 
@@ -26,6 +28,7 @@ class DriverApp extends StatelessWidget {
   final bool showLoginShell;
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
+  final DriverDutyGateway? driverDutyGateway;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +43,13 @@ class DriverApp extends StatelessWidget {
           tokenStore: tokenStore,
           appContext: AuthAppContext.driver,
         );
+    final shouldCreateDefaultDutyGateway =
+        showLoginShell && authService == null && authTokenStore == null;
+    final dutyGateway =
+        driverDutyGateway ??
+        (shouldCreateDefaultDutyGateway
+            ? _driverDutyGatewayFor(baseUrl: apiBaseUrl, tokenStore: tokenStore)
+            : null);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -51,10 +61,12 @@ class DriverApp extends StatelessWidget {
               authService: service,
               authTokenStore: tokenStore,
               localQaEnabled: configuration.localQaEnabled,
+              driverDutyGateway: dutyGateway,
             )
           : DriverShell(
               configuration: configuration,
               localQaEnabled: configuration.localQaEnabled,
+              driverDutyGateway: dutyGateway,
             ),
     );
   }
@@ -66,6 +78,7 @@ class DriverLoginShell extends StatefulWidget {
     required this.authTokenStore,
     this.configuration = AsmAppConfig.localGhana,
     this.localQaEnabled = false,
+    this.driverDutyGateway,
     super.key,
   });
 
@@ -73,6 +86,7 @@ class DriverLoginShell extends StatefulWidget {
   final AuthService authService;
   final AuthTokenStore authTokenStore;
   final bool localQaEnabled;
+  final DriverDutyGateway? driverDutyGateway;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -287,6 +301,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         configuration: widget.configuration,
         localQaEnabled: widget.localQaEnabled,
         onSignOut: _signOut,
+        driverDutyGateway: widget.driverDutyGateway,
       );
     }
 
@@ -525,6 +540,33 @@ AuthService _authServiceFor({
     tokenStore: tokenStore,
     appContext: appContext,
   );
+}
+
+DriverDutyGateway? _driverDutyGatewayFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  return AsmDriverDutyGateway(
+    AsmApiClient(
+      baseUrl: baseUrl!,
+      tokenProvider: _StoredAccessTokenProvider(tokenStore),
+    ),
+  );
+}
+
+final class _StoredAccessTokenProvider implements TokenProvider {
+  const _StoredAccessTokenProvider(this.tokenStore);
+
+  final AuthTokenStore tokenStore;
+
+  @override
+  Future<String?> getAccessToken() {
+    return tokenStore.readAccessToken();
+  }
 }
 
 class _UnconfiguredAuthApiGateway implements AuthApiGateway {

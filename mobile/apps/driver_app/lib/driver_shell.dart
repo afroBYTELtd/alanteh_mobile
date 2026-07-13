@@ -3,6 +3,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'concern/driver_concern_page.dart';
+import 'driver_duty_trips.dart';
 import 'driver_home.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
@@ -12,12 +13,14 @@ class DriverShell extends StatefulWidget {
     this.configuration = AsmAppConfig.localGhana,
     this.localQaEnabled = false,
     this.onSignOut,
+    this.driverDutyGateway,
     super.key,
   });
 
   final AsmAppConfig configuration;
   final bool localQaEnabled;
   final Future<void> Function()? onSignOut;
+  final DriverDutyGateway? driverDutyGateway;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -26,6 +29,10 @@ class DriverShell extends StatefulWidget {
 class _DriverShellState extends State<DriverShell> {
   int _selectedIndex = 0;
   bool _isOnShift = false;
+
+  void _openAssignedTrips() {
+    setState(() => _selectedIndex = 1);
+  }
 
   Future<void> _openReadiness() async {
     if (!widget.localQaEnabled) {
@@ -87,13 +94,11 @@ class _DriverShellState extends State<DriverShell> {
         onRecordConcern: _openConcern,
         onPreviewIncomingRequest: _openRideOfferPreview,
         localQaEnabled: widget.localQaEnabled,
+        dutyGateway: widget.driverDutyGateway,
+        onOpenAssignedTrips: _openAssignedTrips,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
-      1 => const AsmDemoPlaceholder(
-        icon: Icons.route_outlined,
-        title: 'No assigned trips yet.',
-        message: 'The Control Center will contact you when a trip is ready.',
-      ),
+      1 => DriverAssignedTripsScreen(gateway: widget.driverDutyGateway),
       _ => _DriverAccountPage(
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
@@ -161,7 +166,7 @@ class _DriverAccountPage extends StatelessWidget {
             ),
             const SizedBox(height: AsmSpacing.space8),
             Text(
-              'Your driver account details are managed by the Control Center.',
+              'Signed in to ALANTEH Driver.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: colors.onSurfaceVariant,

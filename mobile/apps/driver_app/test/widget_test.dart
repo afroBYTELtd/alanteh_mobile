@@ -5,6 +5,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:driver_app/concern/driver_concern_page.dart';
+import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
@@ -18,28 +19,23 @@ void main() {
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
   });
 
-  test('M3A keeps Driver runtime free of unaccepted backend endpoints', () {
+  test('M4D uses only accepted Driver read endpoints', () {
     final source = _readM3aDartSources('lib');
 
-    expect(source, contains('Driver account'));
-    expect(
-      source,
-      contains(
-        'Your driver account details are managed by the Control Center.',
-      ),
-    );
+    expect(source, contains('Driver duty summary'));
+    expect(source, contains(driverDutyPath));
+    expect(source, contains(driverTripsPath));
     expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
-    expect(source, isNot(contains('/api/trips')));
-    expect(source, isNot(contains('/api/rides/status')));
-    expect(source, isNot(contains('/api/driver')));
     expect(source, isNot(contains('/api/mobile/driver')));
     expect(source, isNot(contains('/api/dispatch')));
     expect(source, isNot(contains('/api/assignments')));
+    expect(source, isNot(contains('/api/driver/.*/accept')));
+    expect(source, isNot(contains('/api/driver/.*/reject')));
+    expect(source, isNot(contains('/api/driver/.*/start')));
+    expect(source, isNot(contains('/api/driver/.*/complete')));
     expect(source, isNot(contains('/api/routes')));
     expect(source, isNot(contains('/api/estimate')));
     expect(source, isNot(contains('/api/fares')));
-    expect(source, isNot(contains('/api/profile')));
-    expect(source, isNot(contains('/api/account')));
     expect(source, isNot(contains('/api/wallet')));
     expect(source, isNot(contains('/api/payment')));
     expect(source, isNot(contains('/api/payments')));
@@ -54,9 +50,6 @@ void main() {
     expect(source, isNot(contains('session/validate')));
     expect(source, isNot(contains('GoogleMap')));
     expect(source, isNot(contains('geolocator')));
-    for (final credential in _m3aDevelopmentCredentials) {
-      expect(source, isNot(contains(credential)));
-    }
     expect(source, isNot(contains(['fake', 'token'].join(' '))));
     expect(source, isNot(contains(['fake', 'Token'].join())));
   });
@@ -325,19 +318,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(authApi.paths, <String>[AuthService.tokenPath]);
-      expect(find.text('Accra, Ghana'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.byKey(const Key('open-readiness')), findsNothing);
       expect(find.text('Local QA readiness preview'), findsNothing);
       expect(find.text("I'm ready"), findsNothing);
-      expect(
-        find.text(
-          'Trip and shift tools will appear after Control Center activation.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Keep your phone nearby.'), findsWidgets);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsWidgets);
       expect(find.text('New trip'), findsNothing);
       expect(find.text('Local QA driver trip preview'), findsNothing);
       expect(find.text('Accept'), findsNothing);
@@ -387,18 +375,13 @@ void main() {
       expect(await store.readAccessToken(), 'driver-access-token');
       expect(await store.readRefreshToken(), 'driver-refresh-token');
       expect(find.text('Driver app ready'), findsOneWidget);
-      expect(find.text('Accra, Ghana'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
       expect(find.byKey(const Key('open-readiness')), findsNothing);
       expect(find.text('Local QA readiness preview'), findsNothing);
-      expect(
-        find.text(
-          'Trip and shift tools will appear after Control Center activation.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Keep your phone nearby.'), findsWidgets);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsWidgets);
       expect(find.text('New trip'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
@@ -815,14 +798,9 @@ void main() {
     expect(find.text('Field workspace'), findsNothing);
     expect(find.text('Driver app ready'), findsOneWidget);
     expect(find.text('Local QA: Off shift'), findsNothing);
-    expect(find.text('Accra, Ghana'), findsOneWidget);
-    expect(
-      find.text(
-        'Trip and shift tools will appear after Control Center activation.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Keep your phone nearby.'), findsWidgets);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsWidgets);
     expect(find.text('Local QA readiness preview'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
     expect(find.text('Local QA driver trip preview'), findsOneWidget);
@@ -836,7 +814,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No assigned trips yet.'), findsOneWidget);
     expect(
-      find.text('The Control Center will contact you when a trip is ready.'),
+      find.text('When the Control Center assigns a trip, it will appear here.'),
       findsOneWidget,
     );
     expect(find.textContaining('fake assigned trip'), findsNothing);
@@ -860,12 +838,7 @@ void main() {
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
     expect(find.text('Driver account'), findsOneWidget);
-    expect(
-      find.text(
-        'Your driver account details are managed by the Control Center.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Signed in to ALANTEH Driver.'), findsOneWidget);
     expect(find.text('Sign out'), findsNothing);
     expect(find.textContaining('fake driver name'), findsNothing);
     expect(find.textContaining('driver phone'), findsNothing);
@@ -884,13 +857,8 @@ void main() {
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
     expect(find.text('Driver app ready'), findsOneWidget);
-    expect(
-      find.text(
-        'Trip and shift tools will appear after Control Center activation.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Keep your phone nearby.'), findsWidgets);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsWidgets);
   });
 
   testWidgets(
@@ -907,6 +875,8 @@ void main() {
       expect(find.text('Local QA driver trip preview'), findsOneWidget);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
       expect(find.text('Shift check'), findsOneWidget);
@@ -935,6 +905,8 @@ void main() {
     );
     await _openDriverLocalDemo(tester);
 
+    await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
 
@@ -987,6 +959,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Driver app ready'), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
@@ -1005,6 +979,8 @@ void main() {
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
 
+      await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
 
@@ -1115,6 +1091,8 @@ void main() {
     );
     await _openDriverLocalDemo(tester);
 
+    await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
@@ -1175,7 +1153,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No assigned trips yet.'), findsOneWidget);
     expect(
-      find.text('The Control Center will contact you when a trip is ready.'),
+      find.text('When the Control Center assigns a trip, it will appear here.'),
       findsOneWidget,
     );
     expect(find.text('Accept trip'), findsNothing);
@@ -1304,6 +1282,8 @@ void main() {
     await tester.ensureVisible(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('open-readiness')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('Shift check'), findsOneWidget);
@@ -1454,14 +1434,9 @@ void main() {
       expect(await store.readAccessToken(), 'restored-driver-access');
       expect(await store.readRefreshToken(), 'stored-driver-refresh');
       expect(find.text('Driver app ready'), findsOneWidget);
-      expect(find.text('Accra, Ghana'), findsOneWidget);
-      expect(
-        find.text(
-          'Trip and shift tools will appear after Control Center activation.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('Keep your phone nearby.'), findsWidgets);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.text('Driver app ready'), findsWidgets);
       expect(find.text('Local QA driver trip preview'), findsNothing);
       expect(find.text('Please sign in again to continue.'), findsNothing);
     },
@@ -1495,12 +1470,7 @@ void main() {
     await tester.tap(find.text('Account'));
     await tester.pumpAndSettle();
     expect(find.text('Driver account'), findsOneWidget);
-    expect(
-      find.text(
-        'Your driver account details are managed by the Control Center.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Signed in to ALANTEH Driver.'), findsOneWidget);
     await tester.tap(find.byKey(const Key('driver-account-sign-out')));
     await tester.pumpAndSettle();
 
@@ -1549,6 +1519,8 @@ void main() {
       expect(find.byKey(const Key('driver-sign-out')), findsOneWidget);
       expect(find.text('Local QA: Off shift'), findsNothing);
 
+      await tester.ensureVisible(find.byKey(const Key('open-readiness')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
       for (final item in DriverReadinessItem.values) {
@@ -1561,6 +1533,8 @@ void main() {
 
       expect(find.text('Local QA: On shift'), findsNothing);
 
+      await tester.ensureVisible(find.byKey(const Key('driver-sign-out')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('driver-sign-out')));
       await tester.pumpAndSettle();
 
@@ -1622,22 +1596,16 @@ void main() {
     );
     expect(find.text('Driver app foundation'), findsNothing);
 
-    expect(find.text('Accra, Ghana'), findsOneWidget);
     expect(find.text('Driver app ready'), findsOneWidget);
-    expect(
-      find.text(
-        'Trip and shift tools will appear after Control Center activation.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Keep your phone nearby.'), findsWidgets);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsOneWidget);
+    expect(find.text('Driver app ready'), findsWidgets);
 
     expect(find.textContaining('On shift'), findsNothing);
     expect(find.textContaining('Off shift'), findsNothing);
     expect(find.textContaining('Waiting for trip'), findsNothing);
     expect(find.textContaining('Trip assigned'), findsNothing);
     expect(find.textContaining('Dispatcher confirmed'), findsNothing);
-    expect(find.textContaining('Active trip'), findsNothing);
     expect(find.textContaining('Trip completed'), findsNothing);
     expect(find.textContaining('No trip waiting'), findsNothing);
     expect(
@@ -1692,6 +1660,288 @@ void main() {
       expect(find.byType(DriverApp), findsOneWidget);
     },
   );
+
+  group('M4D Driver duty and assigned trips', () {
+    testWidgets('Driver duty loading state is visible', (tester) async {
+      _useSurface(tester, const Size(430, 3000));
+      final completer = Completer<DriverDutySummary>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: AsmScreenSurface(
+            child: DriverDutySummaryPanel(
+              gateway: _FakeDriverDutyGateway(duty: completer.future),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('driver-duty-loading')), findsOneWidget);
+      expect(find.text('Loading driver duty...'), findsOneWidget);
+
+      completer.complete(_sampleDuty());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-duty-loaded')), findsOneWidget);
+    });
+
+    testWidgets('Driver duty loaded state shows safe fields only', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 3000));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: AsmScreenSurface(
+            child: DriverDutySummaryPanel(
+              gateway: _FakeDriverDutyGateway(
+                duty: Future.value(_sampleDuty()),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Driver duty summary'), findsOneWidget);
+      expect(find.text('Driver One'), findsOneWidget);
+      expect(find.text('DRV-001'), findsOneWidget);
+      expect(find.text('+233 20 ****001'), findsOneWidget);
+      expect(find.text('VEH-009'), findsOneWidget);
+      expect(find.text('Yes'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('+233200000001'), findsNothing);
+    });
+
+    testWidgets('Assigned trips loading state is visible', (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final completer = Completer<List<DriverAssignedTrip>>();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(trips: completer.future),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('driver-trips-loading')), findsOneWidget);
+      expect(find.text('Loading assigned trips...'), findsOneWidget);
+
+      completer.complete(const <DriverAssignedTrip>[]);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-trips-empty')), findsOneWidget);
+    });
+
+    testWidgets('Assigned trips loaded state displays trip cards', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1200));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(
+              trips: Future.value(<DriverAssignedTrip>[_sampleTrip()]),
+              detail: Future.value(_sampleTrip(reference: 'TRIP-001')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('My Assigned Trips'), findsOneWidget);
+      expect(find.byKey(const Key('driver-trip-TRIP-001')), findsOneWidget);
+      expect(find.text('TRIP-001'), findsOneWidget);
+      expect(find.text('Assigned'), findsOneWidget);
+      expect(find.text('Accra Mall'), findsOneWidget);
+      expect(find.text('Osu'), findsOneWidget);
+      expect(find.text('VEH-009'), findsOneWidget);
+      expect(find.text('Meet at the main entrance.'), findsOneWidget);
+    });
+
+    testWidgets('Assigned trips empty state uses production-safe wording', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1000));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(
+              trips: Future.value(const <DriverAssignedTrip>[]),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-trips-empty')), findsOneWidget);
+      expect(find.text(driverTripsEmptyTitle), findsOneWidget);
+      expect(find.text(driverTripsEmptyMessage), findsOneWidget);
+      expect(find.textContaining('fake assigned trip'), findsNothing);
+    });
+
+    testWidgets('Assigned trips error state is safe and refreshable', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1000));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(
+              trips: _futureTripListError(
+                const DriverDutyApiException(
+                  DriverDutyApiFailureType.unavailable,
+                  'temporary',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-trips-error')), findsOneWidget);
+      expect(find.text('Assigned trips could not be loaded.'), findsOneWidget);
+      expect(find.text('Refresh'), findsOneWidget);
+    });
+
+    testWidgets('Unauthorized Driver trips state asks for sign in again', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1000));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(
+              trips: _futureTripListError(
+                const DriverDutyApiException(
+                  DriverDutyApiFailureType.sessionExpired,
+                  driverSessionExpiredMessage,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('driver-trips-session-expired')),
+        findsOneWidget,
+      );
+      expect(find.text(driverSessionExpiredMessage), findsOneWidget);
+    });
+
+    testWidgets('Trip detail displays safe assigned trip fields', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1200));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverTripDetailScreen(
+            gateway: _FakeDriverDutyGateway(
+              detail: Future.value(_sampleTrip(reference: 'TRIP-DETAIL')),
+            ),
+            tripReference: 'TRIP-DETAIL',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('driver-trip-detail-loaded')),
+        findsOneWidget,
+      );
+      expect(find.text('Assigned trip detail'), findsWidgets);
+      expect(find.text('TRIP-DETAIL'), findsOneWidget);
+      expect(find.text('Assigned'), findsOneWidget);
+      expect(find.text('Accra Mall'), findsOneWidget);
+      expect(find.text('Osu'), findsOneWidget);
+      expect(find.text('2026-07-13T09:00:00Z'), findsOneWidget);
+      expect(find.text('2026-07-13T09:30:00Z'), findsOneWidget);
+      expect(find.text('VEH-009'), findsOneWidget);
+      expect(find.text('Meet at the main entrance.'), findsOneWidget);
+    });
+
+    testWidgets('Driver duty and trips do not render sensitive fields', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1200));
+      const sensitiveStrings = <String>[
+        'PIN',
+        'access token',
+        'refresh token',
+        'Authorization',
+        'private phone',
+        'private email',
+        'Idempotency-Key',
+        'raw payload',
+        'password',
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverAssignedTripsScreen(
+            gateway: _FakeDriverDutyGateway(
+              trips: Future.value(<DriverAssignedTrip>[_sampleTrip()]),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final forbidden in sensitiveStrings) {
+        expect(find.textContaining(forbidden), findsNothing);
+      }
+      expect(find.textContaining('+233200000001'), findsNothing);
+      expect(find.textContaining('@'), findsNothing);
+    });
+
+    testWidgets('Driver Home opens My Assigned Trips from work tab', (
+      tester,
+    ) async {
+      _useSurface(tester, const Size(430, 1200));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverShell(
+            driverDutyGateway: _FakeDriverDutyGateway(
+              duty: Future.value(_sampleDuty()),
+              trips: Future.value(<DriverAssignedTrip>[_sampleTrip()]),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-duty-loaded')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('open-assigned-trips')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('driver-assigned-trips-screen')),
+        findsOneWidget,
+      );
+      expect(find.text('TRIP-001'), findsOneWidget);
+    });
+  });
 }
 
 class _AccessOnlyAuthTokenStore implements AuthTokenStore {
@@ -1928,9 +2178,76 @@ String _readM3aDartSources(String rootPath) {
   return buffer.toString();
 }
 
-List<String> get _m3aDevelopmentCredentials => <String>[
-  ['+23355', '123', '4567'].join(),
-  ['+23324', '123', '4567'].join(),
-  ['12', '34'].join(),
-  ['43', '21'].join(),
-];
+class _FakeDriverDutyGateway implements DriverDutyGateway {
+  _FakeDriverDutyGateway({
+    Future<DriverDutySummary>? duty,
+    Future<List<DriverAssignedTrip>>? trips,
+    Future<DriverAssignedTrip>? detail,
+  }) : duty = duty ?? Future.value(DriverDutySummary.empty()),
+       trips = trips ?? Future.value(const <DriverAssignedTrip>[]),
+       detail =
+           detail ??
+           Future.value(const DriverAssignedTrip(reference: 'TRIP-DETAIL'));
+
+  Future<DriverDutySummary> duty;
+  Future<List<DriverAssignedTrip>> trips;
+  Future<DriverAssignedTrip> detail;
+  int dutyCalls = 0;
+  int tripsCalls = 0;
+  int detailCalls = 0;
+
+  @override
+  Future<DriverDutySummary> fetchDuty() {
+    dutyCalls += 1;
+    return duty;
+  }
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() {
+    tripsCalls += 1;
+    return trips;
+  }
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) {
+    detailCalls += 1;
+    return detail;
+  }
+}
+
+Future<List<DriverAssignedTrip>> _futureTripListError(
+  DriverDutyApiException error,
+) {
+  return Future<List<DriverAssignedTrip>>.delayed(
+    Duration.zero,
+    () => throw error,
+  );
+}
+
+DriverDutySummary _sampleDuty() {
+  return const DriverDutySummary(
+    displayName: 'Driver One',
+    driverReference: 'DRV-001',
+    phone: '+233200000001',
+    status: 'active',
+    assignedVehicleReference: 'VEH-009',
+    canReceiveAssignments: true,
+    activeTripCount: 1,
+    assignedTripCount: 2,
+  );
+}
+
+DriverAssignedTrip _sampleTrip({String reference = 'TRIP-001'}) {
+  return DriverAssignedTrip(
+    reference: reference,
+    status: 'assigned',
+    pickupLocation: 'Accra Mall',
+    destination: 'Osu',
+    requestedPickupTime: '2026-07-13T10:00:00Z',
+    createdTime: '2026-07-13T09:00:00Z',
+    updatedTime: '2026-07-13T09:30:00Z',
+    vehicleReference: 'VEH-009',
+    passengerCount: 2,
+    controlCenterMessage: 'Meet at the main entrance.',
+  );
+}
