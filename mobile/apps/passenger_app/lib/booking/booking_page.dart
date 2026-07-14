@@ -7,6 +7,8 @@ import 'booking_draft.dart';
 import 'booking_form.dart';
 import 'booking_review.dart';
 import 'booking_submission.dart';
+import '../ride_requests/ride_request_history.dart';
+import '../tracking/ride_tracking_screen.dart';
 
 class BookingPage extends StatefulWidget {
   const BookingPage({
@@ -16,6 +18,7 @@ class BookingPage extends StatefulWidget {
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
     this.onSignInRequired,
+    this.rideRequestHistoryRepository,
     super.key,
   });
 
@@ -25,6 +28,7 @@ class BookingPage extends StatefulWidget {
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;
   final VoidCallback? onSignInRequired;
+  final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -155,6 +159,19 @@ class _BookingPageState extends State<BookingPage> {
         _submissionResult = result;
         _idempotencyKey = null;
       });
+
+      final reference = result.requestReference?.trim();
+      final repository = widget.rideRequestHistoryRepository;
+      if (reference != null && reference.isNotEmpty && repository != null && mounted) {
+        await Navigator.of(context).pushReplacement<void, void>(
+          MaterialPageRoute<void>(
+            builder: (_) => RideTrackingScreen(
+              repository: repository,
+              requestReference: reference,
+            ),
+          ),
+        );
+      }
     } on PassengerRideRequestSubmissionException catch (error) {
       if (!mounted) {
         return;

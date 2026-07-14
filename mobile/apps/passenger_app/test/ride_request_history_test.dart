@@ -87,9 +87,10 @@ void main() {
       find.byKey(const Key('ride-request-history-loaded')),
       findsOneWidget,
     );
-    expect(find.text('RR-APP-NEWEST'), findsOneWidget);
-    expect(find.text('RR-APP-OLDER'), findsOneWidget);
-    expect(find.text('Request received'), findsWidgets);
+    expect(find.byKey(const Key('trip-card-route-title')), findsNWidgets(2));
+    expect(find.text('RR-APP-NEWEST'), findsNothing);
+    expect(find.text('RR-APP-OLDER'), findsNothing);
+    expect(find.text('Received by ALANTEH'), findsWidgets);
     expect(find.text('Request received.'), findsWidgets);
 
     final newestTop = tester.getTopLeft(
@@ -112,7 +113,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-history-empty')), findsOneWidget);
-    expect(find.text('No ride requests yet'), findsOneWidget);
+    expect(find.text('No trips yet.'), findsOneWidget);
+    expect(find.text('Your ride history will appear here.'), findsOneWidget);
   });
 
   testWidgets('request history shows safe error state', (tester) async {
@@ -204,14 +206,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-detail-loaded')), findsOneWidget);
-    expect(find.text('RR-APP-DETAIL'), findsOneWidget);
+    expect(find.text('Trip details'), findsOneWidget);
+    expect(find.text('RR-APP-DETAIL'), findsNothing);
     expect(find.text('Accra Mall'), findsOneWidget);
     expect(find.text('Kotoka International Airport'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
     expect(find.text('Being reviewed'), findsOneWidget);
-    expect(find.text('Confirmed'), findsOneWidget);
-    expect(find.text('Not yet converted into a trip'), findsOneWidget);
-    expect(find.text('Your request is being reviewed.'), findsOneWidget);
+    expect(find.text('Confirmed'), findsNothing);
+    expect(find.text('Not yet converted into a trip'), findsNothing);
+    expect(find.text('Your request is being reviewed.'), findsWidgets);
   });
 
   testWidgets('history screens do not render sensitive fields', (tester) async {
@@ -271,13 +274,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('RR-APP-FIRST'), findsOneWidget);
+    expect(find.text('Pickup → Destination'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Refresh requests'));
     await tester.pumpAndSettle();
 
     expect(calls, 2);
-    expect(find.text('RR-APP-REFRESHED'), findsOneWidget);
+    expect(find.text('Pickup → Destination'), findsOneWidget);
     expect(find.text('RR-APP-FIRST'), findsNothing);
   });
 
@@ -294,6 +297,8 @@ void main() {
               reference: calls == 1
                   ? 'RR-APP-BEFORE-PULL'
                   : 'RR-APP-AFTER-PULL',
+              pickup: calls == 1 ? 'Before pickup' : 'After pickup',
+              destination: 'Destination',
             ),
           ];
         },
@@ -306,12 +311,15 @@ void main() {
     );
 
     final refreshFuture = refreshState.show();
-    await tester.pump();
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 500));
     await refreshFuture;
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(calls, 2);
-    expect(find.text('RR-APP-AFTER-PULL'), findsOneWidget);
+    expect(find.text('After pickup → Destination'), findsOneWidget);
+    expect(find.text('Before pickup → Destination'), findsNothing);
+    expect(find.text('RR-APP-AFTER-PULL'), findsNothing);
     expect(find.text('RR-APP-BEFORE-PULL'), findsNothing);
   });
 

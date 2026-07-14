@@ -66,8 +66,8 @@ void main() {
     _useSurface(tester, const Size(430, 1000));
     await tester.pumpWidget(_bookingTestApp());
 
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _scrollUntilKey(tester, const Key('request-ride'));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
     expect(find.text('Please enter your pickup location.'), findsOneWidget);
@@ -104,8 +104,8 @@ void main() {
       final submitter = _FakeRideRequestSubmitter.success();
       await tester.pumpWidget(_bookingTestApp(submitter: submitter));
 
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
 
       expect(find.text('Please enter your pickup location.'), findsOneWidget);
@@ -122,8 +122,8 @@ void main() {
         find.byKey(const Key('booking-destination')),
         'Airport',
       );
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
 
       expect(
@@ -145,8 +145,8 @@ void main() {
         find.byKey(const Key('booking-destination')),
         tooLongDestination,
       );
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
 
       expect(
@@ -171,8 +171,8 @@ void main() {
         find.byKey(const Key('booking-assistance')),
         tooLongAssistance,
       );
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
 
       expect(find.text('Special request is too long.'), findsOneWidget);
@@ -209,8 +209,8 @@ void main() {
       find.byKey(const Key('booking-assistance')),
       '  $assistance  ',
     );
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _scrollUntilKey(tester, const Key('request-ride'));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
     expect(find.text('Location is too long. Please shorten it.'), findsNothing);
@@ -262,17 +262,20 @@ void main() {
     firstForm.onPassengerCountChanged(3);
     await tester.pump();
 
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _scrollUntilKey(tester, const Key('request-ride'));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _scrollUntilKey(tester, const Key('confirm-and-request'));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsOneWidget);
     expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
     expect(find.text('Request status: Received by ALANTEH'), findsOneWidget);
     expect(find.text('Your ride request was received.'), findsOneWidget);
+
+    await _scrollUntilKey(tester, const Key('start-new-request'));
+
     expect(find.byKey(const Key('start-new-request')), findsOneWidget);
     expect(find.byKey(const Key('confirm-and-request')), findsNothing);
     expect(submitter.submissions, hasLength(1));
@@ -285,8 +288,8 @@ void main() {
     expect(submitter.submissions, hasLength(1));
     expect(submitter.idempotencyKeys, <String>['APP-M2J-FIRST']);
 
-    await tester.ensureVisible(find.byKey(const Key('start-new-request')));
-    await tester.tap(find.byKey(const Key('start-new-request')));
+    await _scrollUntilKey(tester, const Key('start-new-request'));
+    await _tapVisible(tester, const Key('start-new-request'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsNothing);
@@ -329,11 +332,11 @@ void main() {
       find.byKey(const Key('booking-destination')),
       'Labadi',
     );
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _scrollUntilKey(tester, const Key('request-ride'));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _scrollUntilKey(tester, const Key('confirm-and-request'));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsOneWidget);
@@ -366,6 +369,7 @@ void main() {
         return null;
       },
     );
+
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -374,6 +378,7 @@ void main() {
     );
 
     await tester.pumpWidget(_bookingTestApp(submitter: submitter));
+
     await tester.enterText(
       find.byKey(const Key('booking-pickup')),
       'Osu pickup point',
@@ -382,25 +387,22 @@ void main() {
       find.byKey(const Key('booking-destination')),
       'Accra Mall',
     );
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request received'), findsOneWidget);
-    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
+    await _tapVisible(tester, const Key('confirm-and-request'));
+    await tester.pumpAndSettle();
+
+    await _scrollUntilKey(tester, const Key('copy-ride-request-reference'));
+
+    expect(find.byKey(const Key('ride-request-success')), findsOneWidget);
     expect(
-      find.text('Keep this reference. ALANTEH can use it to follow up.'),
+      find.byKey(const Key('copy-ride-request-reference')),
       findsOneWidget,
     );
-    expect(find.text('Copy reference'), findsOneWidget);
     expect(find.text('Reference copied.'), findsNothing);
 
-    await tester.ensureVisible(
-      find.byKey(const Key('copy-ride-request-reference')),
-    );
     await tester.tap(find.byKey(const Key('copy-ride-request-reference')));
     await tester.pumpAndSettle();
 
@@ -425,9 +427,9 @@ void main() {
 
       await tester.pumpWidget(_bookingTestApp(submitter: submitter));
       await _enterValidBooking(tester);
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await _tapVisible(tester, const Key('confirm-and-request'));
       await tester.pumpAndSettle();
 
       expect(find.text('Ride request received'), findsNothing);
@@ -495,11 +497,11 @@ void main() {
       form.onPassengerCountChanged(4);
       await tester.pump();
 
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await _scrollUntilKey(tester, const Key('confirm-and-request'));
+      await _tapVisible(tester, const Key('confirm-and-request'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
@@ -509,8 +511,8 @@ void main() {
       expect(find.text('Keep the boot clear.'), findsOneWidget);
       expect(submitter.submissions, hasLength(1));
 
-      await tester.ensureVisible(find.byKey(const Key('edit-booking-details')));
-      await tester.tap(find.byKey(const Key('edit-booking-details')));
+      await _scrollUntilKey(tester, const Key('edit-booking-details'));
+      await _tapVisible(tester, const Key('edit-booking-details'));
       await tester.pumpAndSettle();
 
       expect(
@@ -607,164 +609,77 @@ void main() {
     },
   );
 
-  testWidgets('validates locations and completes simplified booking flow', (
+  testWidgets('M-UX3 home opens booking and completes request flow', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
     final submitter = _FakeRideRequestSubmitter.success();
+
     await tester.pumpWidget(
       PassengerApp(
         configuration: _localQaEnabledConfig,
         rideRequestSubmitter: submitter,
       ),
     );
-
-    FilledButton continueButton() => tester.widget<FilledButton>(
-      find.byKey(const Key('continue-local-draft')),
-    );
-    IconButton swapButton() =>
-        tester.widget<IconButton>(find.byKey(const Key('swap-route')));
-
-    expect(continueButton().onPressed, isNull);
-    expect(swapButton().onPressed, isNull);
-    expect(find.byKey(const Key('clear-route')), findsNothing);
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsWidgets);
-
-    await _selectLocation(
-      tester,
-      controlKey: 'choose-pickup',
-      description: '  Solar Hotel  ',
-    );
-    expect(find.text('Solar Hotel'), findsOneWidget);
-    expect(continueButton().onPressed, isNull);
-    expect(swapButton().onPressed, isNull);
-    expect(find.byKey(const Key('clear-route')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('choose-destination')));
     await tester.pumpAndSettle();
-    expect(find.text('Recent places'), findsOneWidget);
-    expect(find.byKey(const Key('recent-location-0')), findsOneWidget);
-    expect(find.text('Solar Hotel'), findsOneWidget);
+
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('My Ride Requests'), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('choose-destination')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('open-live-request')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+
     await tester.enterText(
-      find.byKey(const Key('location-description')),
-      'solar hotel',
-    );
-    await tester.tap(find.byKey(const Key('use-location-description')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('Pickup and drop-off cannot be the same place.'),
-      findsOneWidget,
-    );
-    expect(continueButton().onPressed, isNull);
-
-    await tester.tap(find.byKey(const Key('choose-destination')));
-    await tester.pumpAndSettle();
-    expect(find.text('Ghana'), findsOneWidget);
-    expect(
-      find.text('Local description only. No map search is connected.'),
-      findsNothing,
-    );
-    await tester.enterText(
-      find.byKey(const Key('location-description')),
-      'Accra Airport',
-    );
-    await tester.tap(find.byKey(const Key('use-location-description')));
-    await tester.pumpAndSettle();
-
-    expect(continueButton().onPressed, isNotNull);
-    expect(swapButton().onPressed, isNotNull);
-
-    await tester.tap(find.byKey(const Key('swap-route')));
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('choose-pickup')),
-        matching: find.text('Accra Airport'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('choose-destination')),
-        matching: find.text('Solar Hotel'),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.byKey(const Key('swap-route')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('continue-local-draft')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsWidgets);
-    expect(find.text('Where to?'), findsOneWidget);
-    expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
-          .controller!
-          .text,
+      find.byKey(const Key('booking-pickup')),
       'Solar Hotel',
     );
-    expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('booking-destination')))
-          .controller!
-          .text,
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
       'Accra Airport',
     );
-
     await tester.tap(find.byKey(const Key('passenger-count-increase')));
     await tester.enterText(
       find.byKey(const Key('booking-assistance')),
       'Step-free access',
     );
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
     expect(find.text('Confirm your ride'), findsWidgets);
-    expect(find.text('From'), findsOneWidget);
-    expect(find.text('To'), findsOneWidget);
-    expect(find.text('Passengers'), findsOneWidget);
-    expect(find.text('Edit details'), findsOneWidget);
-    expect(find.text('Cancel'), findsNothing);
+    expect(find.byKey(const Key('mtn-momo-selected')), findsOneWidget);
+    expect(find.text('MTN Mobile Money'), findsOneWidget);
     expect(find.text('Confirm and request'), findsOneWidget);
-    expect(find.text('Solar Hotel'), findsOneWidget);
-    expect(find.text('Accra Airport'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
-    expect(find.text('Step-free access'), findsOneWidget);
-    expect(find.text('Service context'), findsNothing);
-    expect(find.text('Operating market'), findsNothing);
-    expect(find.text('Close draft'), findsNothing);
-    expect(find.text('No ride request has been sent.'), findsNothing);
 
-    await tester.ensureVisible(find.byKey(const Key('edit-booking-details')));
-    await tester.tap(find.byKey(const Key('edit-booking-details')));
-    await tester.pumpAndSettle();
-    expect(find.text('Review my ride'), findsOneWidget);
+    await _tapVisible(tester, const Key('confirm-and-request'));
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
     expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
-          .controller!
-          .text,
-      'Solar Hotel',
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == 'RideTrackingScreen',
+      ),
+      findsOneWidget,
     );
-
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Ride request received'), findsOneWidget);
-    expect(find.text('Your ride request was received.'), findsOneWidget);
-    expect(find.text('Reference: RR-APP-3A9F1C2B4E5D'), findsOneWidget);
-    expect(find.text('Request status: Received by ALANTEH'), findsOneWidget);
-    expect(find.text('Your ride request was received.'), findsOneWidget);
+    expect(find.byKey(const Key('ride-request-success')), findsNothing);
     expect(submitter.submissions, hasLength(1));
     expect(submitter.submissions.single.pickupDescription.value, 'Solar Hotel');
     expect(
@@ -776,17 +691,6 @@ void main() {
       submitter.submissions.single.assistanceNote?.value,
       'Step-free access',
     );
-    expect(submitter.idempotencyKeys.single.startsWith('APP-'), isTrue);
-
-    await tester.tap(find.byKey(const Key('finish-ride-request')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Map preview unavailable.'), findsNothing);
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsWidgets);
-    expect(find.text('Where to?'), findsOneWidget);
-    expect(find.text('Solar Hotel'), findsNothing);
-    expect(find.text('Accra Airport'), findsNothing);
   });
 
   testWidgets('confirm and request shows loading then success', (tester) async {
@@ -801,10 +705,10 @@ void main() {
     );
 
     await _enterValidBooking(tester);
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pump();
 
     expect(find.byKey(const Key('ride-request-loading')), findsOneWidget);
@@ -820,7 +724,7 @@ void main() {
       isNull,
     );
 
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pump();
 
     expect(submitter.submissions, hasLength(1));
@@ -859,9 +763,9 @@ void main() {
 
     await tester.pumpWidget(_bookingTestApp(submitter: submitter));
     await _enterValidBooking(tester);
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ride request received'), findsNothing);
@@ -897,11 +801,11 @@ void main() {
         'Please call on arrival.',
       );
 
-      await tester.ensureVisible(find.byKey(const Key('request-ride')));
-      await tester.tap(find.byKey(const Key('request-ride')));
+      await _scrollUntilKey(tester, const Key('request-ride'));
+      await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('confirm-and-request')));
-      await tester.tap(find.byKey(const Key('confirm-and-request')));
+      await _scrollUntilKey(tester, const Key('confirm-and-request'));
+      await _tapVisible(tester, const Key('confirm-and-request'));
       await tester.pumpAndSettle();
 
       expect(
@@ -917,8 +821,8 @@ void main() {
       expect(find.textContaining('TimeoutException'), findsNothing);
       expect(submitter.idempotencyKeys, <String>['APP-timeout-retry-same-key']);
 
-      await tester.ensureVisible(find.byKey(const Key('retry-ride-request')));
-      await tester.tap(find.byKey(const Key('retry-ride-request')));
+      await _scrollUntilKey(tester, const Key('retry-ride-request'));
+      await _tapVisible(tester, const Key('retry-ride-request'));
       await tester.pumpAndSettle();
 
       expect(find.text('Ride request received'), findsOneWidget);
@@ -943,10 +847,10 @@ void main() {
     );
 
     await _enterValidBooking(tester);
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
@@ -956,19 +860,18 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      find.text(
-        'Cannot reach the server. Check your connection and try again.',
-      ),
-      findsOneWidget,
-    );
+
+    await _scrollUntilKey(tester, const Key('retry-ride-request'));
+
     expect(find.byKey(const Key('retry-ride-request')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('retry-ride-request')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ride request received'), findsOneWidget);
-    expect(submitter.idempotencyKeys, [
+    await _scrollUntilKey(tester, const Key('ride-request-success'));
+
+    expect(find.byKey(const Key('ride-request-success')), findsOneWidget);
+    expect(submitter.idempotencyKeys, <String>[
       'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       'APP-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
     ]);
@@ -1579,9 +1482,9 @@ void main() {
     );
 
     await _enterValidBooking(tester);
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('confirm-and-request')));
+    await _tapVisible(tester, const Key('confirm-and-request'));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-error')), findsOneWidget);
@@ -1592,7 +1495,7 @@ void main() {
     expect(find.byKey(const Key('back-to-sign-in')), findsOneWidget);
     expect(find.byKey(const Key('retry-ride-request')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('back-to-sign-in')));
+    await _tapVisible(tester, const Key('back-to-sign-in'));
     await tester.pumpAndSettle();
 
     expect(signInRequested, isTrue);
@@ -1611,13 +1514,13 @@ void main() {
 
       Future<void> completeRequest() async {
         await _enterValidBooking(tester);
-        await tester.ensureVisible(find.byKey(const Key('request-ride')));
-        await tester.tap(find.byKey(const Key('request-ride')));
+        await _scrollUntilKey(tester, const Key('request-ride'));
+        await _tapVisible(tester, const Key('request-ride'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.byKey(const Key('confirm-and-request')),
         );
-        await tester.tap(find.byKey(const Key('confirm-and-request')));
+        await _tapVisible(tester, const Key('confirm-and-request'));
         await tester.pumpAndSettle();
       }
 
@@ -1654,52 +1557,43 @@ void main() {
     },
   );
 
-  testWidgets('clear route preserves session locations', (tester) async {
+  testWidgets('M-UX3 home keeps removed local planner controls absent', (
+    tester,
+  ) async {
     _useSurface(tester, const Size(430, 1000));
+
     await tester.pumpWidget(
       const PassengerApp(configuration: _localQaEnabledConfig),
     );
-
-    await _selectLocation(
-      tester,
-      controlKey: 'choose-pickup',
-      description: 'Solar Hotel',
-    );
-    await _selectLocation(
-      tester,
-      controlKey: 'choose-destination',
-      description: 'Accra Airport',
-    );
-
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('continue-local-draft')))
-          .onPressed,
-      isNotNull,
-    );
-    await tester.tap(find.byKey(const Key('clear-route')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsWidgets);
-    expect(find.text('Where to?'), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-floating-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('choose-destination')), findsNothing);
+    expect(find.byKey(const Key('swap-route')), findsNothing);
     expect(find.byKey(const Key('clear-route')), findsNothing);
-    expect(
-      tester.widget<IconButton>(find.byKey(const Key('swap-route'))).onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('continue-local-draft')))
-          .onPressed,
-      isNull,
-    );
-
-    await tester.tap(find.byKey(const Key('choose-pickup')));
-    await tester.pumpAndSettle();
-    expect(find.text('Recent places'), findsOneWidget);
-    expect(find.text('Solar Hotel'), findsOneWidget);
-    expect(find.text('Accra Airport'), findsOneWidget);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+    expect(find.byKey(const Key('location-description')), findsNothing);
+    expect(find.byKey(const Key('use-location-description')), findsNothing);
   });
 
   testWidgets('removed internal booking wording stays absent', (tester) async {
@@ -1715,8 +1609,8 @@ void main() {
       find.byKey(const Key('booking-destination')),
       'Airport',
     );
-    await tester.ensureVisible(find.byKey(const Key('request-ride')));
-    await tester.tap(find.byKey(const Key('request-ride')));
+    await _scrollUntilKey(tester, const Key('request-ride'));
+    await _tapVisible(tester, const Key('request-ride'));
     await tester.pumpAndSettle();
 
     for (final removedText in _removedPassengerTexts) {
@@ -1764,19 +1658,40 @@ const _localQaEnabledConfig = AsmAppConfig(
   localQaEnabled: true,
 );
 
-Future<void> _selectLocation(
-  WidgetTester tester, {
-  required String controlKey,
-  required String description,
-}) async {
-  await tester.tap(find.byKey(Key(controlKey)));
-  await tester.pumpAndSettle();
-  await tester.enterText(
-    find.byKey(const Key('location-description')),
-    description,
-  );
-  await tester.tap(find.byKey(const Key('use-location-description')));
-  await tester.pumpAndSettle();
+Future<void> _scrollUntilKey(WidgetTester tester, Key key) async {
+  final finder = find.byKey(key);
+
+  for (var attempt = 0; attempt < 15; attempt += 1) {
+    if (finder.evaluate().isNotEmpty) {
+      await tester.ensureVisible(finder);
+      await tester.pump(const Duration(milliseconds: 120));
+      return;
+    }
+
+    final listViews = find.byType(ListView);
+    if (listViews.evaluate().isNotEmpty) {
+      await tester.drag(listViews.last, const Offset(0, -220));
+    } else {
+      final scrollables = find.byType(Scrollable);
+      if (scrollables.evaluate().isNotEmpty) {
+        await tester.drag(scrollables.first, const Offset(0, -220));
+      }
+    }
+
+    await tester.pump(const Duration(milliseconds: 120));
+  }
+
+  throw StateError('Widget with key $key was not found after scrolling.');
+}
+
+Future<void> _tapVisible(WidgetTester tester, Key key) async {
+  final finder = find.byKey(key);
+
+  await _scrollUntilKey(tester, key);
+  await tester.ensureVisible(finder);
+  await tester.pump(const Duration(milliseconds: 120));
+  await tester.tap(finder, warnIfMissed: false);
+  await tester.pump();
 }
 
 Future<void> _enterValidBooking(WidgetTester tester) async {

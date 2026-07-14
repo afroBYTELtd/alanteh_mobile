@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'booking_draft.dart';
 import 'booking_submission.dart';
+import 'route_preview_card.dart';
 
 class BookingReview extends StatelessWidget {
   const BookingReview({
@@ -65,6 +66,8 @@ class BookingReview extends StatelessWidget {
             height: 1.4,
           ),
         ),
+        const SizedBox(height: AsmSpacing.space20),
+        const RoutePreviewCard(),
         const SizedBox(height: AsmSpacing.space24),
         AsmRideDetailRow(
           label: 'From',
@@ -98,6 +101,36 @@ class BookingReview extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space16),
         ],
+        Container(
+          key: const Key('mtn-momo-selected'),
+          padding: const EdgeInsets.all(AsmSpacing.space16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE2F2E6),
+            borderRadius: BorderRadius.circular(AsmRadii.radius16),
+            border: Border.all(color: AsmColors.brandDeepGreen),
+          ),
+          child: const Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Color(0xFFFFCB05),
+                foregroundColor: Colors.black,
+                child: Text('MTN', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+              ),
+              SizedBox(width: AsmSpacing.space12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('MTN Mobile Money', style: TextStyle(fontWeight: FontWeight.w900)),
+                    Text('Selected payment method · payment is not collected in this step'),
+                  ],
+                ),
+              ),
+              Icon(Icons.check_circle, color: AsmColors.brandDeepGreen),
+            ],
+          ),
+        ),
+        const SizedBox(height: AsmSpacing.space16),
         if (isSuccess) ...[
           _SubmissionPanel.success(result: submissionResult!),
           const SizedBox(height: AsmSpacing.space16),

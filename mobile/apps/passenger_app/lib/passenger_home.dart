@@ -1,8 +1,8 @@
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:passenger_app/map/passenger_map.dart';
-import 'package:passenger_app/passenger_route_planner.dart';
+
+import 'map/passenger_map.dart';
 
 class PassengerHome extends StatelessWidget {
   const PassengerHome({
@@ -42,117 +42,134 @@ class PassengerHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-
-    return AsmScreenSurface(
-      scrollable: true,
-      padding: const EdgeInsets.fromLTRB(
-        AsmSpacing.space16,
-        AsmSpacing.space12,
-        AsmSpacing.space16,
-        AsmSpacing.space20,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Image.asset(
-            'assets/brand/alanteh_header_dark.png',
-            key: const Key('passenger-home-brand-logo'),
-            width: 176,
-            height: 48,
-            fit: BoxFit.contain,
-            alignment: Alignment.centerLeft,
-            semanticLabel: 'ALANTEH passenger logo',
+    return Stack(
+      key: const Key('passenger-home-full-screen-map-layout'),
+      children: [
+        const Positioned.fill(
+          child: AsmPassengerMap(
+            center: accraHomeCenter,
+            zoom: initialZoom,
           ),
-          const SizedBox(height: AsmSpacing.space16),
-          Container(
-            key: const Key('passenger-home-request-card'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(AsmSpacing.space20),
+        ),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AsmSpacing.space16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  key: const Key('passenger-home-floating-logo'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AsmSpacing.space12,
+                    vertical: AsmSpacing.space8,
+                  ),
+                  decoration: _floatingDecoration(),
+                  child: Image.asset(
+                    'assets/brand/alanteh_header_dark.png',
+                    width: 132,
+                    height: 28,
+                    fit: BoxFit.contain,
+                    semanticLabel: 'ALANTEH passenger logo',
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  key: const Key('passenger-home-floating-account'),
+                  width: 44,
+                  height: 44,
+                  decoration: _floatingDecoration(shape: BoxShape.circle),
+                  child: const Icon(Icons.person_outline),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          left: AsmSpacing.space16,
+          right: AsmSpacing.space16,
+          top: 92,
+          child: Container(
+            key: const Key('passenger-home-solar-banner'),
+            padding: const EdgeInsets.all(AsmSpacing.space12),
             decoration: BoxDecoration(
-              color: AsmColors.passengerCard,
-              borderRadius: BorderRadius.circular(AsmRadii.radius28),
-              border: Border.all(color: AsmColors.passengerLine),
+              color: AsmColors.brandDeepGreen,
+              borderRadius: BorderRadius.circular(AsmRadii.radius16),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x12000000),
-                  blurRadius: 24,
-                  offset: Offset(0, 12),
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.wb_sunny_outlined, color: AsmColors.solarYellow),
+                SizedBox(width: AsmSpacing.space8),
+                Expanded(
+                  child: Text(
+                    "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            key: const Key('passenger-home-bottom-sheet'),
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(
+              AsmSpacing.space20,
+              AsmSpacing.space12,
+              AsmSpacing.space20,
+              AsmSpacing.space20,
+            ),
+            decoration: const BoxDecoration(
+              color: AsmColors.passengerCard,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AsmRadii.radius28),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x26000000),
+                  blurRadius: 28,
+                  offset: Offset(0, -10),
                 ),
               ],
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Book a ride',
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    height: 1.08,
-                  ),
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-                Text(
-                  'ALANTEH will review your request and confirm pickup details.',
-                  key: const Key('passenger-live-request-safety-copy'),
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    height: 1.4,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AsmColors.passengerLine,
+                    borderRadius: BorderRadius.circular(99),
                   ),
                 ),
                 const SizedBox(height: AsmSpacing.space16),
-                Text(
-                  'Route preview',
-                  key: const Key('passenger-route-preview-label'),
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+                FilledButton.icon(
+                  key: const Key('open-live-request'),
+                  onPressed: onStartRequest,
+                  icon: const Icon(Icons.electric_car),
+                  label: const Text('Request ride'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(54),
                   ),
                 ),
-                const SizedBox(height: AsmSpacing.space8),
-                AsmPassengerMap(
-                  key: const Key('passenger-home-map'),
-                  pickupDescription: pickupDescription,
-                  minHeight: 190,
-                ),
-                const SizedBox(height: AsmSpacing.space16),
-                if (localQaEnabled) ...[
-                  Text(
-                    'Where are you?',
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: AsmSpacing.space12),
-                  PassengerRoutePlanner(
-                    pickupDescription: pickupDescription,
-                    destinationDescription: destinationDescription,
-                    canContinue: canContinue,
-                    locationsMatch: locationsMatch,
-                    canSwap: canSwap,
-                    hasRoute: hasRoute,
-                    onChoosePickup: onChoosePickup,
-                    onChooseDestination: onChooseDestination,
-                    onContinue: onContinue,
-                    onSwap: onSwap,
-                    onClear: onClear,
-                  ),
-                ] else
-                  FilledButton.icon(
-                    key: const Key('open-live-request'),
-                    onPressed: onStartRequest,
-                    icon: const Icon(Icons.directions_car_filled_outlined),
-                    label: const Text('Request ride'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                    ),
-                  ),
                 const SizedBox(height: AsmSpacing.space12),
                 OutlinedButton.icon(
                   key: const Key('open-ride-request-history'),
                   onPressed: onOpenRequests,
-                  icon: const Icon(Icons.receipt_long_outlined),
+                  icon: const Icon(Icons.route_outlined),
                   label: const Text('My Ride Requests'),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(52),
@@ -161,48 +178,25 @@ class PassengerHome extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: AsmSpacing.space16),
-          const _PassengerHomeAccentCard(),
-        ],
-      ),
+        ),
+      ],
     );
   }
-}
 
-class _PassengerHomeAccentCard extends StatelessWidget {
-  const _PassengerHomeAccentCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('passenger-home-clean-energy-card'),
-      width: double.infinity,
-      padding: const EdgeInsets.all(AsmSpacing.space16),
-      decoration: BoxDecoration(
-        color: AsmColors.brandDeepGreen,
-        borderRadius: BorderRadius.circular(AsmRadii.radius20),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.wb_sunny_outlined, color: AsmColors.solarYellow),
-          SizedBox(width: AsmSpacing.space12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
-                  style: TextStyle(
-                    color: AsmColors.brandWhite,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: AsmSpacing.space4),
-              ],
-            ),
-          ),
-        ],
-      ),
+  BoxDecoration _floatingDecoration({BoxShape shape = BoxShape.rectangle}) {
+    return BoxDecoration(
+      color: const Color(0xF2FFFFFF),
+      shape: shape,
+      borderRadius: shape == BoxShape.rectangle
+          ? BorderRadius.circular(AsmRadii.radius20)
+          : null,
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x26000000),
+          blurRadius: 16,
+          offset: Offset(0, 6),
+        ),
+      ],
     );
   }
 }

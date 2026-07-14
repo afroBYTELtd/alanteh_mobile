@@ -139,6 +139,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription!,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
         ),
       ),
     );
@@ -163,6 +164,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription ?? '',
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
         ),
       ),
     );
