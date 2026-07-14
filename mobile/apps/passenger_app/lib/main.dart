@@ -71,6 +71,7 @@ class PassengerApp extends StatelessWidget {
               configuration: configuration,
               localQaEnabled: configuration.localQaEnabled,
               rideRequestSubmitter: resolvedRideRequestSubmitter,
+              rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
             ),
     );
   }

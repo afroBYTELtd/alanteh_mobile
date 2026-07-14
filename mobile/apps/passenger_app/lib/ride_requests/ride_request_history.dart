@@ -2,6 +2,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 abstract interface class PassengerRideRequestHistoryRepository {
   Future<List<PassengerRideRequestRecord>> fetchRequests();
@@ -39,6 +40,11 @@ class PassengerRideRequestRecord {
     this.requestedPickupTime,
     this.latestStaffState,
     this.controlCenterMessage,
+    this.specialRequest,
+    this.fareDisplay,
+    this.plateNumber,
+    this.vehicleLatitude,
+    this.vehicleLongitude,
   });
 
   final String requestReference;
@@ -53,6 +59,39 @@ class PassengerRideRequestRecord {
   final bool tripCreated;
   final String? latestStaffState;
   final String? controlCenterMessage;
+  final String? specialRequest;
+  final String? fareDisplay;
+  final String? plateNumber;
+  final double? vehicleLatitude;
+  final double? vehicleLongitude;
+
+  LatLng? get vehiclePosition {
+    final latitude = vehicleLatitude;
+    final longitude = vehicleLongitude;
+    return latitude == null || longitude == null
+        ? null
+        : LatLng(latitude, longitude);
+  }
+
+  PassengerRideState get passengerState => PassengerRideState.fromStatus(
+    status,
+    latestStaffState: latestStaffState,
+    message: controlCenterMessage,
+  );
+
+  bool get isTerminal =>
+      passengerState == PassengerRideState.arrived ||
+      passengerState == PassengerRideState.rejected;
+
+  String get safeMessage {
+    final preferred = controlCenterMessage?.trim();
+    if (preferred != null &&
+        preferred.isNotEmpty &&
+        !_containsInternalWording(preferred)) {
+      return preferred;
+    }
+    return passengerState.defaultMessage;
+  }
 
   factory PassengerRideRequestRecord.fromJson(Object? json) {
     if (json is! Map) {
@@ -76,6 +115,20 @@ class PassengerRideRequestRecord {
       tripCreated: _optionalBool(map, 'trip_created'),
       latestStaffState: _optionalString(map, 'latest_staff_state'),
       controlCenterMessage: _optionalString(map, 'control_center_message'),
+      specialRequest:
+          _optionalString(map, 'assistance_note') ??
+          _optionalString(map, 'special_request'),
+      fareDisplay:
+          _optionalString(map, 'fare_display') ?? _optionalString(map, 'fare'),
+      plateNumber:
+          _optionalString(map, 'plate_number') ??
+          _optionalString(map, 'vehicle_plate_number'),
+      vehicleLatitude:
+          _optionalDouble(map, 'vehicle_latitude') ??
+          _optionalDouble(map, 'last_known_vehicle_latitude'),
+      vehicleLongitude:
+          _optionalDouble(map, 'vehicle_longitude') ??
+          _optionalDouble(map, 'last_known_vehicle_longitude'),
     );
   }
 
@@ -127,6 +180,13 @@ class PassengerRideRequestRecord {
     throw FormatException('Ride request history field $key is missing.');
   }
 
+  static double? _optionalDouble(Map<String, Object?> map, String key) {
+    final value = map[key];
+    return value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+  }
+
   static bool _optionalBool(Map<String, Object?> map, String key) {
     final value = map[key];
     return value is bool ? value : false;
@@ -139,6 +199,82 @@ class PassengerRideRequestRecord {
     }
     return DateTime.tryParse(value.trim());
   }
+}
+
+enum PassengerRideState {
+  looking,
+  driverAssigned,
+  vehicleEnRoute,
+  driverArrived,
+  inProgress,
+  arrived,
+  reassigned,
+  rejected;
+
+  factory PassengerRideState.fromStatus(
+    String status, {
+    String? latestStaffState,
+    String? message,
+  }) {
+    final value = '$status ${latestStaffState ?? ''} ${message ?? ''}'
+        .toLowerCase();
+    if (value.contains('reassign')) return PassengerRideState.reassigned;
+    if (value.contains('reject') ||
+        value.contains('declin') ||
+        value.contains('no driver')) {
+      return PassengerRideState.rejected;
+    }
+    if (value.contains('complete') ||
+        value.contains('arrived at destination') ||
+        value.contains('trip ended')) {
+      return PassengerRideState.arrived;
+    }
+    if (value.contains('in progress') ||
+        value.contains('on trip') ||
+        value.contains('started')) {
+      return PassengerRideState.inProgress;
+    }
+    if (value.contains('driver arrived') ||
+        value.contains('outside') ||
+        value.contains('at pickup')) {
+      return PassengerRideState.driverArrived;
+    }
+    if (value.contains('en route') ||
+        value.contains('on the way') ||
+        value.contains('dispatched')) {
+      return PassengerRideState.vehicleEnRoute;
+    }
+    if (value.contains('assign') || value.contains('confirm')) {
+      return PassengerRideState.driverAssigned;
+    }
+    return PassengerRideState.looking;
+  }
+
+  String get defaultMessage => switch (this) {
+    PassengerRideState.looking =>
+      'We are reviewing your request and matching a nearby vehicle.',
+    PassengerRideState.driverAssigned =>
+      'A driver has been assigned to your ride.',
+    PassengerRideState.vehicleEnRoute =>
+      'Your vehicle is travelling to the pickup point.',
+    PassengerRideState.driverArrived =>
+      'Please meet your driver at the pickup point.',
+    PassengerRideState.inProgress => 'Enjoy your quiet solar-electric ride.',
+    PassengerRideState.arrived => 'Thank you for riding with ALANTEH.',
+    PassengerRideState.reassigned => 'A new vehicle is now handling your ride.',
+    PassengerRideState.rejected =>
+      'Please try booking again or contact support.',
+  };
+}
+
+bool _containsInternalWording(String value) {
+  final lower = value.toLowerCase();
+  return lower.contains('control center') ||
+      lower.contains('mobile receipt confirmed') ||
+      lower.contains('passenger app request received') ||
+      lower.contains('authorization') ||
+      lower.contains('access token') ||
+      lower.contains('refresh token');
 }
 
 class ApiPassengerRideRequestHistoryRepository
@@ -491,7 +627,7 @@ class _PassengerRideRequestHistoryPageState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Ride Requests'),
+        title: const Text('Trips'),
         actions: [
           IconButton(
             key: const Key('ride-request-history-refresh'),
@@ -534,13 +670,13 @@ class _PassengerRideRequestHistoryPageState
             const Icon(Icons.receipt_long_outlined, size: 56),
             const SizedBox(height: AsmSpacing.space16),
             const Text(
-              'No ride requests yet',
+              'No trips yet.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: AsmSpacing.space8),
             const Text(
-              'Your ride requests will appear here after you book.',
+              'Your ride history will appear here.',
               textAlign: TextAlign.center,
             ),
             if (widget.onBookRide != null) ...[
@@ -573,6 +709,7 @@ class _PassengerRideRequestHistoryPageState
           return _RideRequestCard(
             record: record,
             onTap: () => _openDetail(record),
+            onBookAgain: widget.onBookRide,
           );
         },
       ),
@@ -581,10 +718,15 @@ class _PassengerRideRequestHistoryPageState
 }
 
 class _RideRequestCard extends StatelessWidget {
-  const _RideRequestCard({required this.record, required this.onTap});
+  const _RideRequestCard({
+    required this.record,
+    required this.onTap,
+    this.onBookAgain,
+  });
 
   final PassengerRideRequestRecord record;
   final VoidCallback onTap;
+  final VoidCallback? onBookAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -608,7 +750,8 @@ class _RideRequestCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      record.requestReference,
+                      '${record.pickupLocation} → ${record.destination}',
+                      key: const Key('trip-card-route-title'),
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -617,18 +760,6 @@ class _RideRequestCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AsmSpacing.space12),
-              Text(
-                record.pickupLocation,
-                key: ValueKey<String>('pickup-${record.requestReference}'),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: AsmSpacing.space4),
-                child: Icon(Icons.arrow_downward, size: 18),
-              ),
-              Text(
-                record.destination,
-                key: ValueKey<String>('destination-${record.requestReference}'),
-              ),
               const SizedBox(height: AsmSpacing.space12),
               Text(
                 statusMessage,
@@ -642,16 +773,26 @@ class _RideRequestCard extends StatelessWidget {
                 'Created ${_formatDateTime(record.createdAt)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-              if (record.hasMobileReceipt) ...[
-                const SizedBox(height: AsmSpacing.space8),
-                const Row(
-                  children: [
-                    Icon(Icons.verified_outlined, size: 18),
-                    SizedBox(width: AsmSpacing.space4),
-                    Expanded(child: Text('Request received')),
-                  ],
-                ),
-              ],
+              const SizedBox(height: AsmSpacing.space12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: onTap,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('View detail'),
+                    ),
+                  ),
+                  const SizedBox(width: AsmSpacing.space12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('history-card-book-again'),
+                      onPressed: onBookAgain,
+                      child: const Text('Book again'),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -735,7 +876,7 @@ class _PassengerRideRequestDetailPageState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Ride Request Detail')),
+      appBar: AppBar(title: const Text('Trip details')),
       body: _buildBody(),
     );
   }
@@ -773,27 +914,15 @@ class _PassengerRideRequestDetailPageState
       children: [
         _StatusChip(status: record.status),
         const SizedBox(height: AsmSpacing.space16),
-        _DetailRow(label: 'Request reference', value: record.requestReference),
-        _DetailRow(label: 'Pickup', value: record.pickupLocation),
-        _DetailRow(label: 'Destination', value: record.destination),
+        _DetailRow(label: 'From', value: record.pickupLocation),
+        _DetailRow(label: 'To', value: record.destination),
+        _DetailRow(label: 'Status', value: record.safeMessage),
+        _DetailRow(label: 'Date', value: _formatDateTime(record.createdAt)),
         _DetailRow(label: 'Passengers', value: '${record.passengerCount}'),
-        if (record.requestedPickupTime != null)
-          _DetailRow(
-            label: 'Requested pickup time',
-            value: _formatDateTime(record.requestedPickupTime),
-          ),
-        _DetailRow(label: 'Created', value: _formatDateTime(record.createdAt)),
-        _DetailRow(label: 'Updated', value: _formatDateTime(record.updatedAt)),
-        _DetailRow(
-          label: 'Request receipt',
-          value: record.hasMobileReceipt ? 'Confirmed' : 'Not available',
-        ),
-        _DetailRow(
-          label: 'Trip record',
-          value: record.tripCreated
-              ? 'Converted into trip record'
-              : 'Not yet converted into a trip',
-        ),
+        if (record.specialRequest != null)
+          _DetailRow(label: 'Special request', value: record.specialRequest!),
+        if (record.fareDisplay != null)
+          _DetailRow(label: 'Fare', value: record.fareDisplay!),
         const SizedBox(height: AsmSpacing.space8),
         Card(
           key: const Key('ride-request-control-center-message'),

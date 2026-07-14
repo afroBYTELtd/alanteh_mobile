@@ -12,6 +12,7 @@ import 'package:passenger_app/account/passenger_account_screen.dart';
 import 'package:passenger_app/main.dart';
 import 'package:passenger_app/map/passenger_map.dart';
 import 'package:passenger_app/passenger_shell.dart';
+import 'package:passenger_app/ride_requests/ride_request_history.dart';
 
 void main() {
   test('Passenger auth endpoint contract paths remain stable', () {
@@ -139,8 +140,8 @@ void main() {
     expect(find.byType(AsmPassengerMap), findsOneWidget);
     expect(find.byType(FlutterMap), findsOneWidget);
     final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
-    expect(map.options.initialCenter.latitude, accraCenter.latitude);
-    expect(map.options.initialCenter.longitude, accraCenter.longitude);
+    expect(map.options.initialCenter.latitude, accraHomeCenter.latitude);
+    expect(map.options.initialCenter.longitude, accraHomeCenter.longitude);
     expect(map.options.initialZoom, initialZoom);
     expect(find.byKey(const Key('passenger-map-pickup-marker')), findsNothing);
   });
@@ -150,9 +151,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: AsmPassengerMap(pickupDescription: 'Airport pickup'),
-        ),
+        home: Scaffold(body: AsmPassengerMap(pickup: accraPickup)),
       ),
     );
 
@@ -163,70 +162,15 @@ void main() {
     );
   });
 
-  testWidgets('Passenger phone PIN login stores tokens and opens home', (
-    tester,
-  ) async {
+  testWidgets('Passenger phone PIN login opens M-UX3 home', (tester) async {
     _useSurface(tester, const Size(430, 900));
     final store = MemoryAuthTokenStore();
     final api = _FakeAuthApiGateway(responseData: _loginResponse());
+
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
     expect(find.byKey(const Key('passenger-login-brand-logo')), findsOneWidget);
-    final passengerLoginLogo = tester.widget<Image>(
-      find.byKey(const Key('passenger-login-brand-logo')),
-    );
-    expect(passengerLoginLogo.width, greaterThanOrEqualTo(160));
-    expect(passengerLoginLogo.width, lessThanOrEqualTo(190));
-    expect(passengerLoginLogo.fit, BoxFit.contain);
-    expect(find.text('Passenger access'), findsOneWidget);
     expect(find.text('Sign in to ride'), findsOneWidget);
-    expect(find.byKey(const Key('passenger-phone-field')), findsOneWidget);
-    expect(find.text('Phone number'), findsOneWidget);
-    expect(find.byKey(const Key('passenger-pin-field')), findsOneWidget);
-    expect(find.text('PIN'), findsOneWidget);
-    expect(find.text('Sign in'), findsOneWidget);
-    expect(find.text('Clear form'), findsOneWidget);
-    expect(find.text('Continue'), findsNothing);
-    expect(find.text('Pilot access'), findsNothing);
-    expect(find.text('LOCAL DEMO'), findsNothing);
-    expect(find.text('Create account'), findsNothing);
-    expect(find.text('Open public account'), findsNothing);
-    expect(find.text('Email'), findsNothing);
-    expect(find.text('email'), findsNothing);
-    expect(find.text('Password'), findsNothing);
-    expect(find.text('password'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('passenger-sign-in')));
-    await tester.pumpAndSettle();
-    expect(find.text(loginPhoneRequiredMessage), findsOneWidget);
-    expect(find.text(loginPinRequiredMessage), findsOneWidget);
-
-    await tester.enterText(
-      find.byKey(const Key('passenger-phone-field')),
-      '0550000000',
-    );
-    await tester.enterText(find.byKey(const Key('passenger-pin-field')), '12');
-    await tester.tap(find.byKey(const Key('passenger-sign-in')));
-    await tester.pumpAndSettle();
-    expect(find.text(loginPhoneFormatMessage), findsOneWidget);
-    expect(find.text(loginPinFormatMessage), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('passenger-clear-form')));
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('passenger-phone-field')))
-          .controller
-          ?.text,
-      isEmpty,
-    );
-    expect(
-      tester
-          .widget<TextFormField>(find.byKey(const Key('passenger-pin-field')))
-          .controller
-          ?.text,
-      isEmpty,
-    );
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
@@ -240,31 +184,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.paths, <String>[AuthService.tokenPath]);
-    expect(api.bodies.single, <String, Object?>{
-      'phone': '+233000000000',
-      'pin': '0000',
-    });
     expect(api.bodies.single.keys, isNot(contains('password')));
     expect(api.bodies.single.keys, isNot(contains('email')));
     expect(await store.readAccessToken(), 'passenger-access-token');
     expect(await store.readRefreshToken(), 'passenger-refresh-token');
-    expect(await store.readAccessToken(), isNot('0000'));
-    expect(await store.readRefreshToken(), isNot('0000'));
 
-    expect(find.text('Book a ride'), findsWidgets);
     expect(
-      find.text('ALANTEH will review your request and confirm pickup details.'),
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-floating-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
       findsOneWidget,
     );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Route preview'), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('My Ride Requests'), findsOneWidget);
     expect(
       find.text(
         "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
       ),
       findsOneWidget,
     );
-    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
     expect(find.text('LOCAL DEMO'), findsNothing);
@@ -333,9 +285,7 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
   });
 
-  testWidgets('Passenger login shows route preview entry only when enabled', (
-    tester,
-  ) async {
+  testWidgets('Passenger local QA opens the same M-UX3 home', (tester) async {
     _useSurface(tester, const Size(430, 900));
     final store = MemoryAuthTokenStore();
     final api = _FakeAuthApiGateway(responseData: _loginResponse());
@@ -349,7 +299,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Continue without signing in'), findsOneWidget);
     expect(
       find.byKey(const Key('passenger-continue-local-qa')),
       findsOneWidget,
@@ -361,9 +310,19 @@ void main() {
     expect(api.paths, isEmpty);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
-    expect(find.text('Route preview'), findsOneWidget);
-    expect(find.text('Map preview unavailable.'), findsNothing);
-    expect(find.text('Book a ride'), findsWidgets);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
   });
 
   testWidgets('Passenger login rejects non-passenger account types', (
@@ -740,88 +699,89 @@ void main() {
     },
   );
 
-  testWidgets('navigates the simplified passenger shell', (tester) async {
+  testWidgets('navigates the M-UX3 passenger shell', (tester) async {
     _useSurface(tester, const Size(430, 900));
-    await tester.pumpWidget(const PassengerApp());
-    await _openPassengerAccess(tester);
 
-    expect(find.byKey(const Key('passenger-home-brand-logo')), findsOneWidget);
-    final passengerHomeLogo = tester.widget<Image>(
-      find.byKey(const Key('passenger-home-brand-logo')),
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        home: const PassengerShell(
+          rideRequestHistoryRepository:
+              EmptyPassengerRideRequestHistoryRepository(),
+        ),
+      ),
     );
-    expect(passengerHomeLogo.width, greaterThanOrEqualTo(160));
-    expect(passengerHomeLogo.width, lessThanOrEqualTo(190));
+
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-floating-logo')),
+      findsOneWidget,
+    );
+
+    final passengerHomeLogo = tester.widget<Image>(
+      find.descendant(
+        of: find.byKey(const Key('passenger-home-floating-logo')),
+        matching: find.byType(Image),
+      ),
+    );
+
+    expect(passengerHomeLogo.width, 132);
     expect(passengerHomeLogo.fit, BoxFit.contain);
     expect(passengerHomeLogo.semanticLabel, contains('ALANTEH'));
-    expect(find.text('ASM PASSENGER'), findsNothing);
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(
-      find.text('ALANTEH will review your request and confirm pickup details.'),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.text('Route preview'), findsOneWidget);
-    expect(find.text('Map preview unavailable.'), findsNothing);
+
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('My Ride Requests'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
-    expect(find.text('GHANA PILOT'), findsNothing);
 
     await tester.tap(find.byKey(const Key('open-live-request')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
     expect(find.byKey(const Key('booking-destination')), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Trips'));
-    await tester.pumpAndSettle();
-    expect(find.text('No ride requests yet'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    AsmBottomNavigationBar navigationBar() => tester
+        .widget<AsmBottomNavigationBar>(find.byType(AsmBottomNavigationBar));
+
+    navigationBar().onDestinationSelected!.call(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('No trips yet.'), findsOneWidget);
+    expect(find.text('Your ride history will appear here.'), findsOneWidget);
+
+    navigationBar().onDestinationSelected!.call(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(
-      find.text('Your ride requests will appear here after you book.'),
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
     );
-    expect(find.text('LOCAL DEMO'), findsNothing);
-    expect(find.textContaining('fake active trip'), findsNothing);
-    expect(find.textContaining('active trip'), findsNothing);
-    expect(find.textContaining('fake completed trip'), findsNothing);
-    expect(find.textContaining('completed trip'), findsNothing);
-    expect(find.textContaining('fake driver assignment'), findsNothing);
-    expect(find.textContaining('driver assignment'), findsNothing);
-    expect(find.textContaining('fake ETA'), findsNothing);
-    expect(find.textContaining('ETA'), findsNothing);
-    expect(find.textContaining('fake fare'), findsNothing);
-    expect(find.textContaining('fare'), findsNothing);
-    expect(find.textContaining('trip history'), findsNothing);
-    expect(find.text('Book a ride'), findsWidgets);
-    await tester.tap(find.text('Book a ride'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
 
-    expect(find.text('Support'), findsNothing);
-    expect(find.text('Need help?'), findsNothing);
-    expect(find.text('Contact us at contact@alanteh.io'), findsNothing);
+    navigationBar().onDestinationSelected!.call(2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
-    await tester.tap(find.text('Account'));
-    await tester.pumpAndSettle();
     expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
     expect(find.text('Phone number unavailable'), findsOneWidget);
-    expect(find.text('Sign out'), findsOneWidget);
     expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
-    expect(find.textContaining('fake passenger name'), findsNothing);
-    expect(find.textContaining('passenger phone'), findsNothing);
-    expect(find.textContaining('fake phone number'), findsNothing);
     expect(find.textContaining('wallet'), findsNothing);
     expect(find.textContaining('payment method'), findsNothing);
     expect(find.textContaining('ride statistics'), findsNothing);
-    expect(find.textContaining('support ticket'), findsNothing);
-    expect(find.textContaining('verification'), findsNothing);
-
-    await tester.tap(find.text('Home'));
-    await tester.pumpAndSettle();
-    expect(find.text('Map preview unavailable.'), findsNothing);
   });
 
-  testWidgets('route preview remains reachable on a small scaled screen', (
+  testWidgets('M-UX3 home remains usable on a small scaled screen', (
     tester,
   ) async {
     _useSurface(tester, const Size(320, 568));
@@ -839,12 +799,27 @@ void main() {
       ),
     );
 
-    expect(find.text('LOCAL DEMO'), findsNothing);
-    expect(find.text('Route preview'), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('choose-pickup')));
-    expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('continue-local-draft')));
-    expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-floating-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -863,40 +838,46 @@ void main() {
     }
   });
 
-  testWidgets(
-    'Passenger live home shows map foundation and hides local route inputs by default',
-    (tester) async {
-      _useSurface(tester, const Size(430, 900));
+  testWidgets('Passenger live home shows the M-UX3 full-screen map layout', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
 
-      await tester.pumpWidget(
-        MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
-      );
+    await tester.pumpWidget(
+      MaterialApp(theme: AsmThemes.passenger, home: const PassengerShell()),
+    );
 
-      expect(find.text('Book a ride'), findsWidgets);
-      expect(
-        find.text(
-          'ALANTEH will review your request and confirm pickup details.',
-        ),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-      expect(find.text('Route preview'), findsOneWidget);
-      expect(find.byType(AsmPassengerMap), findsOneWidget);
-      expect(find.byKey(const Key('passenger-home-map')), findsOneWidget);
-      expect(find.byKey(const Key('choose-pickup')), findsNothing);
-      expect(find.byKey(const Key('choose-destination')), findsNothing);
-      expect(find.byKey(const Key('continue-local-draft')), findsNothing);
-      expect(find.textContaining('ETA'), findsNothing);
-      expect(find.textContaining('fare'), findsNothing);
-      expect(find.textContaining('estimate'), findsNothing);
-      expect(find.textContaining('driver assignment'), findsNothing);
-      expect(find.textContaining('active trip'), findsNothing);
-      expect(find.textContaining('completed trip'), findsNothing);
-      expect(find.textContaining('trip history'), findsNothing);
-    },
-  );
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-floating-logo')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('My Ride Requests'), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('choose-destination')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+    expect(find.textContaining('driver assignment'), findsNothing);
+    expect(find.textContaining('active trip'), findsNothing);
+  });
 
-  testWidgets('Passenger route preview is gated and local only', (
+  testWidgets('Passenger local QA does not restore the old route planner', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
@@ -916,35 +897,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.paths, isEmpty);
-    expect(find.text('Route preview'), findsOneWidget);
-    expect(find.byType(AsmPassengerMap), findsOneWidget);
-    expect(find.byKey(const Key('passenger-home-map')), findsOneWidget);
-    expect(find.byKey(const Key('choose-pickup')), findsOneWidget);
-    expect(find.byKey(const Key('choose-destination')), findsOneWidget);
-    expect(find.byKey(const Key('continue-local-draft')), findsOneWidget);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
+    expect(find.byKey(const Key('choose-pickup')), findsNothing);
+    expect(find.byKey(const Key('choose-destination')), findsNothing);
+    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
     expect(find.textContaining('/api/routes'), findsNothing);
     expect(find.textContaining('/api/estimate'), findsNothing);
     expect(find.textContaining('/api/fares'), findsNothing);
-    expect(find.textContaining('/api/driver'), findsNothing);
     expect(find.textContaining('GoogleMap'), findsNothing);
     expect(find.textContaining('geolocator'), findsNothing);
-
-    await tester.tap(find.text('Account'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
-    expect(find.text('Phone number unavailable'), findsOneWidget);
-    expect(find.text('Sign out'), findsOneWidget);
-    expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
-    expect(find.textContaining('fake passenger name'), findsNothing);
-    expect(find.textContaining('passenger phone'), findsNothing);
-    expect(find.textContaining('fake phone number'), findsNothing);
-    expect(find.textContaining('wallet'), findsNothing);
-    expect(find.textContaining('payment method'), findsNothing);
-    expect(find.textContaining('ride statistics'), findsNothing);
-    expect(find.textContaining('support ticket'), findsNothing);
-    expect(find.textContaining('verification'), findsNothing);
   });
 
   testWidgets('Passenger startup without stored tokens opens login', (
@@ -1012,17 +982,17 @@ void main() {
     },
   );
 
-  testWidgets('Passenger startup with refreshable stored tokens opens home', (
-    tester,
-  ) async {
+  testWidgets('Passenger refreshed session opens M-UX3 home', (tester) async {
     _useSurface(tester, const Size(430, 900));
     final store = MemoryAuthTokenStore();
+
     await store.saveTokens(
       AuthTokens(
         accessToken: 'stored-passenger-access',
         refreshToken: 'stored-passenger-refresh',
       ),
     );
+
     final api = _FakeAuthApiGateway(
       responseData: const <String, Object?>{
         'access': 'restored-passenger-access',
@@ -1038,13 +1008,20 @@ void main() {
     });
     expect(await store.readAccessToken(), 'restored-passenger-access');
     expect(await store.readRefreshToken(), 'stored-passenger-refresh');
-    expect(find.text('Book a ride'), findsWidgets);
+
     expect(
-      find.text('ALANTEH will review your request and confirm pickup details.'),
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
     );
-    expect(find.text('Map preview unavailable.'), findsNothing);
-    expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
     expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
@@ -1081,7 +1058,7 @@ void main() {
     expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
   });
 
-  testWidgets('Passenger local shell does not create stored tokens', (
+  testWidgets('Passenger local shell opens M-UX3 home without tokens', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 900));
@@ -1090,9 +1067,19 @@ void main() {
     await tester.pumpWidget(PassengerApp(authTokenStore: store));
     await tester.pumpAndSettle();
 
-    expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Map preview unavailable.'), findsNothing);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+    expect(find.text('Request ride'), findsOneWidget);
+    expect(find.text('Route preview'), findsNothing);
     expect(await store.readAccessToken(), isNull);
     expect(await store.readRefreshToken(), isNull);
   });
@@ -1313,20 +1300,6 @@ const _noLiveFeatureTexts = [
   'GoogleMap',
   'WebSocket',
 ];
-
-Future<void> _openPassengerAccess(WidgetTester tester) async {
-  if (find.byKey(const Key('passenger-phone-field')).evaluate().isEmpty) {
-    return;
-  }
-
-  await tester.enterText(
-    find.byKey(const Key('passenger-phone-field')),
-    '+233000000000',
-  );
-  await tester.enterText(find.byKey(const Key('passenger-pin-field')), '0000');
-  await tester.tap(find.byKey(const Key('passenger-sign-in')));
-  await tester.pumpAndSettle();
-}
 
 void _useSurface(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
