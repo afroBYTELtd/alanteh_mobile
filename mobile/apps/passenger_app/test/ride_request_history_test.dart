@@ -6,6 +6,8 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:passenger_app/payment_rating/passenger_payment_rating_contract.dart';
+import 'package:passenger_app/payment_rating/passenger_payment_rating_page.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
 
 void main() {
@@ -323,6 +325,65 @@ void main() {
     expect(find.text('RR-APP-BEFORE-PULL'), findsNothing);
   });
 
+  testWidgets(
+    'history detail uses backend payment endpoints instead of summary fare or receipt flag',
+    (tester) async {
+      final paymentRepository = _HistoryPaymentRatingRepository();
+
+      final record = _record(
+        reference: 'RR-APP-PAYMENT-DETAIL',
+        status: 'completed',
+        fareDisplay: 'GHS 999',
+        hasMobileReceipt: true,
+      );
+
+      await _pumpHistory(
+        tester,
+        _FakeRepository(
+          listLoader: () async => <PassengerRideRequestRecord>[record],
+          detailLoader: (_) async => record,
+        ),
+        paymentRatingRepository: paymentRepository,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('ride-request-RR-APP-PAYMENT-DETAIL'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final openPayment = find.byKey(
+        const Key('open-payment-rating-from-history'),
+      );
+
+      expect(openPayment, findsOneWidget);
+
+      await tester.ensureVisible(openPayment);
+      await tester.tap(openPayment);
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PassengerPaymentRatingPage), findsOneWidget);
+      expect(paymentRepository.references, <String>[
+        'RR-APP-PAYMENT-DETAIL',
+        'RR-APP-PAYMENT-DETAIL',
+        'RR-APP-PAYMENT-DETAIL',
+      ]);
+
+      expect(find.text('GHS 999'), findsNothing);
+      expect(find.byKey(const Key('initiate-payment')), findsNothing);
+      expect(
+        find.byKey(const Key('payment-not-available-state')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('payment-confirmed-state')), findsNothing);
+      expect(find.byKey(const Key('payment-receipt-state')), findsNothing);
+      expect(paymentRepository.receiptCalls, 0);
+    },
+  );
+
   test('Passenger navigation and receipt link to request history', () {
     final homeSource = File('lib/passenger_home.dart').readAsStringSync();
 
@@ -375,6 +436,7 @@ Future<void> _pumpHistory(
   WidgetTester tester,
   PassengerRideRequestHistoryRepository repository, {
   VoidCallback? onSignInRequired,
+  PassengerPaymentRatingRepository? paymentRatingRepository,
 }) async {
   tester.view.physicalSize = const Size(430, 900);
   tester.view.devicePixelRatio = 1;
@@ -387,6 +449,7 @@ Future<void> _pumpHistory(
       theme: AsmThemes.passenger,
       home: PassengerRideRequestHistoryPage(
         repository: repository,
+        paymentRatingRepository: paymentRatingRepository,
         onSignInRequired: onSignInRequired,
       ),
     ),
@@ -404,6 +467,8 @@ PassengerRideRequestRecord _record({
   String? latestStaffState,
   DateTime? createdAt,
   String? controlCenterMessage,
+  String? fareDisplay,
+  bool hasMobileReceipt = true,
 }) {
   return PassengerRideRequestRecord(
     requestReference: reference,
@@ -414,10 +479,11 @@ PassengerRideRequestRecord _record({
     requestedPickupTime: requestedPickupTime,
     createdAt: createdAt ?? DateTime.utc(2026, 7, 11, 12),
     updatedAt: DateTime.utc(2026, 7, 11, 13),
-    hasMobileReceipt: true,
+    hasMobileReceipt: hasMobileReceipt,
     tripCreated: tripCreated,
     latestStaffState: latestStaffState,
     controlCenterMessage: controlCenterMessage,
+    fareDisplay: fareDisplay,
   );
 }
 
@@ -493,5 +559,72 @@ class _FakeHistoryGateway implements PassengerRideRequestHistoryApiGateway {
     }
 
     return ApiResponse.success(decoder(payload), statusCode: 200);
+  }
+}
+
+class _HistoryPaymentRatingRepository
+    implements PassengerPaymentRatingRepository {
+  final List<String> references = <String>[];
+  int receiptCalls = 0;
+
+  @override
+  Future<PassengerFareSnapshot> fetchFare(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerFareSnapshot(
+      requestReference: requestReference,
+      fareStatus: 'fare_not_ready',
+      canPay: false,
+      message: 'The final fare is not ready yet.',
+    );
+  }
+
+  @override
+  Future<PassengerPaymentSnapshot> fetchPayment(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerPaymentSnapshot(
+      requestReference: requestReference,
+      paymentStatus: 'payment_not_available',
+      canPay: false,
+      canRetry: false,
+      message: 'Payment is not available yet.',
+    );
+  }
+
+  @override
+  Future<PassengerRatingSnapshot> fetchRating(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerRatingSnapshot(
+      requestReference: requestReference,
+      ratingStatus: 'rating_not_open',
+      canRate: false,
+      message: 'Rating is not available yet.',
+    );
+  }
+
+  @override
+  Future<PassengerPaymentSnapshot> initiatePayment(
+    String requestReference, {
+    required String idempotencyKey,
+  }) {
+    throw StateError('Payment initiation was not expected.');
+  }
+
+  @override
+  Future<PassengerPaymentReceiptSnapshot> fetchReceipt(
+    String requestReference,
+  ) {
+    receiptCalls += 1;
+    throw const PassengerPaymentRatingException.notFound();
+  }
+
+  @override
+  Future<PassengerRatingSnapshot> submitRating(
+    String requestReference,
+    PassengerRatingSubmission submission,
+  ) {
+    throw StateError('Rating submission was not expected.');
   }
 }
