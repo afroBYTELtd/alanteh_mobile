@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../map/passenger_map.dart';
+import '../payment_rating/passenger_payment_rating_contract.dart';
+import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
 
 class RideTrackingScreen extends StatefulWidget {
@@ -13,6 +15,8 @@ class RideTrackingScreen extends StatefulWidget {
     required this.requestReference,
     this.initialRecord,
     this.pollInterval = const Duration(seconds: 10),
+    this.paymentRatingRepository,
+    this.onSignInRequired,
     super.key,
   });
 
@@ -20,6 +24,8 @@ class RideTrackingScreen extends StatefulWidget {
   final String requestReference;
   final PassengerRideRequestRecord? initialRecord;
   final Duration pollInterval;
+  final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final VoidCallback? onSignInRequired;
 
   @override
   State<RideTrackingScreen> createState() => _RideTrackingScreenState();
@@ -95,6 +101,24 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     _timer?.cancel();
     if (record.isTerminal) return;
     _timer = Timer(widget.pollInterval, _load);
+  }
+
+  Future<void> _openPaymentRating() {
+    final repository = widget.paymentRatingRepository;
+
+    if (repository == null) {
+      return Future<void>.value();
+    }
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerPaymentRatingPage(
+          repository: repository,
+          requestReference: widget.requestReference,
+          onSignInRequired: widget.onSignInRequired,
+        ),
+      ),
+    );
   }
 
   Future<void> _showCancelDialog({required bool vehicleEnRoute}) {
@@ -254,6 +278,16 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       'Your vehicle has been reassigned.',
                       key: Key('vehicle-reassigned-state'),
                       style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                  if (record.passengerState == PassengerRideState.arrived &&
+                      widget.paymentRatingRepository != null) ...[
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      key: const Key('open-payment-rating-from-tracking'),
+                      onPressed: _openPaymentRating,
+                      icon: const Icon(Icons.payments_outlined),
+                      label: const Text('Payment and rating'),
                     ),
                   ],
                   if (view.rejected) ...[

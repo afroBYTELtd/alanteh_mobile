@@ -7,6 +7,7 @@ import 'booking_draft.dart';
 import 'booking_form.dart';
 import 'booking_review.dart';
 import 'booking_submission.dart';
+import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../tracking/ride_tracking_screen.dart';
 
@@ -19,6 +20,7 @@ class BookingPage extends StatefulWidget {
     this.idempotencyKeyFactory,
     this.onSignInRequired,
     this.rideRequestHistoryRepository,
+    this.paymentRatingRepository,
     super.key,
   });
 
@@ -29,6 +31,7 @@ class BookingPage extends StatefulWidget {
   final String Function()? idempotencyKeyFactory;
   final VoidCallback? onSignInRequired;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
+  final PassengerPaymentRatingRepository? paymentRatingRepository;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -162,12 +165,17 @@ class _BookingPageState extends State<BookingPage> {
 
       final reference = result.requestReference?.trim();
       final repository = widget.rideRequestHistoryRepository;
-      if (reference != null && reference.isNotEmpty && repository != null && mounted) {
+      if (reference != null &&
+          reference.isNotEmpty &&
+          repository != null &&
+          mounted) {
         await Navigator.of(context).pushReplacement<void, void>(
           MaterialPageRoute<void>(
             builder: (_) => RideTrackingScreen(
               repository: repository,
               requestReference: reference,
+              paymentRatingRepository: widget.paymentRatingRepository,
+              onSignInRequired: widget.onSignInRequired,
             ),
           ),
         );

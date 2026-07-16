@@ -4,6 +4,9 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../payment_rating/passenger_payment_rating_contract.dart';
+import '../payment_rating/passenger_payment_rating_page.dart';
+
 abstract interface class PassengerRideRequestHistoryRepository {
   Future<List<PassengerRideRequestRecord>> fetchRequests();
 
@@ -525,12 +528,14 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
     required this.repository,
     this.onSignInRequired,
     this.onBookRide,
+    this.paymentRatingRepository,
     super.key,
   });
 
   final PassengerRideRequestHistoryRepository repository;
   final VoidCallback? onSignInRequired;
   final VoidCallback? onBookRide;
+  final PassengerPaymentRatingRepository? paymentRatingRepository;
 
   @override
   State<PassengerRideRequestHistoryPage> createState() =>
@@ -617,6 +622,7 @@ class _PassengerRideRequestHistoryPageState
         builder: (_) => PassengerRideRequestDetailPage(
           repository: widget.repository,
           requestReference: record.requestReference,
+          paymentRatingRepository: widget.paymentRatingRepository,
           onSignInRequired: widget.onSignInRequired,
         ),
       ),
@@ -806,12 +812,14 @@ class PassengerRideRequestDetailPage extends StatefulWidget {
     required this.repository,
     required this.requestReference,
     this.onSignInRequired,
+    this.paymentRatingRepository,
     super.key,
   });
 
   final PassengerRideRequestHistoryRepository repository;
   final String requestReference;
   final VoidCallback? onSignInRequired;
+  final PassengerPaymentRatingRepository? paymentRatingRepository;
 
   @override
   State<PassengerRideRequestDetailPage> createState() =>
@@ -873,6 +881,24 @@ class _PassengerRideRequestDetailPageState
     }
   }
 
+  Future<void> _openPaymentRating() {
+    final repository = widget.paymentRatingRepository;
+
+    if (repository == null) {
+      return Future<void>.value();
+    }
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerPaymentRatingPage(
+          repository: repository,
+          requestReference: widget.requestReference,
+          onSignInRequired: widget.onSignInRequired,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -923,6 +949,16 @@ class _PassengerRideRequestDetailPageState
           _DetailRow(label: 'Special request', value: record.specialRequest!),
         if (record.fareDisplay != null)
           _DetailRow(label: 'Fare', value: record.fareDisplay!),
+        if (record.passengerState == PassengerRideState.arrived &&
+            widget.paymentRatingRepository != null) ...[
+          const SizedBox(height: AsmSpacing.space8),
+          FilledButton.icon(
+            key: const Key('open-payment-rating-from-history'),
+            onPressed: _openPaymentRating,
+            icon: const Icon(Icons.payments_outlined),
+            label: const Text('Payment and rating'),
+          ),
+        ],
         const SizedBox(height: AsmSpacing.space8),
         Card(
           key: const Key('ride-request-control-center-message'),

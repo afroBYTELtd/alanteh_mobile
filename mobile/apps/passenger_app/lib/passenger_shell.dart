@@ -8,6 +8,7 @@ import 'booking/booking_submission.dart';
 import 'location/location_search_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
+import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
 
 class PassengerShell extends StatefulWidget {
@@ -16,6 +17,7 @@ class PassengerShell extends StatefulWidget {
     this.localQaEnabled = false,
     this.rideRequestSubmitter,
     this.rideRequestHistoryRepository,
+    this.paymentRatingRepository,
     this.phoneNumber,
     this.onSignInRequired,
     this.onSignOut,
@@ -26,6 +28,7 @@ class PassengerShell extends StatefulWidget {
   final bool localQaEnabled;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
+  final PassengerPaymentRatingRepository? paymentRatingRepository;
   final String? phoneNumber;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
@@ -140,6 +143,7 @@ class _PassengerShellState extends State<PassengerShell> {
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
+          paymentRatingRepository: widget.paymentRatingRepository,
         ),
       ),
     );
@@ -165,6 +169,7 @@ class _PassengerShellState extends State<PassengerShell> {
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
+          paymentRatingRepository: widget.paymentRatingRepository,
         ),
       ),
     );
@@ -189,6 +194,7 @@ class _PassengerShellState extends State<PassengerShell> {
       MaterialPageRoute<void>(
         builder: (_) => PassengerRideRequestHistoryPage(
           repository: repository,
+          paymentRatingRepository: widget.paymentRatingRepository,
           onSignInRequired: widget.onSignInRequired,
           onBookRide: () {
             Navigator.of(context).pop();
@@ -223,6 +229,7 @@ class _PassengerShellState extends State<PassengerShell> {
         repository:
             widget.rideRequestHistoryRepository ??
             const EmptyPassengerRideRequestHistoryRepository(),
+        paymentRatingRepository: widget.paymentRatingRepository,
         onSignInRequired: widget.onSignInRequired,
         onBookRide: () => setState(() => _selectedIndex = 0),
       ),

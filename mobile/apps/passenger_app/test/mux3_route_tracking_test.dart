@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:passenger_app/booking/route_preview_card.dart';
 import 'package:passenger_app/map/osrm_route.dart';
 import 'package:passenger_app/map/passenger_map.dart';
+import 'package:passenger_app/payment_rating/passenger_payment_rating_contract.dart';
+import 'package:passenger_app/payment_rating/passenger_payment_rating_page.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
 import 'package:passenger_app/tracking/ride_tracking_screen.dart';
 
@@ -525,6 +527,48 @@ void main() {
     await _disposeTracking(tester);
   });
 
+  testWidgets(
+    'completed tracking opens backend payment and rating by exact reference',
+    (tester) async {
+      _useSurface(tester);
+
+      final paymentRepository = _TrackingPaymentRatingRepository();
+
+      await _pumpTracking(
+        tester,
+        _SequenceRepository(<Object>[_record(status: 'completed')]),
+        pollInterval: const Duration(hours: 1),
+        paymentRatingRepository: paymentRepository,
+      );
+
+      expect(
+        find.byKey(const Key('open-payment-rating-from-tracking')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('open-payment-rating-from-tracking')),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PassengerPaymentRatingPage), findsOneWidget);
+      expect(paymentRepository.references, <String>[
+        'RR-APP-MUX3-TEST',
+        'RR-APP-MUX3-TEST',
+        'RR-APP-MUX3-TEST',
+      ]);
+      expect(
+        find.byKey(const Key('payment-not-available-state')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('payment-confirmed-state')), findsNothing);
+      expect(find.byKey(const Key('payment-receipt-state')), findsNothing);
+
+      await _disposeTracking(tester);
+    },
+  );
+
   test('tracking source forbids fake GPS and live animation', () {
     final source = File(
       'lib/tracking/ride_tracking_screen.dart',
@@ -578,6 +622,7 @@ Future<void> _pumpTracking(
   WidgetTester tester,
   PassengerRideRequestHistoryRepository repository, {
   required Duration pollInterval,
+  PassengerPaymentRatingRepository? paymentRatingRepository,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -586,6 +631,7 @@ Future<void> _pumpTracking(
         repository: repository,
         requestReference: 'RR-APP-MUX3-TEST',
         pollInterval: pollInterval,
+        paymentRatingRepository: paymentRatingRepository,
       ),
     ),
   );
@@ -664,5 +710,70 @@ class _SequenceRepository implements PassengerRideRequestHistoryRepository {
     }
 
     throw result;
+  }
+}
+
+class _TrackingPaymentRatingRepository
+    implements PassengerPaymentRatingRepository {
+  final List<String> references = <String>[];
+
+  @override
+  Future<PassengerFareSnapshot> fetchFare(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerFareSnapshot(
+      requestReference: requestReference,
+      fareStatus: 'fare_not_ready',
+      canPay: false,
+      message: 'The final fare is not ready yet.',
+    );
+  }
+
+  @override
+  Future<PassengerPaymentSnapshot> fetchPayment(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerPaymentSnapshot(
+      requestReference: requestReference,
+      paymentStatus: 'payment_not_available',
+      canPay: false,
+      canRetry: false,
+      message: 'Payment is not available yet.',
+    );
+  }
+
+  @override
+  Future<PassengerRatingSnapshot> fetchRating(String requestReference) async {
+    references.add(requestReference);
+
+    return PassengerRatingSnapshot(
+      requestReference: requestReference,
+      ratingStatus: 'rating_not_open',
+      canRate: false,
+      message: 'Rating is not available yet.',
+    );
+  }
+
+  @override
+  Future<PassengerPaymentSnapshot> initiatePayment(
+    String requestReference, {
+    required String idempotencyKey,
+  }) {
+    throw StateError('Payment initiation was not expected.');
+  }
+
+  @override
+  Future<PassengerPaymentReceiptSnapshot> fetchReceipt(
+    String requestReference,
+  ) {
+    throw const PassengerPaymentRatingException.notFound();
+  }
+
+  @override
+  Future<PassengerRatingSnapshot> submitRating(
+    String requestReference,
+    PassengerRatingSubmission submission,
+  ) {
+    throw StateError('Rating submission was not expected.');
   }
 }
