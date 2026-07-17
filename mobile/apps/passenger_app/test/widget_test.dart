@@ -34,6 +34,7 @@ void main() {
     expect(source, isNot(contains('/api/routes')));
     expect(source, isNot(contains('/api/estimate')));
     expect(source, isNot(contains('/api/fares')));
+    expect(source, contains('/api/rides/fare-estimate/'));
     expect(source, isNot(contains('/api/profile')));
     expect(source, isNot(contains('/api/account')));
     expect(source, isNot(contains('/api/wallet')));

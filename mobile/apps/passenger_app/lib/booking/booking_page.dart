@@ -3,11 +3,13 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 
+import '../map/osrm_route.dart';
+import '../payment_rating/passenger_payment_rating_contract.dart';
 import 'booking_draft.dart';
 import 'booking_form.dart';
 import 'booking_review.dart';
 import 'booking_submission.dart';
-import '../payment_rating/passenger_payment_rating_contract.dart';
+import 'passenger_fare_estimate.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../tracking/ride_tracking_screen.dart';
 
@@ -21,6 +23,8 @@ class BookingPage extends StatefulWidget {
     this.onSignInRequired,
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
+    this.fareEstimateRepository,
+    this.routeService = const OsrmPassengerRouteService(),
     super.key,
   });
 
@@ -32,6 +36,8 @@ class BookingPage extends StatefulWidget {
   final VoidCallback? onSignInRequired;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final PassengerFareEstimateRepository? fareEstimateRepository;
+  final PassengerRouteService routeService;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -55,6 +61,8 @@ class _BookingPageState extends State<BookingPage> {
   bool _submissionRequiresSignIn = false;
   String? _idempotencyKey;
   String? _passengerCountErrorMessage;
+  PassengerBookingFareEstimate? _fareEstimate;
+  int _fareRequestGeneration = 0;
 
   @override
   void initState() {
@@ -93,6 +101,8 @@ class _BookingPageState extends State<BookingPage> {
 
     setState(() {
       _passengerCountErrorMessage = null;
+      _fareRequestGeneration += 1;
+      _fareEstimate = null;
       _draft = BookingDraft(
         marketCode: widget.market.marketCode,
         serviceContext: _internalServiceContext,
@@ -113,7 +123,52 @@ class _BookingPageState extends State<BookingPage> {
       _submissionRequiresSignIn = false;
       _idempotencyKey = null;
       _passengerCountErrorMessage = null;
+      _fareRequestGeneration += 1;
+      _fareEstimate = null;
     });
+  }
+
+  void _handleAuthoritativeRouteEstimate(
+    PassengerRouteEstimate? routeEstimate,
+  ) {
+    final generation = ++_fareRequestGeneration;
+
+    if (mounted) {
+      setState(() => _fareEstimate = null);
+    }
+
+    final repository = widget.fareEstimateRepository;
+    if (routeEstimate == null ||
+        routeEstimate.usedFallback ||
+        repository == null ||
+        !routeEstimate.distanceKilometres.isFinite ||
+        routeEstimate.distanceKilometres <= 0) {
+      return;
+    }
+
+    _loadFareEstimate(repository, routeEstimate.distanceKilometres, generation);
+  }
+
+  Future<void> _loadFareEstimate(
+    PassengerFareEstimateRepository repository,
+    double tripKilometres,
+    int generation,
+  ) async {
+    try {
+      final estimate = await repository.fetchEstimate(tripKilometres);
+
+      if (!mounted || generation != _fareRequestGeneration) {
+        return;
+      }
+
+      setState(() => _fareEstimate = estimate);
+    } on Object {
+      if (!mounted || generation != _fareRequestGeneration) {
+        return;
+      }
+
+      setState(() => _fareEstimate = null);
+    }
   }
 
   Future<void> _confirmRequest() async {
@@ -221,6 +276,8 @@ class _BookingPageState extends State<BookingPage> {
       _submissionRequiresSignIn = false;
       _idempotencyKey = null;
       _passengerCountErrorMessage = null;
+      _fareRequestGeneration += 1;
+      _fareEstimate = null;
     });
   }
 
@@ -264,6 +321,10 @@ class _BookingPageState extends State<BookingPage> {
                 onConfirm: _confirmRequest,
                 onFinish: _finishSuccess,
                 onStartNewRequest: _startNewRequest,
+                routeService: widget.routeService,
+                onAuthoritativeRouteEstimateChanged:
+                    _handleAuthoritativeRouteEstimate,
+                fareEstimate: _fareEstimate,
                 onSignInRequired: _returnToSignIn,
               ),
       ),

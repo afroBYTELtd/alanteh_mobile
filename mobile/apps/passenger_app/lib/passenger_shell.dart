@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'account/passenger_account_screen.dart';
 import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
+import 'booking/passenger_fare_estimate.dart';
 import 'location/location_search_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
@@ -18,6 +19,7 @@ class PassengerShell extends StatefulWidget {
     this.rideRequestSubmitter,
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
+    this.fareEstimateRepository,
     this.phoneNumber,
     this.onSignInRequired,
     this.onSignOut,
@@ -29,6 +31,7 @@ class PassengerShell extends StatefulWidget {
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final PassengerFareEstimateRepository? fareEstimateRepository;
   final String? phoneNumber;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
@@ -144,6 +147,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          fareEstimateRepository: widget.fareEstimateRepository,
         ),
       ),
     );
@@ -170,6 +174,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          fareEstimateRepository: widget.fareEstimateRepository,
         ),
       ),
     );

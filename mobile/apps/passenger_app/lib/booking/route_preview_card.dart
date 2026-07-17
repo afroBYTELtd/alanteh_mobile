@@ -8,10 +8,12 @@ import '../map/passenger_map.dart';
 class RoutePreviewCard extends StatefulWidget {
   const RoutePreviewCard({
     this.routeService = const OsrmPassengerRouteService(),
+    this.onAuthoritativeEstimateChanged,
     super.key,
   });
 
   final PassengerRouteService routeService;
+  final ValueChanged<PassengerRouteEstimate?>? onAuthoritativeEstimateChanged;
 
   @override
   State<RoutePreviewCard> createState() => _RoutePreviewCardState();
@@ -33,7 +35,15 @@ class _RoutePreviewCardState extends State<RoutePreviewCard> {
     } on Object {
       estimate = safeDirectRouteFallback();
     }
-    if (mounted) setState(() => _estimate = estimate);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _estimate = estimate);
+    widget.onAuthoritativeEstimateChanged?.call(
+      estimate.usedFallback ? null : estimate,
+    );
   }
 
   @override
@@ -74,7 +84,8 @@ class _RoutePreviewCardState extends State<RoutePreviewCard> {
                 ),
                 if (estimate?.usedFallback == true)
                   const Tooltip(
-                    message: 'Route service unavailable. Showing a direct-line estimate.',
+                    message:
+                        'Route service unavailable. Showing a direct-line estimate.',
                     child: Icon(Icons.info_outline, size: 20),
                   ),
               ],

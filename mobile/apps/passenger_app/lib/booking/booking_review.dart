@@ -4,8 +4,10 @@ import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../map/osrm_route.dart';
 import 'booking_draft.dart';
 import 'booking_submission.dart';
+import 'passenger_fare_estimate.dart';
 import 'route_preview_card.dart';
 
 class BookingReview extends StatelessWidget {
@@ -19,6 +21,9 @@ class BookingReview extends StatelessWidget {
     required this.onConfirm,
     required this.onFinish,
     required this.onStartNewRequest,
+    this.routeService = const OsrmPassengerRouteService(),
+    this.onAuthoritativeRouteEstimateChanged,
+    this.fareEstimate,
     this.onSignInRequired,
     super.key,
   });
@@ -32,6 +37,10 @@ class BookingReview extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onFinish;
   final VoidCallback onStartNewRequest;
+  final PassengerRouteService routeService;
+  final ValueChanged<PassengerRouteEstimate?>?
+  onAuthoritativeRouteEstimateChanged;
+  final PassengerBookingFareEstimate? fareEstimate;
   final VoidCallback? onSignInRequired;
 
   @override
@@ -67,19 +76,27 @@ class BookingReview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AsmSpacing.space20),
-        const RoutePreviewCard(),
+        RoutePreviewCard(
+          routeService: routeService,
+          onAuthoritativeEstimateChanged: onAuthoritativeRouteEstimateChanged,
+        ),
+        const SizedBox(height: AsmSpacing.space16),
+        PassengerFareEstimatePanel(estimate: fareEstimate),
         const SizedBox(height: AsmSpacing.space24),
         AsmRideDetailRow(
+          key: const Key('booking-review-from'),
           label: 'From',
           value: draft.rideDraft.pickupDisplayText,
           selectableValue: true,
         ),
         AsmRideDetailRow(
+          key: const Key('booking-review-to'),
           label: 'To',
           value: draft.rideDraft.destinationDisplayText,
           selectableValue: true,
         ),
         AsmRideDetailRow(
+          key: const Key('booking-review-passengers'),
           label: 'Passengers',
           value: '${draft.passengerCount.value}',
           selectableValue: true,
@@ -114,15 +131,23 @@ class BookingReview extends StatelessWidget {
               CircleAvatar(
                 backgroundColor: Color(0xFFFFCB05),
                 foregroundColor: Colors.black,
-                child: Text('MTN', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                child: Text(
+                  'MTN',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+                ),
               ),
               SizedBox(width: AsmSpacing.space12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('MTN Mobile Money', style: TextStyle(fontWeight: FontWeight.w900)),
-                    Text('Selected payment method · payment is not collected in this step'),
+                    Text(
+                      'MTN Mobile Money',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      'Selected payment method · payment is not collected in this step',
+                    ),
                   ],
                 ),
               ),
