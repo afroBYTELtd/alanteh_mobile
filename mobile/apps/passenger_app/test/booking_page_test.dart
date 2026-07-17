@@ -220,8 +220,17 @@ void main() {
     );
     expect(find.text('Special request is too long.'), findsNothing);
     expect(find.text('Confirm your ride'), findsWidgets);
+
+    await _scrollUntilKey(tester, const Key('booking-review-from'));
+    expect(find.byKey(const Key('booking-review-from')), findsOneWidget);
     expect(find.text('From'), findsOneWidget);
+
+    await _scrollUntilKey(tester, const Key('booking-review-to'));
+    expect(find.byKey(const Key('booking-review-to')), findsOneWidget);
     expect(find.text('To'), findsOneWidget);
+
+    await _scrollUntilKey(tester, const Key('booking-review-passengers'));
+    expect(find.byKey(const Key('booking-review-passengers')), findsOneWidget);
     expect(find.text('Passengers'), findsOneWidget);
     expect(submitter.submissions, isEmpty);
   });
@@ -666,6 +675,13 @@ void main() {
     expect(find.text('Confirm your ride'), findsWidgets);
     expect(find.byKey(const Key('mtn-momo-selected')), findsOneWidget);
     expect(find.text('MTN Mobile Money'), findsOneWidget);
+    expect(find.text('Fare estimate'), findsOneWidget);
+    expect(
+      find.text('Fare confirmed when driver is assigned.'),
+      findsOneWidget,
+    );
+    expect(find.text('Payment: MTN MoMo'), findsOneWidget);
+    await _scrollUntilKey(tester, const Key('confirm-and-request'));
     expect(find.text('Confirm and request'), findsOneWidget);
 
     await _tapVisible(tester, const Key('confirm-and-request'));
@@ -1517,9 +1533,6 @@ void main() {
         await _scrollUntilKey(tester, const Key('request-ride'));
         await _tapVisible(tester, const Key('request-ride'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(
-          find.byKey(const Key('confirm-and-request')),
-        );
         await _tapVisible(tester, const Key('confirm-and-request'));
         await tester.pumpAndSettle();
       }

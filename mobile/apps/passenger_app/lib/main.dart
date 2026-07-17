@@ -5,6 +5,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'booking/booking_submission.dart';
+import 'booking/passenger_fare_estimate.dart';
 import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
@@ -22,6 +23,7 @@ class PassengerApp extends StatelessWidget {
     this.authService,
     this.authTokenStore,
     this.paymentRatingRepository,
+    this.fareEstimateRepository,
     super.key,
   });
 
@@ -31,6 +33,7 @@ class PassengerApp extends StatelessWidget {
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final PassengerFareEstimateRepository? fareEstimateRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +54,12 @@ class PassengerApp extends StatelessWidget {
     final resolvedPaymentRatingRepository =
         paymentRatingRepository ??
         ApiPassengerPaymentRatingRepository.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
+    final resolvedFareEstimateRepository =
+        fareEstimateRepository ??
+        ApiPassengerFareEstimateRepository.withDefaultClient(
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
@@ -75,6 +84,7 @@ class PassengerApp extends StatelessWidget {
               rideRequestHistoryRepository:
                   resolvedRideRequestHistoryRepository,
               paymentRatingRepository: resolvedPaymentRatingRepository,
+              fareEstimateRepository: resolvedFareEstimateRepository,
               localQaEnabled: configuration.localQaEnabled,
             )
           : PassengerShell(
@@ -84,6 +94,7 @@ class PassengerApp extends StatelessWidget {
               rideRequestHistoryRepository:
                   resolvedRideRequestHistoryRepository,
               paymentRatingRepository: resolvedPaymentRatingRepository,
+              fareEstimateRepository: resolvedFareEstimateRepository,
             ),
     );
   }
@@ -97,6 +108,7 @@ class PassengerLoginShell extends StatefulWidget {
     this.rideRequestSubmitter,
     required this.rideRequestHistoryRepository,
     required this.paymentRatingRepository,
+    this.fareEstimateRepository,
     this.localQaEnabled = false,
     super.key,
   });
@@ -107,6 +119,7 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final PassengerRideRequestHistoryRepository rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository paymentRatingRepository;
+  final PassengerFareEstimateRepository? fareEstimateRepository;
   final bool localQaEnabled;
 
   @override
@@ -448,6 +461,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         rideRequestSubmitter: _rideRequestSubmitter,
         rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
         paymentRatingRepository: widget.paymentRatingRepository,
+        fareEstimateRepository: widget.fareEstimateRepository,
         phoneNumber: _passengerPhoneNumber,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,
