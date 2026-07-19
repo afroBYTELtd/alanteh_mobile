@@ -3,6 +3,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'account/passenger_account_screen.dart';
+import 'account/passenger_payment_setup_screen.dart';
 import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
@@ -44,6 +45,7 @@ class _PassengerShellState extends State<PassengerShell> {
   int _selectedIndex = 0;
   String? _pickupDescription;
   String? _destinationDescription;
+  PassengerMobileMoneyNetwork _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
   late SessionLocationHistory _locationHistory;
 
   @override
@@ -123,11 +125,30 @@ class _PassengerShellState extends State<PassengerShell> {
     setState(() => _selectedIndex = 1);
   }
 
+  Future<void> _openPaymentSetup() async {
+    final selected = await Navigator.of(context)
+        .push<PassengerMobileMoneyNetwork>(
+          MaterialPageRoute<PassengerMobileMoneyNetwork>(
+            builder: (_) => PassengerPaymentSetupScreen(
+              initialNetwork: _paymentNetwork,
+              phoneNumber: widget.phoneNumber,
+            ),
+          ),
+        );
+
+    if (selected == null || !mounted) {
+      return;
+    }
+
+    setState(() => _paymentNetwork = selected);
+  }
+
   Future<void> _signOut() async {
     setState(() {
       _selectedIndex = 0;
       _pickupDescription = null;
       _destinationDescription = null;
+      _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
     });
     await widget.onSignOut?.call();
   }
@@ -147,6 +168,8 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,
         ),
       ),
@@ -174,6 +197,8 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,
         ),
       ),
@@ -240,6 +265,8 @@ class _PassengerShellState extends State<PassengerShell> {
       ),
       _ => PassengerAccountScreen(
         phoneNumber: widget.phoneNumber,
+        paymentMethodLabel: _paymentNetwork.accountLabel,
+        onOpenPaymentSetup: _openPaymentSetup,
         onOpenTrips: _openTripsTab,
         onSignOut: _signOut,
       ),

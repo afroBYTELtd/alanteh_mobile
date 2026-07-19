@@ -126,28 +126,39 @@ void main() {
     );
   });
 
-  test('accept and decline only change local preview state immutably', () {
-    final original = pending();
-    final accepted = original.acceptPreview();
-    final declined = original.declinePreview();
+  test(
+    'accept decline and expire only change local preview state immutably',
+    () {
+      final original = pending();
+      final accepted = original.acceptPreview();
+      final declined = original.declinePreview();
+      final expired = original.expirePreview();
 
-    expect(original.status, DriverRideOfferPreviewStatus.pending);
-    expect(original.lifecycleState, RideLifecycleState.offered);
-    expect(accepted.status, DriverRideOfferPreviewStatus.acceptedPreview);
-    expect(declined.status, DriverRideOfferPreviewStatus.declinedPreview);
-    expect(accepted.lifecycleState, RideLifecycleState.offered);
-    expect(declined.lifecycleState, RideLifecycleState.offered);
-    expect(identical(original, accepted), isFalse);
-    expect(identical(original, declined), isFalse);
-    expect(
-      identical(original.rideOfferPreview, accepted.rideOfferPreview),
-      isTrue,
-    );
-    expect(
-      identical(original.rideOfferPreview, declined.rideOfferPreview),
-      isTrue,
-    );
-  });
+      expect(original.status, DriverRideOfferPreviewStatus.pending);
+      expect(original.lifecycleState, RideLifecycleState.offered);
+      expect(accepted.status, DriverRideOfferPreviewStatus.acceptedPreview);
+      expect(declined.status, DriverRideOfferPreviewStatus.declinedPreview);
+      expect(expired.status, DriverRideOfferPreviewStatus.expiredPreview);
+      expect(accepted.lifecycleState, RideLifecycleState.offered);
+      expect(declined.lifecycleState, RideLifecycleState.offered);
+      expect(expired.lifecycleState, RideLifecycleState.offered);
+      expect(identical(original, accepted), isFalse);
+      expect(identical(original, declined), isFalse);
+      expect(identical(original, expired), isFalse);
+      expect(
+        identical(original.rideOfferPreview, accepted.rideOfferPreview),
+        isTrue,
+      );
+      expect(
+        identical(original.rideOfferPreview, declined.rideOfferPreview),
+        isTrue,
+      );
+      expect(
+        identical(original.rideOfferPreview, expired.rideOfferPreview),
+        isTrue,
+      );
+    },
+  );
 
   test('accepted previews reject repeated and conflicting local decisions', () {
     final accepted = pending().acceptPreview();
@@ -171,6 +182,22 @@ void main() {
     );
     expect(
       declined.acceptPreview,
+      throwsA(isA<DriverRideOfferPreviewStateException>()),
+    );
+  });
+  test('expired previews reject later local decisions', () {
+    final expired = pending().expirePreview();
+
+    expect(
+      expired.acceptPreview,
+      throwsA(isA<DriverRideOfferPreviewStateException>()),
+    );
+    expect(
+      expired.declinePreview,
+      throwsA(isA<DriverRideOfferPreviewStateException>()),
+    );
+    expect(
+      expired.expirePreview,
       throwsA(isA<DriverRideOfferPreviewStateException>()),
     );
   });

@@ -14,7 +14,12 @@ extension DriverRideServiceContextLabel on RideServiceContextCode {
   }
 }
 
-enum DriverRideOfferPreviewStatus { pending, acceptedPreview, declinedPreview }
+enum DriverRideOfferPreviewStatus {
+  pending,
+  acceptedPreview,
+  declinedPreview,
+  expiredPreview,
+}
 
 final class DriverRideOfferPreviewValidationException implements Exception {
   const DriverRideOfferPreviewValidationException({
@@ -108,6 +113,9 @@ final class DriverRideOfferPreview {
 
   DriverRideOfferPreview declinePreview() =>
       _withLocalDecision(DriverRideOfferPreviewStatus.declinedPreview);
+
+  DriverRideOfferPreview expirePreview() =>
+      _withLocalDecision(DriverRideOfferPreviewStatus.expiredPreview);
 
   DriverRideOfferPreview _withLocalDecision(
     DriverRideOfferPreviewStatus nextStatus,

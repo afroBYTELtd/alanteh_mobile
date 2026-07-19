@@ -4,6 +4,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../network/ghana_network_resilience.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
 
@@ -301,7 +302,7 @@ class ApiPassengerRideRequestHistoryRepository
 
     return ApiPassengerRideRequestHistoryRepository(
       AsmPassengerRideRequestHistoryApiGateway(
-        AsmApiClient(
+        GhanaResilientApiClient(
           baseUrl: resolvedBaseUrl,
           tokenProvider: _HistoryTokenProvider(store),
         ),
@@ -309,7 +310,7 @@ class ApiPassengerRideRequestHistoryRepository
       tokenStore: store,
       authService: connectionConfigured
           ? AuthService.withApiClient(
-              client: AsmApiClient(baseUrl: resolvedBaseUrl),
+              client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
           : null,
@@ -893,6 +894,9 @@ class _PassengerRideRequestDetailPageState
         builder: (_) => PassengerPaymentRatingPage(
           repository: repository,
           requestReference: widget.requestReference,
+          pickupDescription: _record?.pickupLocation,
+          destinationDescription: _record?.destination,
+          tripCompletedAt: _record?.updatedAt,
           onSignInRequired: widget.onSignInRequired,
         ),
       ),

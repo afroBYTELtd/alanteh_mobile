@@ -67,6 +67,7 @@ void main() {
     'PassengerAccountScreen masks phone and exposes account actions',
     (tester) async {
       var openedTrips = false;
+      var openedPaymentSetup = false;
       var signedOut = false;
 
       await tester.pumpWidget(
@@ -75,21 +76,31 @@ void main() {
           home: PassengerAccountScreen(
             phoneNumber: '+233559991234',
             onOpenTrips: () => openedTrips = true,
+            onOpenPaymentSetup: () => openedPaymentSetup = true,
             onSignOut: () => signedOut = true,
           ),
         ),
       );
 
       expect(find.byType(PassengerAccountScreen), findsOneWidget);
+      expect(find.text('ALANTEH Member'), findsOneWidget);
       expect(find.text('+233 55 ****234'), findsOneWidget);
       expect(find.text('Riding clean with ALANTEH.'), findsOneWidget);
       expect(find.text('+233559991234'), findsNothing);
+      expect(find.text('MTN MoMo'), findsOneWidget);
+      expect(
+        find.byKey(const Key('passenger-account-payment-method')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('passenger-account-my-trips')),
         findsOneWidget,
       );
       expect(find.byKey(const Key('passenger-account-help')), findsOneWidget);
-      expect(find.text('Sign out'), findsOneWidget);
+      expect(
+        find.byKey(const Key('passenger-account-settings')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const Key('passenger-account-sign-out')),
         findsOneWidget,
@@ -98,9 +109,23 @@ void main() {
       expect(find.textContaining('profile endpoint'), findsNothing);
       expect(find.textContaining('account endpoint'), findsNothing);
 
+      await tester.ensureVisible(
+        find.byKey(const Key('passenger-account-payment-method')),
+      );
+      await tester.tap(
+        find.byKey(const Key('passenger-account-payment-method')),
+      );
+      expect(openedPaymentSetup, isTrue);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('passenger-account-my-trips')),
+      );
       await tester.tap(find.byKey(const Key('passenger-account-my-trips')));
       expect(openedTrips, isTrue);
 
+      await tester.ensureVisible(
+        find.byKey(const Key('passenger-account-help')),
+      );
       await tester.tap(find.byKey(const Key('passenger-account-help')));
       await tester.pumpAndSettle();
       expect(find.text('Contact us at contact@alanteh.io'), findsOneWidget);
@@ -108,6 +133,9 @@ void main() {
       await tester.tap(find.byKey(const Key('passenger-account-help-close')));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(
+        find.byKey(const Key('passenger-account-sign-out')),
+      );
       await tester.tap(find.byKey(const Key('passenger-account-sign-out')));
       expect(signedOut, isTrue);
     },
@@ -163,65 +191,81 @@ void main() {
     );
   });
 
-  testWidgets('Passenger phone PIN login opens M-UX3 home', (tester) async {
-    _useSurface(tester, const Size(430, 900));
-    final store = MemoryAuthTokenStore();
-    final api = _FakeAuthApiGateway(responseData: _loginResponse());
+  testWidgets(
+    'Passenger phone PIN login requires OTP before opening M-UX3 home',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+      final store = MemoryAuthTokenStore();
+      final api = _FakeAuthApiGateway(responseData: _loginResponse());
 
-    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+      await tester.pumpWidget(_loginTestApp(api: api, store: store));
 
-    expect(find.byKey(const Key('passenger-login-brand-logo')), findsOneWidget);
-    expect(find.text('Sign in to ride'), findsOneWidget);
+      expect(
+        find.byKey(const Key('passenger-login-brand-logo')),
+        findsOneWidget,
+      );
+      expect(find.text('Sign in to ride'), findsOneWidget);
 
-    await tester.enterText(
-      find.byKey(const Key('passenger-phone-field')),
-      '+233000000000',
-    );
-    await tester.enterText(
-      find.byKey(const Key('passenger-pin-field')),
-      '0000',
-    );
-    await tester.tap(find.byKey(const Key('passenger-sign-in')));
-    await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233000000000',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '0000',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pumpAndSettle();
 
-    expect(api.paths, <String>[AuthService.tokenPath]);
-    expect(api.bodies.single.keys, isNot(contains('password')));
-    expect(api.bodies.single.keys, isNot(contains('email')));
-    expect(await store.readAccessToken(), 'passenger-access-token');
-    expect(await store.readRefreshToken(), 'passenger-refresh-token');
+      expect(api.paths, <String>[AuthService.tokenPath]);
+      expect(api.bodies.single.keys, isNot(contains('password')));
+      expect(api.bodies.single.keys, isNot(contains('email')));
+      expect(await store.readAccessToken(), 'passenger-access-token');
+      expect(await store.readRefreshToken(), 'passenger-refresh-token');
+      expect(find.byKey(const Key('passenger-otp-screen')), findsOneWidget);
+      expect(
+        find.byKey(const Key('passenger-home-full-screen-map-layout')),
+        findsNothing,
+      );
 
-    expect(
-      find.byKey(const Key('passenger-home-full-screen-map-layout')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('passenger-home-floating-logo')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('passenger-home-solar-banner')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('passenger-home-bottom-sheet')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('open-live-request')), findsOneWidget);
-    expect(find.byKey(const Key('open-ride-request-history')), findsOneWidget);
-    expect(find.byKey(const Key('passenger-map')), findsOneWidget);
-    expect(find.text('Request ride'), findsOneWidget);
-    expect(find.text('My Ride Requests'), findsOneWidget);
-    expect(
-      find.text(
-        "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Route preview'), findsNothing);
-    expect(find.byKey(const Key('choose-pickup')), findsNothing);
-    expect(find.byKey(const Key('continue-local-draft')), findsNothing);
-    expect(find.text('LOCAL DEMO'), findsNothing);
-  });
+      await _completePassengerOtp(tester);
+
+      expect(
+        find.byKey(const Key('passenger-home-full-screen-map-layout')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('passenger-home-floating-logo')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('passenger-home-solar-banner')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('passenger-home-bottom-sheet')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('open-live-request')), findsOneWidget);
+      expect(
+        find.byKey(const Key('open-ride-request-history')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('passenger-map')), findsOneWidget);
+      expect(find.text('Request ride'), findsOneWidget);
+      expect(find.text('My Ride Requests'), findsOneWidget);
+      expect(
+        find.text(
+          "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Route preview'), findsNothing);
+      expect(find.byKey(const Key('choose-pickup')), findsNothing);
+      expect(find.byKey(const Key('continue-local-draft')), findsNothing);
+      expect(find.text('LOCAL DEMO'), findsNothing);
+    },
+  );
 
   testWidgets('Passenger invalid login input is blocked before network', (
     tester,
@@ -778,7 +822,7 @@ void main() {
     expect(find.text('Phone number unavailable'), findsOneWidget);
     expect(find.byKey(const Key('passenger-account-sign-out')), findsOneWidget);
     expect(find.textContaining('wallet'), findsNothing);
-    expect(find.textContaining('payment method'), findsNothing);
+    expect(find.text('MTN MoMo'), findsOneWidget);
     expect(find.textContaining('ride statistics'), findsNothing);
   });
 
@@ -1116,6 +1160,10 @@ void main() {
 
     expect(await store.readAccessToken(), 'passenger-access-token');
     expect(await store.readRefreshToken(), 'passenger-refresh-token');
+    expect(find.byKey(const Key('passenger-otp-screen')), findsOneWidget);
+
+    await _completePassengerOtp(tester);
+
     expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
 
     await tester.tap(find.text('Account'));
@@ -1135,6 +1183,21 @@ void main() {
     expect(find.byKey(const Key('passenger-sign-out')), findsNothing);
     expect(find.text('Sign in'), findsOneWidget);
   });
+}
+
+Future<void> _completePassengerOtp(
+  WidgetTester tester, {
+  String code = '123456',
+}) async {
+  final input = find.descendant(
+    of: find.byKey(const Key('passenger-otp-input')),
+    matching: find.byType(EditableText),
+  );
+
+  await tester.enterText(input, code);
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('passenger-otp-verify')));
+  await tester.pumpAndSettle();
 }
 
 Widget _loginTestApp({

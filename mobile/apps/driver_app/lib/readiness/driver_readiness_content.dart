@@ -12,6 +12,9 @@ class DriverReadinessContent extends StatelessWidget {
     required this.onReset,
     required this.onReady,
     required this.onOpenConcern,
+    this.batteryNeedsAttention = false,
+    this.onBatteryNeedsAttention,
+    this.onRecheckBattery,
     super.key,
   });
 
@@ -21,15 +24,18 @@ class DriverReadinessContent extends StatelessWidget {
   final VoidCallback onReset;
   final VoidCallback onReady;
   final VoidCallback onOpenConcern;
+  final bool batteryNeedsAttention;
+  final VoidCallback? onBatteryNeedsAttention;
+  final VoidCallback? onRecheckBattery;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final marketLabel = market.countryName;
     final totalCount = DriverReadinessItem.values.length;
+    final canGoOnline = check.isComplete && !batteryNeedsAttention;
 
     return SafeArea(
       child: ListView(
+        key: const Key('driver-shift-readiness-screen'),
         padding: const EdgeInsets.fromLTRB(
           AsmSpacing.space20,
           AsmSpacing.space12,
@@ -40,77 +46,184 @@ class DriverReadinessContent extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: Text(
-              marketLabel,
+              market.countryName,
               key: const Key('readiness-market'),
               textAlign: TextAlign.end,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
+          const SizedBox(height: AsmSpacing.space16),
+          const Text(
+            'Shift readiness',
+            style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const Text(
+            'Before you go online',
+            style: TextStyle(
+              color: AsmColors.driverMintAction,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const Text(
+            'Complete these checks before driving.',
+            style: TextStyle(
+              color: AsmColors.driverTextSecondary,
+              height: 1.4,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: AsmSpacing.space20),
           Container(
+            key: const Key('driver-pre-shift-vehicle-check'),
             padding: const EdgeInsets.all(AsmSpacing.space16),
             decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(AsmRadii.radius8),
-              border: Border.all(color: colors.outlineVariant),
+              color: AsmColors.driverCardElevated,
+              borderRadius: BorderRadius.circular(AsmRadii.radius24),
+              border: Border.all(color: AsmColors.driverLine),
             ),
-            child: const Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.info_outline, color: AsmColors.brandGreen),
-                SizedBox(width: AsmSpacing.space12),
-                Expanded(
-                  child: Text(
-                    'Complete these checks before driving.',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                Text(
+                  '${check.completedCount} of $totalCount checks complete',
+                  key: const Key('readiness-count'),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
+                const SizedBox(height: AsmSpacing.space12),
+                for (final item in DriverReadinessItem.values) ...[
+                  Card(
+                    margin: const EdgeInsets.only(bottom: AsmSpacing.space8),
+                    color: AsmColors.driverCard,
+                    surfaceTintColor: Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                      side: const BorderSide(color: AsmColors.driverLine),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: CheckboxListTile(
+                      key: ValueKey('readiness-${item.name}'),
+                      value: check.completedItems.contains(item),
+                      onChanged: (_) => onToggle(item),
+                      title: Text(
+                        item.label,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      subtitle: Text(item.description),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AsmSpacing.space12,
+                        vertical: AsmSpacing.space4,
+                      ),
+                    ),
+                  ),
+                  if (item == DriverReadinessItem.vehicleExterior &&
+                      !batteryNeedsAttention &&
+                      onBatteryNeedsAttention != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const Key('readiness-battery-needs-attention'),
+                        onPressed: onBatteryNeedsAttention,
+                        icon: const Icon(Icons.battery_alert_outlined),
+                        label: const Text('Battery needs attention'),
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
-          const SizedBox(height: AsmSpacing.space20),
-          Text(
-            '${check.completedCount} of $totalCount checks complete',
-            key: const Key('readiness-count'),
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: AsmSpacing.space8),
-          for (final item in DriverReadinessItem.values)
-            Card(
-              margin: const EdgeInsets.only(bottom: AsmSpacing.space8),
-              child: CheckboxListTile(
-                key: ValueKey('readiness-${item.name}'),
-                value: check.completedItems.contains(item),
-                onChanged: (_) => onToggle(item),
-                title: Text(item.label),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AsmSpacing.space12,
-                  vertical: AsmSpacing.space4,
-                ),
-              ),
-            ),
-          if (check.isComplete) ...[
-            const SizedBox(height: AsmSpacing.space8),
+          if (batteryNeedsAttention) ...[
+            const SizedBox(height: AsmSpacing.space16),
             Container(
-              key: const Key('readiness-complete'),
-              padding: const EdgeInsets.all(AsmSpacing.space12),
+              key: const Key('readiness-failed'),
+              padding: const EdgeInsets.all(AsmSpacing.space16),
               decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: BorderRadius.circular(AsmRadii.radius8),
+                color: AsmColors.driverCard,
+                borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                border: Border.all(color: AsmColors.driverWarningSurface),
               ),
-              child: Text(
-                'Shift check complete',
-                style: TextStyle(
-                  color: colors.onPrimaryContainer,
-                  fontWeight: FontWeight.w800,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: AsmColors.driverWarningSurface,
+                      ),
+                      SizedBox(width: AsmSpacing.space8),
+                      Expanded(
+                        child: Text(
+                          'One check needs attention',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AsmSpacing.space8),
+                  const Text(
+                    'Battery must be above 30% to go online. '
+                    'Please charge before starting your shift.',
+                    style: TextStyle(height: 1.4),
+                  ),
+                  const SizedBox(height: AsmSpacing.space12),
+                  TextButton.icon(
+                    key: const Key('readiness-recheck-battery'),
+                    onPressed: onRecheckBattery,
+                    icon: const Icon(Icons.refresh_outlined),
+                    label: const Text('Recheck battery'),
+                  ),
+                ],
               ),
             ),
           ],
-          const SizedBox(height: AsmSpacing.space12),
+          if (canGoOnline) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            Container(
+              key: const Key('readiness-complete'),
+              padding: const EdgeInsets.all(AsmSpacing.space20),
+              decoration: BoxDecoration(
+                color: AsmColors.driverCardElevated,
+                borderRadius: BorderRadius.circular(AsmRadii.radius20),
+                border: Border.all(color: AsmColors.driverMintAction),
+              ),
+              child: const Column(
+                children: [
+                  CircleAvatar(
+                    radius: 29,
+                    backgroundColor: AsmColors.driverMintAction,
+                    foregroundColor: AsmColors.driverScaffold,
+                    child: Icon(Icons.check_rounded, size: 34),
+                  ),
+                  SizedBox(height: AsmSpacing.space12),
+                  Text(
+                    'You’re ready to go online',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                  ),
+                  SizedBox(height: AsmSpacing.space8),
+                  Text(
+                    'All checks passed. You can now start your shift.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AsmColors.driverTextSecondary,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: AsmSpacing.space16),
           const Text(
             'Review your vehicle and route before starting work.',
             style: TextStyle(fontWeight: FontWeight.w700),
@@ -118,11 +231,11 @@ class DriverReadinessContent extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space12),
           FilledButton.icon(
             key: const Key('readiness-ready'),
-            onPressed: check.isComplete ? onReady : null,
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text("I'm ready"),
+            onPressed: canGoOnline ? onReady : null,
+            icon: const Icon(Icons.online_prediction),
+            label: const Text('Go online'),
             style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
+              minimumSize: const Size.fromHeight(54),
             ),
           ),
           const SizedBox(height: AsmSpacing.space8),

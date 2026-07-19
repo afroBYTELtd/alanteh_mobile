@@ -7,6 +7,7 @@ import 'driver_duty_trips.dart';
 import 'driver_home.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
+import 'shift/driver_shift_history.dart';
 
 class DriverShell extends StatefulWidget {
   const DriverShell({
@@ -34,11 +35,38 @@ class _DriverShellState extends State<DriverShell> {
     setState(() => _selectedIndex = 1);
   }
 
-  Future<void> _openReadiness() async {
-    if (!widget.localQaEnabled) {
-      return;
-    }
+  DriverShiftRecord get _currentShift {
+    return DriverShiftRecord(
+      id: 'current',
+      dateLabel: 'Today',
+      dutyLabel: _isOnShift ? 'Online' : 'Offline',
+      status: _isOnShift
+          ? DriverShiftStatus.inProgress
+          : DriverShiftStatus.notStarted,
+      onlineDurationLabel: _isOnShift ? 'In progress' : 'Not started',
+      completedTrips: 0,
+      vehicleLabel: driverEmptyValue,
+      serviceAreaLabel: widget.configuration.market.countryName,
+    );
+  }
 
+  Future<void> _openShiftSummary() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverShiftSummaryPage(currentShift: _currentShift),
+      ),
+    );
+  }
+
+  Future<void> _openShiftHistory() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverShiftHistoryPage(currentShift: _currentShift),
+      ),
+    );
+  }
+
+  Future<void> _openReadiness() async {
     final completed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) =>
@@ -77,6 +105,13 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
+  void _setDutyState(bool value) {
+    setState(() {
+      _isOnShift = value;
+      _selectedIndex = 0;
+    });
+  }
+
   Future<void> _signOut() async {
     setState(() {
       _isOnShift = false;
@@ -96,10 +131,14 @@ class _DriverShellState extends State<DriverShell> {
         localQaEnabled: widget.localQaEnabled,
         dutyGateway: widget.driverDutyGateway,
         onOpenAssignedTrips: _openAssignedTrips,
+        onOpenShiftSummary: _openShiftSummary,
+        onDutyChanged: _setDutyState,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
       1 => DriverAssignedTripsScreen(gateway: widget.driverDutyGateway),
       _ => _DriverAccountPage(
+        currentShift: _currentShift,
+        onOpenShiftHistory: _openShiftHistory,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
     };
@@ -137,53 +176,134 @@ class _DriverShellState extends State<DriverShell> {
 }
 
 class _DriverAccountPage extends StatelessWidget {
-  const _DriverAccountPage({required this.onSignOut});
+  const _DriverAccountPage({
+    required this.currentShift,
+    required this.onOpenShiftHistory,
+    required this.onSignOut,
+  });
 
+  final DriverShiftRecord currentShift;
+  final VoidCallback onOpenShiftHistory;
   final Future<void> Function()? onSignOut;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return AsmScreenSurface(
-      padding: const EdgeInsets.all(AsmSpacing.space24),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.account_circle_outlined,
-              size: 48,
-              color: colors.primary,
+      key: const Key('driver-account-screen'),
+      scrollable: true,
+      expandToViewport: true,
+      padding: const EdgeInsets.fromLTRB(
+        22,
+        AsmSpacing.space20,
+        22,
+        AsmSpacing.space24,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Center(
+            child: CircleAvatar(
+              radius: 34,
+              backgroundColor: AsmColors.driverMintAction,
+              foregroundColor: AsmColors.driverScaffold,
+              child: Text(
+                'D',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              ),
             ),
-            const SizedBox(height: AsmSpacing.space16),
-            Text(
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          const Center(
+            child: Text(
               'Driver account',
               textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
             ),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const Center(
+            child: Text(
               'Signed in to ALANTEH Driver.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: colors.onSurfaceVariant,
+              style: TextStyle(
+                color: AsmColors.driverTextSecondary,
                 height: 1.4,
               ),
             ),
-            if (onSignOut != null) ...[
-              const SizedBox(height: AsmSpacing.space16),
-              FilledButton.icon(
-                key: const Key('driver-account-sign-out'),
-                onPressed: onSignOut,
-                icon: const Icon(Icons.exit_to_app_outlined),
-                label: const Text('Sign out'),
+          ),
+          const SizedBox(height: AsmSpacing.space24),
+          Container(
+            key: const Key('driver-account-vehicle-card'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(AsmSpacing.space16),
+            decoration: BoxDecoration(
+              color: AsmColors.driverCard,
+              borderRadius: BorderRadius.circular(AsmRadii.radius24),
+              border: Border.all(color: AsmColors.driverLine),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Assigned vehicle',
+                  style: TextStyle(
+                    color: AsmColors.driverTextSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                Text(
+                  currentShift.vehicleLabel,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                Text(
+                  currentShift.serviceAreaLabel,
+                  style: const TextStyle(
+                    color: AsmColors.driverTextSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          Material(
+            color: AsmColors.driverCard,
+            borderRadius: BorderRadius.circular(AsmRadii.radius24),
+            child: ListTile(
+              key: const Key('driver-account-open-shift-history'),
+              onTap: onOpenShiftHistory,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AsmRadii.radius24),
+                side: const BorderSide(color: AsmColors.driverLine),
               ),
-            ],
+              leading: const Icon(
+                Icons.history_outlined,
+                color: AsmColors.driverMintAction,
+              ),
+              title: const Text(
+                'Shift history',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text('View past shifts and trip logs'),
+              trailing: const Icon(Icons.chevron_right),
+            ),
+          ),
+          if (onSignOut != null) ...[
+            const SizedBox(height: AsmSpacing.space24),
+            AsmPrimaryActionButton(
+              key: const Key('driver-account-sign-out'),
+              onPressed: onSignOut,
+              variant: AsmActionButtonVariant.outlined,
+              icon: Icons.exit_to_app_outlined,
+              label: 'Sign out',
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
