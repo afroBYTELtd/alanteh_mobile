@@ -3,6 +3,8 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import '../network/ghana_network_resilience.dart';
+
 abstract interface class PassengerFareEstimateRepository {
   Future<PassengerBookingFareEstimate> fetchEstimate(double tripKilometres);
 }
@@ -158,14 +160,14 @@ final class ApiPassengerFareEstimateRepository
 
     return ApiPassengerFareEstimateRepository(
       AsmPassengerFareEstimateApiGateway(
-        AsmApiClient(
+        GhanaResilientApiClient(
           baseUrl: resolvedBaseUrl,
           tokenProvider: _FareEstimateTokenProvider(resolvedTokenStore),
         ),
       ),
       tokenStore: resolvedTokenStore,
       authService: AuthService.withApiClient(
-        client: AsmApiClient(baseUrl: resolvedBaseUrl),
+        client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
         tokenStore: resolvedTokenStore,
       ),
     );

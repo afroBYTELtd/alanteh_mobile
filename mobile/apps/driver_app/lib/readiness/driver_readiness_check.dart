@@ -1,12 +1,25 @@
 enum DriverReadinessItem {
-  approvedShiftDetails('Shift details'),
-  vehicleExterior('Vehicle outside'),
-  cabinSafety('Inside the car'),
-  batteryStatus('Battery');
+  approvedShiftDetails('Vehicle check'),
+  vehicleExterior('Battery check'),
+  cabinSafety('Phone & app check'),
+  batteryStatus('Safety check');
 
   const DriverReadinessItem(this.label);
 
   final String label;
+
+  String get description {
+    return switch (this) {
+      DriverReadinessItem.approvedShiftDetails =>
+        'Tyres, lights, and body condition',
+      DriverReadinessItem.vehicleExterior =>
+        'Charge level and secure connections',
+      DriverReadinessItem.cabinSafety =>
+        'App updated and location access enabled',
+      DriverReadinessItem.batteryStatus =>
+        'Seatbelt, first aid kit, and driver badge',
+    };
+  }
 }
 
 final class DriverReadinessCheck {

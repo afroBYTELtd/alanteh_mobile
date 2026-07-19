@@ -1,24 +1,37 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'auth/passenger_otp_verification_screen.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
+import 'network/ghana_network_resilience.dart';
 import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
 
 void main() {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
-  runApp(PassengerApp(configuration: configuration, showLoginShell: true));
+  runApp(
+    PassengerApp(
+      configuration: configuration,
+      showLoginShell: true,
+      showSplash: true,
+      enableNetworkResilience: true,
+    ),
+  );
 }
 
 class PassengerApp extends StatelessWidget {
   const PassengerApp({
     this.configuration = AsmAppConfig.localGhana,
     this.showLoginShell = false,
+    this.showSplash = false,
+    this.enableNetworkResilience = false,
     this.rideRequestSubmitter,
     this.authService,
     this.authTokenStore,
@@ -29,6 +42,8 @@ class PassengerApp extends StatelessWidget {
 
   final AsmAppConfig configuration;
   final bool showLoginShell;
+  final bool showSplash;
+  final bool enableNetworkResilience;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
@@ -71,31 +86,124 @@ class PassengerApp extends StatelessWidget {
           appContext: AuthAppContext.passenger,
         );
 
+    final home = showLoginShell
+        ? PassengerLoginShell(
+            configuration: configuration,
+            authService: resolvedAuthService,
+            authTokenStore: tokenStore,
+            rideRequestSubmitter: resolvedRideRequestSubmitter,
+            rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
+            paymentRatingRepository: resolvedPaymentRatingRepository,
+            fareEstimateRepository: resolvedFareEstimateRepository,
+            localQaEnabled: configuration.localQaEnabled,
+          )
+        : PassengerShell(
+            configuration: configuration,
+            localQaEnabled: configuration.localQaEnabled,
+            rideRequestSubmitter: resolvedRideRequestSubmitter,
+            rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
+            paymentRatingRepository: resolvedPaymentRatingRepository,
+            fareEstimateRepository: resolvedFareEstimateRepository,
+          );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Passenger',
       theme: AsmThemes.passenger,
-      home: showLoginShell
-          ? PassengerLoginShell(
-              configuration: configuration,
-              authService: resolvedAuthService,
-              authTokenStore: tokenStore,
-              rideRequestSubmitter: resolvedRideRequestSubmitter,
-              rideRequestHistoryRepository:
-                  resolvedRideRequestHistoryRepository,
-              paymentRatingRepository: resolvedPaymentRatingRepository,
-              fareEstimateRepository: resolvedFareEstimateRepository,
-              localQaEnabled: configuration.localQaEnabled,
+      builder: enableNetworkResilience
+          ? (context, child) => GhanaNetworkStatusBanner(
+              baseUrl: apiBaseUrl,
+              offlineMessage:
+                  'Poor or no connection. Your screen stays ready while ALANTEH retries safely.',
+              child: child ?? const SizedBox.shrink(),
             )
-          : PassengerShell(
-              configuration: configuration,
-              localQaEnabled: configuration.localQaEnabled,
-              rideRequestSubmitter: resolvedRideRequestSubmitter,
-              rideRequestHistoryRepository:
-                  resolvedRideRequestHistoryRepository,
-              paymentRatingRepository: resolvedPaymentRatingRepository,
-              fareEstimateRepository: resolvedFareEstimateRepository,
+          : null,
+      home: showSplash ? PassengerSplashGate(child: home) : home,
+    );
+  }
+}
+
+class PassengerSplashGate extends StatefulWidget {
+  const PassengerSplashGate({
+    required this.child,
+    this.duration = const Duration(milliseconds: 900),
+    super.key,
+  });
+
+  final Widget child;
+  final Duration duration;
+
+  @override
+  State<PassengerSplashGate> createState() => _PassengerSplashGateState();
+}
+
+class _PassengerSplashGateState extends State<PassengerSplashGate> {
+  Timer? _timer;
+  bool _complete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.duration, () {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _complete = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _complete ? widget.child : const PassengerSplashScreen();
+  }
+}
+
+class PassengerSplashScreen extends StatelessWidget {
+  const PassengerSplashScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: const Key('passenger-splash-screen'),
+      backgroundColor: AsmColors.brandDeepGreen,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AsmSpacing.space24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/brand/alanteh_header_white.png',
+                  key: const Key('passenger-splash-logo'),
+                  width: 220,
+                  fit: BoxFit.contain,
+                  semanticLabel: 'ALANTEH passenger logo',
+                ),
+                const SizedBox(height: AsmSpacing.space24),
+                const Text(
+                  "Ghana's first solar electric ride service",
+                  key: Key('passenger-splash-tagline'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    height: 1.4,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -138,6 +246,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   bool _localQaOpened = false;
   bool _signedIn = false;
+  bool _otpRequired = false;
   bool _isSigningIn = false;
   String? _loginErrorMessage;
 
@@ -222,6 +331,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         (accountType == null || accountType == AuthAccountType.passenger)) {
       setState(() {
         _signedIn = true;
+        _otpRequired = false;
         _isSigningIn = false;
         _loginErrorMessage = null;
       });
@@ -275,13 +385,13 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         final enteredPhoneNumber = _phoneController.text.trim();
         final sessionPhoneNumber =
             _phoneNumberFromSession(state.session) ?? enteredPhoneNumber;
-        _phoneController.clear();
         _pinController.clear();
         setState(() {
           _passengerPhoneNumber = sessionPhoneNumber.isEmpty
               ? null
               : sessionPhoneNumber;
-          _signedIn = true;
+          _signedIn = false;
+          _otpRequired = true;
           _isSigningIn = false;
           _loginErrorMessage = null;
         });
@@ -316,6 +426,41 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     }
   }
 
+  void _completeOtpVerification() {
+    if (!_otpRequired) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _phoneController.clear();
+    _pinController.clear();
+
+    setState(() {
+      _otpRequired = false;
+      _signedIn = true;
+      _isSigningIn = false;
+      _loginErrorMessage = null;
+    });
+  }
+
+  Future<void> _useAnotherPhoneNumber() async {
+    await _tokenStore.clearTokens();
+
+    if (!mounted) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _pinController.clear();
+
+    setState(() {
+      _otpRequired = false;
+      _signedIn = false;
+      _isSigningIn = false;
+      _loginErrorMessage = null;
+    });
+  }
+
   void _clearForm() {
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
@@ -336,6 +481,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = true;
       _signedIn = false;
+      _otpRequired = false;
       _passengerPhoneNumber = null;
       _loginErrorMessage = null;
     });
@@ -350,6 +496,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = false;
       _signedIn = false;
+      _otpRequired = false;
       _passengerPhoneNumber = null;
       _isSigningIn = false;
       _loginErrorMessage =
@@ -370,6 +517,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _localQaOpened = false;
       _signedIn = false;
+      _otpRequired = false;
       _passengerPhoneNumber = null;
       _isSigningIn = false;
       _loginErrorMessage = null;
@@ -454,6 +602,14 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_otpRequired) {
+      return PassengerOtpVerificationScreen(
+        phoneNumber: _passengerPhoneNumber ?? _phoneController.text.trim(),
+        onVerified: _completeOtpVerification,
+        onUseAnotherNumber: _useAnotherPhoneNumber,
+      );
+    }
+
     if (_localQaOpened || _signedIn) {
       return PassengerShell(
         configuration: widget.configuration,
@@ -693,7 +849,7 @@ AuthService _authServiceFor({
   }
 
   return AuthService.withApiClient(
-    client: AsmApiClient(baseUrl: baseUrl!),
+    client: GhanaResilientApiClient(baseUrl: baseUrl!),
     tokenStore: tokenStore,
     appContext: appContext,
   );

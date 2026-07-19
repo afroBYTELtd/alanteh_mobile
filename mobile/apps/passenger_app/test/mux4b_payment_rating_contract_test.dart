@@ -397,6 +397,7 @@ void main() {
 
       final submitFinder = find.byKey(const Key('submit-rating'));
       await tester.ensureVisible(submitFinder);
+      await tester.pumpAndSettle();
       await tester.tap(submitFinder);
       await tester.pumpAndSettle();
 

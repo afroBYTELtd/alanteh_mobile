@@ -4,6 +4,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../account/passenger_payment_setup_screen.dart';
 import '../map/passenger_map.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
@@ -16,6 +17,8 @@ class RideTrackingScreen extends StatefulWidget {
     this.initialRecord,
     this.pollInterval = const Duration(seconds: 10),
     this.paymentRatingRepository,
+    this.phoneNumber,
+    this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.onSignInRequired,
     super.key,
   });
@@ -25,6 +28,8 @@ class RideTrackingScreen extends StatefulWidget {
   final PassengerRideRequestRecord? initialRecord;
   final Duration pollInterval;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final String? phoneNumber;
+  final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final VoidCallback? onSignInRequired;
 
   @override
@@ -115,6 +120,11 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         builder: (_) => PassengerPaymentRatingPage(
           repository: repository,
           requestReference: widget.requestReference,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: widget.initialPaymentNetwork,
+          pickupDescription: _record?.pickupLocation,
+          destinationDescription: _record?.destination,
+          tripCompletedAt: _record?.updatedAt,
           onSignInRequired: widget.onSignInRequired,
         ),
       ),
@@ -176,6 +186,17 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
     final record = _record!;
     final view = _TrackingView.from(record);
+
+    if (view.rejected) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Ride request')),
+        body: PassengerNoVehiclesAvailableState(
+          onRetry: () => Navigator.of(context).maybePop(),
+          onContactSupport: () {},
+        ),
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -318,6 +339,83 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class PassengerNoVehiclesAvailableState extends StatelessWidget {
+  const PassengerNoVehiclesAvailableState({
+    required this.onRetry,
+    required this.onContactSupport,
+    super.key,
+  });
+
+  final VoidCallback onRetry;
+  final VoidCallback onContactSupport;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: const Key('request-rejected-state'),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AsmSpacing.space24),
+          child: Container(
+            key: const Key('passenger-no-vehicles-state'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(AsmSpacing.space24),
+            decoration: BoxDecoration(
+              color: AsmColors.passengerCard,
+              borderRadius: BorderRadius.circular(AsmRadii.radius28),
+              border: Border.all(color: AsmColors.passengerLine),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.directions_car_filled_outlined,
+                  size: 58,
+                  color: AsmColors.brandDeepGreen,
+                ),
+                const SizedBox(height: AsmSpacing.space16),
+                const Text(
+                  'No vehicles available right now',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    height: 1.15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space12),
+                const Text(
+                  'All ALANTEH vehicles nearby are currently in use. '
+                  'Please try again shortly, or request for a later time.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(height: 1.45),
+                ),
+                const SizedBox(height: AsmSpacing.space24),
+                FilledButton.icon(
+                  key: const Key('rejected-book-again'),
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try again'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                TextButton.icon(
+                  key: const Key('rejected-contact-support'),
+                  onPressed: onContactSupport,
+                  icon: const Icon(Icons.support_agent_outlined),
+                  label: const Text('Contact support'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -484,7 +582,7 @@ class _TrackingView {
       case PassengerRideState.rejected:
         return _TrackingView(
           key: 'request-rejected-state',
-          title: "We couldn't find a driver.",
+          title: 'No vehicles available right now',
           message: message,
           icon: Icons.no_transfer_outlined,
           color: Colors.redAccent,

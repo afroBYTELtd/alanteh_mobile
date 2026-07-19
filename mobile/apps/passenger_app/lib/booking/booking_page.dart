@@ -3,6 +3,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 
+import '../account/passenger_payment_setup_screen.dart';
 import '../map/osrm_route.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import 'booking_draft.dart';
@@ -24,6 +25,8 @@ class BookingPage extends StatefulWidget {
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
     this.fareEstimateRepository,
+    this.phoneNumber,
+    this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.routeService = const OsrmPassengerRouteService(),
     super.key,
   });
@@ -37,6 +40,8 @@ class BookingPage extends StatefulWidget {
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
+  final String? phoneNumber;
+  final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final PassengerRouteService routeService;
 
   @override
@@ -230,6 +235,8 @@ class _BookingPageState extends State<BookingPage> {
               repository: repository,
               requestReference: reference,
               paymentRatingRepository: widget.paymentRatingRepository,
+              phoneNumber: widget.phoneNumber,
+              initialPaymentNetwork: widget.initialPaymentNetwork,
               onSignInRequired: widget.onSignInRequired,
             ),
           ),

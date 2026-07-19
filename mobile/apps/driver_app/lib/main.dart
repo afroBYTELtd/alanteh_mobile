@@ -6,18 +6,29 @@ import 'package:flutter/material.dart';
 
 import 'driver_duty_trips.dart';
 import 'driver_shell.dart';
+import 'foundation/driver_foundation_widgets.dart';
+import 'network/ghana_network_resilience.dart';
 
 export 'driver_shell.dart';
 
 void main() {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
-  runApp(DriverApp(configuration: configuration, showLoginShell: true));
+  runApp(
+    DriverApp(
+      configuration: configuration,
+      showLoginShell: true,
+      showSplash: true,
+      enableNetworkResilience: true,
+    ),
+  );
 }
 
 class DriverApp extends StatelessWidget {
   const DriverApp({
     this.configuration = AsmAppConfig.localGhana,
     this.showLoginShell = false,
+    this.showSplash = false,
+    this.enableNetworkResilience = false,
     this.authService,
     this.authTokenStore,
     this.driverDutyGateway,
@@ -26,6 +37,8 @@ class DriverApp extends StatelessWidget {
 
   final AsmAppConfig configuration;
   final bool showLoginShell;
+  final bool showSplash;
+  final bool enableNetworkResilience;
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final DriverDutyGateway? driverDutyGateway;
@@ -51,23 +64,33 @@ class DriverApp extends StatelessWidget {
             ? _driverDutyGatewayFor(baseUrl: apiBaseUrl, tokenStore: tokenStore)
             : null);
 
+    final home = showLoginShell
+        ? DriverLoginShell(
+            configuration: configuration,
+            authService: service,
+            authTokenStore: tokenStore,
+            localQaEnabled: configuration.localQaEnabled,
+            driverDutyGateway: dutyGateway,
+          )
+        : DriverShell(
+            configuration: configuration,
+            localQaEnabled: configuration.localQaEnabled,
+            driverDutyGateway: dutyGateway,
+          );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Driver',
       theme: AsmThemes.driver,
-      home: showLoginShell
-          ? DriverLoginShell(
-              configuration: configuration,
-              authService: service,
-              authTokenStore: tokenStore,
-              localQaEnabled: configuration.localQaEnabled,
-              driverDutyGateway: dutyGateway,
+      builder: enableNetworkResilience
+          ? (context, child) => GhanaNetworkStatusBanner(
+              baseUrl: apiBaseUrl,
+              offlineMessage:
+                  'Poor or no connection. Driver data stays visible and safe retries remain bounded.',
+              child: child ?? const SizedBox.shrink(),
             )
-          : DriverShell(
-              configuration: configuration,
-              localQaEnabled: configuration.localQaEnabled,
-              driverDutyGateway: dutyGateway,
-            ),
+          : null,
+      home: showSplash ? DriverSplashGate(child: home) : home,
     );
   }
 }
@@ -357,7 +380,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                     ),
                     const SizedBox(height: AsmSpacing.space20),
                     const Text(
-                      'Driver access',
+                      'Driver sign in',
+                      key: Key('driver-sign-in-title'),
                       style: TextStyle(
                         fontSize: 34,
                         fontWeight: FontWeight.w900,
@@ -366,7 +390,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                     ),
                     const SizedBox(height: 14),
                     const Text(
-                      'Enter your phone number and PIN to continue.',
+                      'Enter your phone number and PIN to start your shift.',
                       style: TextStyle(
                         color: AsmColors.driverTextSecondary,
                         height: 1.45,
@@ -411,6 +435,24 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                       label: _isSigningIn ? 'Signing in...' : 'Sign in',
                     ),
                     const SizedBox(height: AsmSpacing.space8),
+                    Align(
+                      alignment: Alignment.center,
+                      child: TextButton(
+                        key: const Key('driver-forgot-pin'),
+                        onPressed: _isSigningIn
+                            ? null
+                            : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Contact ALANTEH operations to reset your PIN.',
+                                    ),
+                                  ),
+                                );
+                              },
+                        child: const Text('Forgot your PIN?'),
+                      ),
+                    ),
                     if (widget.localQaEnabled) ...[
                       AsmPrimaryActionButton(
                         key: const Key('driver-continue-local-demo'),
@@ -536,7 +578,7 @@ AuthService _authServiceFor({
   }
 
   return AuthService.withApiClient(
-    client: AsmApiClient(baseUrl: baseUrl!),
+    client: GhanaResilientApiClient(baseUrl: baseUrl!),
     tokenStore: tokenStore,
     appContext: appContext,
   );
@@ -551,7 +593,7 @@ DriverDutyGateway? _driverDutyGatewayFor({
   }
 
   return AsmDriverDutyGateway(
-    AsmApiClient(
+    GhanaResilientApiClient(
       baseUrl: baseUrl!,
       tokenProvider: _StoredAccessTokenProvider(tokenStore),
     ),

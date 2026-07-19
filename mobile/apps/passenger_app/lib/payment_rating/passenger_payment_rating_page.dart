@@ -1,7 +1,12 @@
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import '../account/passenger_payment_setup_screen.dart';
+import 'passenger_local_rating_store.dart';
+import 'passenger_mobile_money_flow.dart';
 import 'passenger_payment_rating_contract.dart';
+import 'passenger_post_trip_flow.dart';
 
 class PassengerPaymentRatingPage extends StatefulWidget {
   const PassengerPaymentRatingPage({
@@ -9,6 +14,13 @@ class PassengerPaymentRatingPage extends StatefulWidget {
     required this.requestReference,
     this.onSignInRequired,
     this.idempotencyKeyFactory,
+    this.phoneNumber,
+    this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
+    this.pickupDescription,
+    this.destinationDescription,
+    this.tripCompletedAt,
+    this.localRatingStore,
+    this.onBackToHome,
     super.key,
   });
 
@@ -16,6 +28,13 @@ class PassengerPaymentRatingPage extends StatefulWidget {
   final String requestReference;
   final VoidCallback? onSignInRequired;
   final String Function()? idempotencyKeyFactory;
+  final String? phoneNumber;
+  final PassengerMobileMoneyNetwork initialPaymentNetwork;
+  final String? pickupDescription;
+  final String? destinationDescription;
+  final DateTime? tripCompletedAt;
+  final PassengerLocalRatingStore? localRatingStore;
+  final VoidCallback? onBackToHome;
 
   @override
   State<PassengerPaymentRatingPage> createState() =>
@@ -30,14 +49,19 @@ class _PassengerPaymentRatingPageState
   bool _paymentBusy = false;
   bool _ratingBusy = false;
   bool _receiptUnavailable = false;
+  bool _ratingEntryOpen = false;
 
   PassengerFareSnapshot? _fare;
   PassengerPaymentSnapshot? _payment;
   PassengerPaymentReceiptSnapshot? _receipt;
   PassengerRatingSnapshot? _rating;
+  PassengerLocalRatingRecord? _localRating;
   PassengerPaymentRatingException? _pageError;
   String? _actionError;
   String? _paymentIdempotencyKey;
+
+  late PassengerMobileMoneyNetwork _selectedPaymentNetwork;
+  late PassengerLocalRatingStore _localRatingStore;
 
   int? _overallScore;
   int? _comfortScore;
@@ -47,6 +71,10 @@ class _PassengerPaymentRatingPageState
   @override
   void initState() {
     super.initState();
+    _selectedPaymentNetwork = widget.initialPaymentNetwork;
+    _localRatingStore =
+        widget.localRatingStore ?? PassengerSessionRatingStore.instance;
+    _localRating = _localRatingStore.read(widget.requestReference);
     _load();
   }
 
@@ -78,9 +106,9 @@ class _PassengerPaymentRatingPageState
       var receiptUnavailable = false;
 
       if (payment.isConfirmed) {
-        final receiptResult = await _fetchReceipt();
-        receipt = receiptResult.receipt;
-        receiptUnavailable = receiptResult.unavailable;
+        final result = await _fetchReceipt();
+        receipt = result.receipt;
+        receiptUnavailable = result.unavailable;
       }
 
       if (!mounted) {
@@ -94,7 +122,7 @@ class _PassengerPaymentRatingPageState
         _rating = rating;
         _receipt = receipt;
         _receiptUnavailable = receiptUnavailable;
-        _pageError = null;
+        _localRating = _localRatingStore.read(widget.requestReference);
       });
     } on PassengerPaymentRatingException catch (error) {
       if (!mounted) {
@@ -105,6 +133,10 @@ class _PassengerPaymentRatingPageState
         _loading = false;
         _pageError = error;
       });
+
+      if (error.requiresSignIn) {
+        widget.onSignInRequired?.call();
+      }
     } on Object {
       if (!mounted) {
         return;
@@ -126,7 +158,7 @@ class _PassengerPaymentRatingPageState
 
       return (receipt: receipt, unavailable: !receipt.isAvailable);
     } on PassengerPaymentRatingException catch (error) {
-      if (error.statusCode == 404 || error.statusCode == 409) {
+      if (error.statusCode == 404) {
         return (receipt: null, unavailable: true);
       }
 
@@ -219,14 +251,17 @@ class _PassengerPaymentRatingPageState
     });
 
     try {
-      final result = await widget.repository.fetchPayment(
+      final payment = await widget.repository.fetchPayment(
+        widget.requestReference,
+      );
+      final rating = await widget.repository.fetchRating(
         widget.requestReference,
       );
 
       PassengerPaymentReceiptSnapshot? receipt;
       var receiptUnavailable = false;
 
-      if (result.isConfirmed) {
+      if (payment.isConfirmed) {
         final receiptResult = await _fetchReceipt();
         receipt = receiptResult.receipt;
         receiptUnavailable = receiptResult.unavailable;
@@ -238,7 +273,8 @@ class _PassengerPaymentRatingPageState
 
       setState(() {
         _paymentBusy = false;
-        _payment = result;
+        _payment = payment;
+        _rating = rating;
         _receipt = receipt;
         _receiptUnavailable = receiptUnavailable;
       });
@@ -267,31 +303,42 @@ class _PassengerPaymentRatingPageState
     }
   }
 
+  void _cancelPaymentView() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() {
+      _actionError = 'Payment request cancelled. No charge was made.';
+    });
+  }
+
   Future<void> _submitRating() async {
+    final overall = _overallScore;
+    final comfort = _comfortScore;
+    final conduct = _conductScore;
+    final cleanliness = _cleanlinessScore;
+
     if (_ratingBusy) {
       return;
     }
 
-    final overallScore = _overallScore;
-    final comfortScore = _comfortScore;
-    final conductScore = _conductScore;
-    final cleanlinessScore = _cleanlinessScore;
-
-    if (overallScore == null ||
-        comfortScore == null ||
-        conductScore == null ||
-        cleanlinessScore == null) {
+    if (overall == null ||
+        comfort == null ||
+        conduct == null ||
+        cleanliness == null) {
       setState(() {
-        _actionError = 'Choose all four ratings before submitting.';
+        _actionError = 'Choose a score from 1 to 5 for every rating category.';
       });
       return;
     }
 
     final submission = PassengerRatingSubmission(
-      overallScore: overallScore,
-      comfortScore: comfortScore,
-      conductScore: conductScore,
-      cleanlinessScore: cleanlinessScore,
+      overallScore: overall,
+      comfortScore: comfort,
+      conductScore: conduct,
+      cleanlinessScore: cleanliness,
       feedbackNote: _feedbackController.text,
     );
 
@@ -312,7 +359,9 @@ class _PassengerPaymentRatingPageState
 
       setState(() {
         _ratingBusy = false;
+        _ratingEntryOpen = false;
         _rating = result;
+        _localRating = null;
       });
     } on PassengerPaymentRatingException catch (error) {
       if (error.statusCode == 409) {
@@ -327,12 +376,40 @@ class _PassengerPaymentRatingPageState
 
           setState(() {
             _ratingBusy = false;
+            _ratingEntryOpen = false;
             _rating = storedRating;
           });
           return;
         } on Object {
-          // The safe backend error state below remains authoritative.
+          // The accepted service state below remains authoritative.
         }
+      }
+
+      if (error.message == AsmApiClient.connectionNotConfiguredMessage) {
+        final record = PassengerLocalRatingRecord(
+          requestReference: widget.requestReference,
+          overallScore: overall,
+          comfortScore: comfort,
+          conductScore: conduct,
+          cleanlinessScore: cleanliness,
+          feedbackNote: submission.feedbackNote,
+          savedAt: DateTime.now(),
+        );
+
+        // Future connection point: retry this session-side rating through the
+        // accepted rating repository when queued submission support is added.
+        _localRatingStore.save(record);
+
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _ratingBusy = false;
+          _ratingEntryOpen = false;
+          _localRating = record;
+        });
+        return;
       }
 
       if (!mounted) {
@@ -359,10 +436,23 @@ class _PassengerPaymentRatingPageState
     }
   }
 
+  void _backToHome() {
+    final callback = widget.onBackToHome;
+
+    if (callback != null) {
+      callback();
+      return;
+    }
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Payment and rating')),
+      appBar: AppBar(
+        title: Text(_ratingEntryOpen ? 'Rate your trip' : 'Payment and rating'),
+      ),
       body: _buildBody(),
     );
   }
@@ -395,17 +485,22 @@ class _PassengerPaymentRatingPageState
 
     return ListView(
       key: const Key('payment-rating-loaded'),
-      padding: const EdgeInsets.all(AsmSpacing.space16),
+      padding: const EdgeInsets.fromLTRB(
+        AsmSpacing.space16,
+        AsmSpacing.space16,
+        AsmSpacing.space16,
+        AsmSpacing.space32,
+      ),
       children: [
         _FarePanel(fare: fare),
         const SizedBox(height: AsmSpacing.space12),
         _buildPaymentPanel(fare, payment),
         if (payment.isConfirmed) ...[
           const SizedBox(height: AsmSpacing.space12),
-          _ReceiptPanel(receipt: _receipt, unavailable: _receiptUnavailable),
+          _buildReceiptPanel(fare, payment, rating),
         ],
         const SizedBox(height: AsmSpacing.space12),
-        _buildRatingPanel(rating),
+        _buildRatingPanel(rating, payment),
         if (_actionError != null) ...[
           const SizedBox(height: AsmSpacing.space12),
           _ActionError(message: _actionError!),
@@ -418,115 +513,79 @@ class _PassengerPaymentRatingPageState
     PassengerFareSnapshot fare,
     PassengerPaymentSnapshot payment,
   ) {
-    if (payment.isConfirmed) {
-      return _StatePanel(
-        key: const Key('payment-confirmed-state'),
-        icon: Icons.verified_outlined,
-        title: 'Payment confirmed',
-        message:
-            _safeBackendMessage(payment.message) ??
-            'ALANTEH confirmed this payment.',
-      );
-    }
-
-    if (payment.isPending) {
-      return _StatePanel(
-        key: const Key('payment-pending-state'),
-        icon: Icons.schedule_outlined,
-        title: 'Payment pending',
-        message:
-            _safeBackendMessage(payment.message) ??
-            'Waiting for confirmation from ALANTEH.',
-        action: FilledButton.icon(
-          key: const Key('refresh-payment-status'),
-          onPressed: _paymentBusy ? null : _refreshPayment,
-          icon: const Icon(Icons.refresh),
-          label: Text(_paymentBusy ? 'Checking...' : 'Check status'),
-        ),
-      );
-    }
-
-    if (payment.isFailed) {
-      return _StatePanel(
-        key: const Key('payment-failed-state'),
-        icon: Icons.error_outline,
-        title: _paymentFailureTitle(payment.normalizedPaymentStatus),
-        message:
-            _safeBackendMessage(payment.message) ??
-            'The payment was not confirmed.',
-        action: payment.canRetry && payment.canPay && fare.canPay
-            ? FilledButton.icon(
-                key: const Key('retry-payment'),
-                onPressed: _paymentBusy ? null : _initiatePayment,
-                icon: const Icon(Icons.refresh),
-                label: Text(
-                  _paymentBusy ? 'Trying again...' : 'Try payment again',
-                ),
-              )
-            : null,
-      );
-    }
-
-    if (fare.isNotReady ||
-        !fare.hasAuthoritativeAmount ||
-        !fare.canPay ||
-        !payment.canPay) {
-      return _StatePanel(
-        key: const Key('payment-not-available-state'),
-        icon: Icons.payments_outlined,
-        title: fare.isNotReady ? 'Fare not ready yet' : 'Payment not available',
-        message:
-            _safeBackendMessage(payment.message) ??
-            _safeBackendMessage(fare.message) ??
-            'Please check again later.',
-      );
-    }
-
-    final methodLabel = payment.paymentMethodLabel?.trim().isNotEmpty == true
-        ? payment.paymentMethodLabel!.trim()
-        : 'Mobile money';
-
-    return Card(
-      key: const Key('payment-prompt-state'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.phone_android_outlined),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              'Pay with $methodLabel',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              fare.formattedAmount!,
-              key: const Key('backend-fare-amount'),
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: AsmSpacing.space8),
-            const Text('ALANTEH will use the confirmed fare shown above.'),
-            const SizedBox(height: AsmSpacing.space16),
-            FilledButton.icon(
-              key: const Key('initiate-payment'),
-              onPressed: _paymentBusy ? null : _initiatePayment,
-              icon: const Icon(Icons.lock_outline),
-              label: Text(
-                _paymentBusy
-                    ? 'Starting payment...'
-                    : 'Continue with $methodLabel',
-              ),
-            ),
-          ],
-        ),
-      ),
+    // Future connection point: include the selected network and saved number
+    // when the accepted payment contract supports those request fields.
+    return PassengerMobileMoneyFlow(
+      fare: fare,
+      payment: payment,
+      selectedNetwork: _selectedPaymentNetwork,
+      phoneNumber: widget.phoneNumber,
+      busy: _paymentBusy,
+      onNetworkChanged: (network) {
+        setState(() => _selectedPaymentNetwork = network);
+      },
+      onRequestPayment: _initiatePayment,
+      onRefreshPayment: _refreshPayment,
+      onResend: _initiatePayment,
+      onCancel: _cancelPaymentView,
     );
   }
 
-  Widget _buildRatingPanel(PassengerRatingSnapshot rating) {
-    if (rating.isSubmitted && rating.hasStoredScores) {
-      return _SubmittedRatingPanel(rating: rating);
+  Widget _buildReceiptPanel(
+    PassengerFareSnapshot fare,
+    PassengerPaymentSnapshot payment,
+    PassengerRatingSnapshot rating,
+  ) {
+    final receipt = _receipt;
+
+    if (_receiptUnavailable || receipt == null || !receipt.isAvailable) {
+      return const _StatePanel(
+        key: Key('receipt-not-available-state'),
+        icon: Icons.receipt_long_outlined,
+        title: 'Receipt not available',
+        message: 'ALANTEH has not provided a receipt for this payment.',
+      );
+    }
+
+    final ratingAlreadySubmitted = _localRating != null || rating.isSubmitted;
+
+    return PassengerPostTripReceipt(
+      fare: fare,
+      payment: payment,
+      receipt: receipt,
+      requestReference: widget.requestReference,
+      pickupDescription: widget.pickupDescription,
+      destinationDescription: widget.destinationDescription,
+      tripCompletedAt: widget.tripCompletedAt,
+      onRateRide: rating.isOpen && !ratingAlreadySubmitted
+          ? () {
+              setState(() {
+                _ratingEntryOpen = true;
+                _actionError = null;
+              });
+            }
+          : null,
+    );
+  }
+
+  Widget _buildRatingPanel(
+    PassengerRatingSnapshot rating,
+    PassengerPaymentSnapshot payment,
+  ) {
+    final localRating = _localRating;
+
+    if (localRating != null) {
+      return PassengerRatingThanks(
+        localRating: localRating,
+        onBackToHome: _backToHome,
+      );
+    }
+
+    if (rating.isSubmitted) {
+      return PassengerRatingThanks(
+        backendRating: rating,
+        onBackToHome: _backToHome,
+      );
     }
 
     if (!rating.isOpen) {
@@ -540,67 +599,38 @@ class _PassengerPaymentRatingPageState
       );
     }
 
-    return Card(
-      key: const Key('rating-open-state'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Rate your ride',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: AsmSpacing.space12),
-            _ScorePicker(
-              label: 'Overall',
-              value: _overallScore,
-              onChanged: (value) {
-                setState(() => _overallScore = value);
-              },
-            ),
-            _ScorePicker(
-              label: 'Comfort',
-              value: _comfortScore,
-              onChanged: (value) {
-                setState(() => _comfortScore = value);
-              },
-            ),
-            _ScorePicker(
-              label: 'Driver conduct',
-              value: _conductScore,
-              onChanged: (value) {
-                setState(() => _conductScore = value);
-              },
-            ),
-            _ScorePicker(
-              label: 'Cleanliness',
-              value: _cleanlinessScore,
-              onChanged: (value) {
-                setState(() => _cleanlinessScore = value);
-              },
-            ),
-            const SizedBox(height: AsmSpacing.space12),
-            TextField(
-              key: const Key('rating-feedback-note'),
-              controller: _feedbackController,
-              maxLength: 240,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Feedback (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: AsmSpacing.space12),
-            FilledButton.icon(
-              key: const Key('submit-rating'),
-              onPressed: _ratingBusy ? null : _submitRating,
-              icon: const Icon(Icons.star_outline),
-              label: Text(_ratingBusy ? 'Submitting...' : 'Submit rating'),
-            ),
-          ],
-        ),
-      ),
+    final hasReceiptEntryPoint =
+        payment.isConfirmed &&
+        _receipt != null &&
+        _receipt!.isAvailable &&
+        !_receiptUnavailable;
+
+    if (hasReceiptEntryPoint && !_ratingEntryOpen) {
+      return const SizedBox.shrink();
+    }
+
+    return PassengerRideRatingForm(
+      overallScore: _overallScore,
+      comfortScore: _comfortScore,
+      conductScore: _conductScore,
+      cleanlinessScore: _cleanlinessScore,
+      feedbackController: _feedbackController,
+      busy: _ratingBusy,
+      pickupDescription: widget.pickupDescription,
+      destinationDescription: widget.destinationDescription,
+      onOverallChanged: (value) {
+        setState(() => _overallScore = value);
+      },
+      onComfortChanged: (value) {
+        setState(() => _comfortScore = value);
+      },
+      onConductChanged: (value) {
+        setState(() => _conductScore = value);
+      },
+      onCleanlinessChanged: (value) {
+        setState(() => _cleanlinessScore = value);
+      },
+      onSubmit: _submitRating,
     );
   }
 }
@@ -612,155 +642,35 @@ class _FarePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       key: const Key('fare-state'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Fare', style: TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              fare.formattedAmount ?? 'Not available',
-              key: const Key('fare-display'),
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-            ),
-            if (!fare.hasAuthoritativeAmount) ...[
-              const SizedBox(height: AsmSpacing.space8),
-              Text(
-                _safeBackendMessage(fare.message) ??
-                    'The final fare is not ready yet.',
-              ),
-            ],
-          ],
-        ),
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: AsmColors.passengerCard,
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+        border: Border.all(color: AsmColors.passengerLine),
       ),
-    );
-  }
-}
-
-class _ReceiptPanel extends StatelessWidget {
-  const _ReceiptPanel({required this.receipt, required this.unavailable});
-
-  final PassengerPaymentReceiptSnapshot? receipt;
-  final bool unavailable;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = receipt;
-
-    if (unavailable || value == null || !value.isAvailable) {
-      return const _StatePanel(
-        key: Key('receipt-not-available-state'),
-        icon: Icons.receipt_long_outlined,
-        title: 'Receipt not available',
-        message: 'ALANTEH has not provided a receipt for this payment.',
-      );
-    }
-
-    return Card(
-      key: const Key('payment-receipt-state'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Payment receipt',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            if (value.formattedAmount != null)
-              _ReceiptRow(label: 'Amount', value: value.formattedAmount!),
-            if (value.paymentMethodLabel != null)
-              _ReceiptRow(label: 'Method', value: value.paymentMethodLabel!),
-            if (value.paymentProvider != null)
-              _ReceiptRow(label: 'Provider', value: value.paymentProvider!),
-            if (value.paymentReference != null)
-              _ReceiptRow(label: 'Reference', value: value.paymentReference!),
-            if (value.updatedAt != null)
-              _ReceiptRow(
-                label: 'Confirmed',
-                value: _formatDateTime(value.updatedAt!),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SubmittedRatingPanel extends StatelessWidget {
-  const _SubmittedRatingPanel({required this.rating});
-
-  final PassengerRatingSnapshot rating;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      key: const Key('rating-submitted-state'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Your rating',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            _ReceiptRow(label: 'Overall', value: '${rating.overallScore}/5'),
-            _ReceiptRow(label: 'Comfort', value: '${rating.comfortScore}/5'),
-            _ReceiptRow(
-              label: 'Driver conduct',
-              value: '${rating.conductScore}/5',
-            ),
-            _ReceiptRow(
-              label: 'Cleanliness',
-              value: '${rating.cleanlinessScore}/5',
-            ),
-            if (rating.feedbackNote != null)
-              _ReceiptRow(label: 'Feedback', value: rating.feedbackNote!),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ScorePicker extends StatelessWidget {
-  const _ScorePicker({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final int? value;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AsmSpacing.space12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const Text('Fare', style: TextStyle(fontWeight: FontWeight.w900)),
           const SizedBox(height: AsmSpacing.space8),
-          Wrap(
-            spacing: AsmSpacing.space8,
-            children: [
-              for (var score = 1; score <= 5; score += 1)
-                ChoiceChip(
-                  key: Key(
-                    'rating-${label.toLowerCase().replaceAll(' ', '-')}-$score',
-                  ),
-                  label: Text('$score'),
-                  selected: value == score,
-                  onSelected: (_) => onChanged(score),
-                ),
-            ],
+          Text(
+            fare.formattedAmount ?? 'Not available',
+            key: const Key('fare-display'),
+            style: const TextStyle(
+              color: AsmColors.brandDeepGreen,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
           ),
+          if (!fare.hasAuthoritativeAmount) ...[
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              _safeBackendMessage(fare.message) ??
+                  'The final fare is not ready yet.',
+            ),
+          ],
         ],
       ),
     );
@@ -773,64 +683,36 @@ class _StatePanel extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.message,
-    this.action,
   });
 
   final IconData icon;
   final String title;
   final String message;
-  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(message),
-            if (action != null) ...[
-              const SizedBox(height: AsmSpacing.space16),
-              action!,
-            ],
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(AsmSpacing.space20),
+      decoration: BoxDecoration(
+        color: AsmColors.passengerCard,
+        borderRadius: BorderRadius.circular(AsmRadii.radius20),
+        border: Border.all(color: AsmColors.passengerLine),
       ),
-    );
-  }
-}
-
-class _ReceiptRow extends StatelessWidget {
-  const _ReceiptRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: AsmSpacing.space12),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 110,
-            child: Text(label, style: Theme.of(context).textTheme.labelMedium),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+          Icon(icon, size: 38),
+          const SizedBox(height: AsmSpacing.space12),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF171B12),
+              fontSize: 21,
+              fontWeight: FontWeight.w900,
             ),
           ),
+          const SizedBox(height: AsmSpacing.space8),
+          Text(message),
         ],
       ),
     );
@@ -844,12 +726,15 @@ class _ActionError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       key: const Key('payment-rating-action-error'),
-      child: Padding(
-        padding: const EdgeInsets.all(AsmSpacing.space16),
-        child: Text(message),
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3F0),
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+        border: Border.all(color: const Color(0xFFE7B8AF)),
       ),
+      child: Text(message),
     );
   }
 }
@@ -893,7 +778,11 @@ class _PageErrorState extends StatelessWidget {
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: AsmSpacing.space8),
-            Text(error.message, textAlign: TextAlign.center),
+            Text(
+              _safeBackendMessage(error.message) ??
+                  PassengerPaymentRatingException.unknownMessage,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: AsmSpacing.space16),
             if (error.requiresSignIn && onSignInRequired != null)
               FilledButton(
@@ -924,21 +813,10 @@ class _UnavailableState extends StatelessWidget {
       key: Key('payment-rating-unavailable'),
       child: Padding(
         padding: EdgeInsets.all(AsmSpacing.space24),
-        child: Text(
-          'Payment and rating details are not available.',
-          textAlign: TextAlign.center,
-        ),
+        child: Text('Payment and rating details are not available.'),
       ),
     );
   }
-}
-
-String _paymentFailureTitle(String status) {
-  return switch (status) {
-    'expired' => 'Payment expired',
-    'cancelled' || 'canceled' => 'Payment cancelled',
-    _ => 'Payment failed',
-  };
 }
 
 String? _safeBackendMessage(String? value) {
@@ -960,18 +838,4 @@ String? _safeBackendMessage(String? value) {
   }
 
   return normalized;
-}
-
-String _formatDateTime(DateTime value) {
-  final local = value.toLocal();
-
-  String twoDigits(int number) {
-    return number.toString().padLeft(2, '0');
-  }
-
-  return '${local.year}-'
-      '${twoDigits(local.month)}-'
-      '${twoDigits(local.day)} '
-      '${twoDigits(local.hour)}:'
-      '${twoDigits(local.minute)}';
 }

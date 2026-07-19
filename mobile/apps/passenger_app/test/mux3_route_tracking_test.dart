@@ -181,7 +181,7 @@ void main() {
           (
             record: _record(status: 'rejected'),
             key: 'request-rejected-state',
-            title: "We couldn't find a driver.",
+            title: 'No vehicles available right now',
           ),
         ];
 

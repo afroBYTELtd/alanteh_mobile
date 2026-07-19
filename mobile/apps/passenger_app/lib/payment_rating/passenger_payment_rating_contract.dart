@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
+import '../network/ghana_network_resilience.dart';
+
 abstract interface class PassengerPaymentRatingRepository {
   Future<PassengerFareSnapshot> fetchFare(String requestReference);
 
@@ -468,14 +470,14 @@ final class ApiPassengerPaymentRatingRepository
 
     return ApiPassengerPaymentRatingRepository(
       AsmPassengerPaymentRatingApiGateway(
-        AsmApiClient(
+        GhanaResilientApiClient(
           baseUrl: resolvedBaseUrl,
           tokenProvider: _PaymentRatingTokenProvider(resolvedTokenStore),
         ),
       ),
       tokenStore: resolvedTokenStore,
       authService: AuthService.withApiClient(
-        client: AsmApiClient(baseUrl: resolvedBaseUrl),
+        client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
         tokenStore: resolvedTokenStore,
       ),
     );

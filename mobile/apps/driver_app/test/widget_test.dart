@@ -131,9 +131,9 @@ void main() {
     expect(find.text('Phone number'), findsOneWidget);
     expect(find.byKey(const Key('driver-pin-field')), findsOneWidget);
     expect(find.text('PIN'), findsOneWidget);
-    expect(find.text('Driver access'), findsOneWidget);
+    expect(find.text('Driver sign in'), findsOneWidget);
     expect(
-      find.text('Enter your phone number and PIN to continue.'),
+      find.text('Enter your phone number and PIN to start your shift.'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
@@ -285,7 +285,7 @@ void main() {
     expect(await store.readRefreshToken(), isNull);
     expect(find.text('Driver app ready'), findsOneWidget);
     expect(find.text('Local QA: Off shift'), findsNothing);
-    expect(find.text('Local QA driver trip preview'), findsOneWidget);
+    expect(find.text('Preview incoming offer'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
   });
 
@@ -326,8 +326,8 @@ void main() {
       expect(find.text("I'm ready"), findsNothing);
       expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Driver app ready'), findsWidgets);
-      expect(find.text('New trip'), findsNothing);
-      expect(find.text('Local QA driver trip preview'), findsNothing);
+      expect(find.text('New ride offer'), findsNothing);
+      expect(find.text('Preview incoming offer'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
       expect(await store.readAccessToken(), 'driver-access-token');
@@ -382,7 +382,7 @@ void main() {
       expect(find.text('Local QA readiness preview'), findsNothing);
       expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Driver app ready'), findsWidgets);
-      expect(find.text('New trip'), findsNothing);
+      expect(find.text('New ride offer'), findsNothing);
       expect(find.text('Accept'), findsNothing);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsNothing);
       expect(find.text('9876'), findsNothing);
@@ -803,7 +803,7 @@ void main() {
     expect(find.text('Driver app ready'), findsWidgets);
     expect(find.text('Local QA readiness preview'), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
-    expect(find.text('Local QA driver trip preview'), findsOneWidget);
+    expect(find.text('Preview incoming offer'), findsOneWidget);
     expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
@@ -872,7 +872,7 @@ void main() {
 
       expect(find.byKey(const Key('open-readiness')), findsOneWidget);
       expect(find.byKey(const Key('open-concern')), findsOneWidget);
-      expect(find.text('Local QA driver trip preview'), findsOneWidget);
+      expect(find.text('Preview incoming offer'), findsOneWidget);
       expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
 
       await tester.ensureVisible(find.byKey(const Key('open-readiness')));
@@ -891,7 +891,7 @@ void main() {
 
       await _openRideOfferPreview(tester);
       await tester.pumpAndSettle();
-      expect(find.text('New trip'), findsWidgets);
+      expect(find.text('New ride offer'), findsWidgets);
       _expectNoOperationalActions();
     },
   );
@@ -933,7 +933,13 @@ void main() {
     await tester.tap(find.byKey(const Key('readiness-batteryStatus')));
     await tester.pumpAndSettle();
     expect(find.text('4 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Shift check complete'), findsOneWidget);
+    expect(find.text('You’re ready to go online'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('readiness-ready')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
@@ -950,7 +956,7 @@ void main() {
     await tester.tap(find.byKey(const Key('reset-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Shift check complete'), findsNothing);
+    expect(find.text('You’re ready to go online'), findsNothing);
 
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
     await tester.pumpAndSettle();
@@ -964,6 +970,13 @@ void main() {
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('readiness-open-concern')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('readiness-open-concern')), findsOneWidget);
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
@@ -997,6 +1010,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('4 of 4 checks complete'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('readiness-ready')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       expect(
         tester
             .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
@@ -1004,7 +1023,12 @@ void main() {
         isNotNull,
       );
 
-      await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('readiness-ready')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
@@ -1112,80 +1136,102 @@ void main() {
 
     expect(find.text('Shift check'), findsOneWidget);
     expect(find.text('1 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Shift check complete'), findsNothing);
+    expect(find.text('You’re ready to go online'), findsNothing);
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
-  testWidgets('accepts a trip screen decision, closes, and reopens pending', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(
-      const DriverApp(configuration: _localQaEnabledConfig),
-    );
-    await _openDriverLocalDemo(tester);
+  testWidgets(
+    'accepts a ride-offer detail decision, closes, and reopens pending',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      await tester.pumpWidget(
+        const DriverApp(configuration: _localQaEnabledConfig),
+      );
+      await _openDriverLocalDemo(tester);
 
-    expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
-    await _openRideOfferPreview(tester);
-    await tester.pumpAndSettle();
+      expect(find.byKey(const Key('open-ride-offer-preview')), findsOneWidget);
+      await _openRideOfferPreview(tester);
+      await tester.pumpAndSettle();
 
-    _expectPendingRideOffer();
-    await tester.tap(find.byKey(const Key('accept-ride-offer-preview')));
-    await tester.pumpAndSettle();
-    expect(find.text('Accepted'), findsWidgets);
-    expect(find.text('Trip marked accepted on this screen.'), findsOneWidget);
-    expect(find.text('Accept'), findsNothing);
-    expect(find.text('Decline'), findsNothing);
-    _expectNoRideOfferLiveContent();
+      _expectPendingRideOffer();
+      await tester.tap(find.byKey(const Key('view-ride-offer-details')));
+      await tester.pumpAndSettle();
+      _expectRideOfferDetails();
 
-    await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
-    await tester.pumpAndSettle();
-    expect(find.text('Driver app ready'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('accept-ride-offer-preview')));
+      await tester.pumpAndSettle();
 
-    await _openRideOfferPreview(tester);
-    await tester.pumpAndSettle();
-    _expectPendingRideOffer();
-    expect(find.text('Accepted'), findsNothing);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+      expect(find.text('Ride accepted'), findsOneWidget);
+      expect(
+        find.text('Head to Accra Mall to pick up your passenger.'),
+        findsOneWidget,
+      );
+      expect(find.text('Accept'), findsNothing);
+      expect(find.text('Decline'), findsNothing);
+      _expectNoRideOfferLiveContent();
 
-    await tester.tap(find.text('Trips'));
-    await tester.pumpAndSettle();
-    expect(find.text('No assigned trips yet.'), findsOneWidget);
-    expect(
-      find.text('When the Control Center assigns a trip, it will appear here.'),
-      findsOneWidget,
-    );
-    expect(find.text('Accept trip'), findsNothing);
-    expect(find.text('Start trip'), findsNothing);
-    expect(find.text('Complete trip'), findsNothing);
-  });
+      await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
+      await tester.pumpAndSettle();
+      expect(find.text('Driver app ready'), findsOneWidget);
 
-  testWidgets('declines a trip screen decision and returns to Driver Home', (
-    tester,
-  ) async {
-    _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(
-      const DriverApp(configuration: _localQaEnabledConfig),
-    );
-    await _openDriverLocalDemo(tester);
+      await _openRideOfferPreview(tester);
+      await tester.pumpAndSettle();
+      _expectPendingRideOffer();
+      expect(find.text('Ride accepted'), findsNothing);
+      final previewContext = tester.element(
+        find.byKey(const Key('driver-ride-offer-page')),
+      );
+      Navigator.of(previewContext).pop();
+      await tester.pumpAndSettle();
 
-    await _openRideOfferPreview(tester);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('decline-ride-offer-preview')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Trips'));
+      await tester.pumpAndSettle();
+      expect(find.text('No assigned trips yet.'), findsOneWidget);
+      expect(
+        find.text(
+          'When the Control Center assigns a trip, it will appear here.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Accept trip'), findsNothing);
+      expect(find.text('Start trip'), findsNothing);
+      expect(find.text('Complete trip'), findsNothing);
+    },
+  );
 
-    expect(find.text('Declined'), findsWidgets);
-    expect(find.text('Trip marked declined on this screen.'), findsOneWidget);
-    expect(find.text('Close'), findsOneWidget);
-    _expectNoRideOfferLiveContent();
+  testWidgets(
+    'declines a ride-offer detail decision and returns to Driver Home',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      await tester.pumpWidget(
+        const DriverApp(configuration: _localQaEnabledConfig),
+      );
+      await _openDriverLocalDemo(tester);
 
-    await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
-    await tester.pumpAndSettle();
-    expect(find.text('Driver app ready'), findsOneWidget);
-    expect(find.byKey(const Key('open-readiness')), findsOneWidget);
-    expect(find.byKey(const Key('open-concern')), findsOneWidget);
-  });
+      await _openRideOfferPreview(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('view-ride-offer-details')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('decline-ride-offer-preview')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Offer declined'), findsOneWidget);
+      expect(
+        find.text("You'll continue receiving new ride offers while online."),
+        findsOneWidget,
+      );
+      expect(find.text('Back to home'), findsOneWidget);
+      _expectNoRideOfferLiveContent();
+
+      await tester.tap(find.byKey(const Key('close-ride-offer-preview')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Driver app ready'), findsOneWidget);
+      expect(find.byKey(const Key('open-readiness')), findsOneWidget);
+      expect(find.byKey(const Key('open-concern')), findsOneWidget);
+    },
+  );
 
   testWidgets('driver screens hide old brand and internal marker wording', (
     tester,
@@ -1225,12 +1271,43 @@ void main() {
       ),
     );
 
-    expect(find.text('New trip'), findsWidgets);
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('decline-ride-offer-preview')),
-      200,
-      scrollable: find.byType(Scrollable).last,
+    expect(find.text('New ride offer'), findsOneWidget);
+
+    final previewScrollable = find.descendant(
+      of: find.byKey(const Key('driver-ride-offer-page')),
+      matching: find.byType(Scrollable),
     );
+
+    expect(previewScrollable, findsOneWidget);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('view-ride-offer-details')),
+      previewScrollable,
+      const Offset(0, -220),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('view-ride-offer-details')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('view-ride-offer-details')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('ride-offer-detail-state')), findsOneWidget);
+
+    final detailScrollable = find.descendant(
+      of: find.byKey(const Key('driver-ride-offer-page')),
+      matching: find.byType(Scrollable),
+    );
+
+    expect(detailScrollable, findsOneWidget);
+
+    await tester.dragUntilVisible(
+      find.byKey(const Key('decline-ride-offer-preview')),
+      detailScrollable,
+      const Offset(0, -220),
+    );
+    await tester.pump();
+
     expect(find.byKey(const Key('decline-ride-offer-preview')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -1324,7 +1401,7 @@ void main() {
 
     expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
     expect(find.byKey(const Key('driver-sign-out')), findsNothing);
-    expect(find.text('Driver access'), findsOneWidget);
+    expect(find.text('Driver sign in'), findsOneWidget);
     expect(authApi.paths, isEmpty);
   });
 
@@ -1350,7 +1427,7 @@ void main() {
 
       expect(authApi.paths, isEmpty);
       expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
-      expect(find.text('Driver access'), findsOneWidget);
+      expect(find.text('Driver sign in'), findsOneWidget);
       expect(find.text('Please sign in again to continue.'), findsOneWidget);
       expect(find.text('No trip assigned yet.'), findsNothing);
       expect(await store.readAccessToken(), isNull);
@@ -1389,7 +1466,7 @@ void main() {
         'refresh': 'expired-driver-refresh',
       });
       expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
-      expect(find.text('Driver access'), findsOneWidget);
+      expect(find.text('Driver sign in'), findsOneWidget);
       expect(find.text('Please sign in again to continue.'), findsOneWidget);
       expect(find.text('No trip assigned yet.'), findsNothing);
       expect(await store.readAccessToken(), isNull);
@@ -1437,7 +1514,7 @@ void main() {
       expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Driver app ready'), findsOneWidget);
       expect(find.text('Driver app ready'), findsWidgets);
-      expect(find.text('Local QA driver trip preview'), findsNothing);
+      expect(find.text('Preview incoming offer'), findsNothing);
       expect(find.text('Please sign in again to continue.'), findsNothing);
     },
   );
@@ -1527,7 +1604,12 @@ void main() {
         await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
       }
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('readiness-ready')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
@@ -1556,7 +1638,7 @@ void main() {
       expect(await store.readRefreshToken(), isNull);
       expect(find.text('Local QA: Off shift'), findsNothing);
       expect(find.text('Local QA: On shift'), findsNothing);
-      expect(find.text('Local QA driver trip preview'), findsOneWidget);
+      expect(find.text('Preview incoming offer'), findsOneWidget);
     },
   );
 
@@ -1636,7 +1718,7 @@ void main() {
     expect(find.text('Start trip'), findsNothing);
     expect(find.text('Complete trip'), findsNothing);
 
-    expect(find.text('Local QA driver trip preview'), findsNothing);
+    expect(find.text('Preview incoming offer'), findsNothing);
     expect(find.text('Local QA readiness preview'), findsNothing);
   });
   testWidgets(
@@ -2079,12 +2161,28 @@ void _expectNoOperationalActions() {
 }
 
 void _expectPendingRideOffer() {
-  expect(find.text('New trip'), findsWidgets);
-  expect(find.text('Ghana'), findsOneWidget);
-  expect(find.text('Review the route before accepting.'), findsOneWidget);
-  expect(find.text('Airport connection'), findsOneWidget);
-  expect(find.text('Solar Hotel'), findsOneWidget);
-  expect(find.text('Accra Airport'), findsOneWidget);
+  expect(find.text('14s'), findsOneWidget);
+  expect(find.text('New ride offer'), findsOneWidget);
+  expect(find.text('Accra Mall → Accra Market'), findsOneWidget);
+  expect(find.text('Distance'), findsOneWidget);
+  expect(find.text('9.5 km'), findsOneWidget);
+  expect(find.text('Pickup'), findsOneWidget);
+  expect(find.text('1.2 km away'), findsOneWidget);
+  expect(find.text('View details'), findsOneWidget);
+  expect(find.text('Accept'), findsNothing);
+  expect(find.text('Decline'), findsNothing);
+  _expectNoRideOfferLiveContent();
+}
+
+void _expectRideOfferDetails() {
+  expect(find.text('Ride offer'), findsWidgets);
+  expect(find.text('Accra Mall → Accra Market'), findsOneWidget);
+  expect(find.text('Accra Mall'), findsWidgets);
+  expect(find.text('Accra Market'), findsWidgets);
+  expect(find.text('Distance'), findsOneWidget);
+  expect(find.text('9.5 km'), findsOneWidget);
+  expect(find.text('Est. duration'), findsOneWidget);
+  expect(find.text('23 min'), findsOneWidget);
   expect(find.text('Passengers'), findsOneWidget);
   expect(find.text('2'), findsOneWidget);
   expect(find.text('Accept'), findsOneWidget);
@@ -2136,7 +2234,7 @@ Future<void> _completeConcernForm(
 }) async {
   await tester.tap(find.byKey(const Key('concern-category')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Vehicle').last);
+  await tester.tap(find.text('Vehicle problem').last);
   await tester.pumpAndSettle();
 
   await tester.tap(find.byKey(const Key('concern-attention')));

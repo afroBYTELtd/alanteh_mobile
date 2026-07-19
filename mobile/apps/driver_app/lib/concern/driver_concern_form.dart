@@ -1,6 +1,5 @@
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'driver_concern_draft.dart';
 import 'driver_concern_status_row.dart';
@@ -29,11 +28,10 @@ class DriverConcernForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Form(
       key: formKey,
       child: ListView(
+        key: const Key('concern-form'),
         padding: const EdgeInsets.fromLTRB(
           AsmSpacing.space20,
           AsmSpacing.space12,
@@ -43,45 +41,41 @@ class DriverConcernForm extends StatelessWidget {
         children: [
           DriverConcernStatusRow(marketLabel: marketLabel),
           const SizedBox(height: AsmSpacing.space20),
-          Container(
-            padding: const EdgeInsets.all(AsmSpacing.space16),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(AsmRadii.radius8),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, color: AsmColors.brandGreen),
-                SizedBox(width: AsmSpacing.space12),
-                Expanded(
-                  child: Text(
-                    'This report is not sent from the app yet. For emergencies, follow approved local safety procedures.',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AsmSpacing.space12),
           const Text(
-            'If there is immediate danger, do not drive and follow approved local safety procedures.',
-            style: TextStyle(color: Color(0xFFB7C0C4), height: 1.4),
+            "What's the issue?",
+            style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const Text(
+            'Select a category so ALANTEH can respond appropriately.',
+            style: TextStyle(
+              color: AsmColors.driverTextSecondary,
+              fontSize: 16,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: AsmSpacing.space20),
           DropdownButtonFormField<DriverConcernCategory>(
             key: const Key('concern-category'),
             initialValue: category,
             isExpanded: true,
-            decoration: const InputDecoration(labelText: 'What is the issue?'),
-            items: [
-              for (final category in DriverConcernCategory.values)
-                DropdownMenuItem(
-                  value: category,
-                  child: Text(category.label, overflow: TextOverflow.ellipsis),
-                ),
-            ],
+            decoration: const InputDecoration(
+              labelText: 'Issue category',
+              prefixIcon: Icon(Icons.report_problem_outlined),
+            ),
+            items: DriverConcernCategory.values
+                .map(
+                  (value) => DropdownMenuItem<DriverConcernCategory>(
+                    value: value,
+                    child: Text(
+                      _categoryDisplayLabel(value),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
             onChanged: onCategoryChanged,
             validator: (value) =>
                 value == null ? 'Choose what the issue is.' : null,
@@ -91,14 +85,22 @@ class DriverConcernForm extends StatelessWidget {
             key: const Key('concern-attention'),
             initialValue: attentionLevel,
             isExpanded: true,
-            decoration: const InputDecoration(labelText: 'How urgent?'),
-            items: [
-              for (final level in DriverConcernAttentionLevel.values)
-                DropdownMenuItem(
-                  value: level,
-                  child: Text(level.label, overflow: TextOverflow.ellipsis),
-                ),
-            ],
+            decoration: const InputDecoration(
+              labelText: 'Attention needed',
+              prefixIcon: Icon(Icons.priority_high_outlined),
+            ),
+            items: DriverConcernAttentionLevel.values
+                .map(
+                  (value) => DropdownMenuItem<DriverConcernAttentionLevel>(
+                    value: value,
+                    child: Text(
+                      value.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(growable: false),
             onChanged: onAttentionLevelChanged,
             validator: (value) =>
                 value == null ? 'Choose how urgent this is.' : null,
@@ -107,32 +109,92 @@ class DriverConcernForm extends StatelessWidget {
           TextFormField(
             key: const Key('concern-description'),
             controller: descriptionController,
-            decoration: const InputDecoration(
-              labelText: 'Describe the issue...',
-              alignLabelWithHint: true,
-            ),
-            minLines: 3,
-            maxLines: 5,
+            minLines: 4,
+            maxLines: 6,
             maxLength: 240,
-            inputFormatters: [LengthLimitingTextInputFormatter(240)],
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.newline,
-            validator: (value) => value == null || value.trim().isEmpty
-                ? 'Describe the issue.'
-                : null,
+            decoration: const InputDecoration(
+              labelText: 'Describe what happened',
+              alignLabelWithHint: true,
+              hintText: 'Add the important details.',
+              prefixIcon: Icon(Icons.notes_outlined),
+            ),
+            validator: (value) {
+              final description = value?.trim() ?? '';
+
+              if (description.isEmpty) {
+                return 'Describe the issue.';
+              }
+
+              if (description.length > 240) {
+                return 'Description must be 240 characters or fewer.';
+              }
+
+              return null;
+            },
           ),
-          const SizedBox(height: AsmSpacing.space16),
+          const SizedBox(height: AsmSpacing.space12),
+          Container(
+            padding: const EdgeInsets.all(AsmSpacing.space16),
+            decoration: BoxDecoration(
+              color: AsmColors.driverCardElevated,
+              borderRadius: BorderRadius.circular(AsmRadii.radius24),
+              border: Border.all(color: AsmColors.driverLine),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Safety first',
+                  style: TextStyle(
+                    color: AsmColors.driverMintAction,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: AsmSpacing.space8),
+                Text(
+                  'This report is not sent from the app yet. For emergencies, '
+                  'follow approved local safety procedures.',
+                  style: TextStyle(
+                    color: AsmColors.driverTextSecondary,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: AsmSpacing.space8),
+                Text(
+                  'If there is immediate danger, do not drive and follow '
+                  'approved local safety procedures.',
+                  style: TextStyle(
+                    color: AsmColors.driverTextSecondary,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AsmSpacing.space20),
           FilledButton.icon(
             key: const Key('review-concern'),
             onPressed: onReview,
-            icon: const Icon(Icons.fact_check_outlined),
-            label: const Text('Send report'),
+            icon: const Icon(Icons.arrow_forward_outlined),
+            label: const Text('Submit report'),
             style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
+              minimumSize: const Size.fromHeight(54),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+String _categoryDisplayLabel(DriverConcernCategory category) {
+  return switch (category) {
+    DriverConcernCategory.vehicleCondition => 'Vehicle problem',
+    DriverConcernCategory.batteryOrCharging => 'Battery / charging',
+    DriverConcernCategory.cabinOrSafetyEquipment => 'Route / safety concern',
+    DriverConcernCategory.shiftDetailsOrDocuments => 'Passenger issue',
+    DriverConcernCategory.otherConcern => 'Other',
+  };
 }

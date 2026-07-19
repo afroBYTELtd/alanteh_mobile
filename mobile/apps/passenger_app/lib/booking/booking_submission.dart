@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
+import '../network/ghana_network_resilience.dart';
 import 'booking_draft.dart';
 
 enum BookingSubmissionStatus { idle, submitting, success, failure }
@@ -46,14 +47,14 @@ class ApiPassengerRideRequestSubmitter
         : 'http://127.0.0.1:8000';
 
     return ApiPassengerRideRequestSubmitter(
-      AsmApiClient(
+      GhanaResilientApiClient(
         baseUrl: resolvedBaseUrl,
         tokenProvider: _AuthTokenProvider(store),
       ),
       tokenStore: store,
       authService: connectionConfigured
           ? AuthService.withApiClient(
-              client: AsmApiClient(baseUrl: resolvedBaseUrl),
+              client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
           : null,
