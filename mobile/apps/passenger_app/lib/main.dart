@@ -371,7 +371,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
 
     try {
-      final state = await _authService.login(
+      final state = await _loginWithNetworkRetry(
         _phoneController.text,
         _pinController.text,
       );
@@ -390,8 +390,8 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           _passengerPhoneNumber = sessionPhoneNumber.isEmpty
               ? null
               : sessionPhoneNumber;
-          _signedIn = false;
-          _otpRequired = true;
+          _signedIn = true;
+          _otpRequired = false;
           _isSigningIn = false;
           _loginErrorMessage = null;
         });
@@ -424,6 +424,34 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         _loginErrorMessage = _unknownApiErrorMessage;
       });
     }
+  }
+
+  Future<AuthState> _loginWithNetworkRetry(String phone, String pin) async {
+    for (
+      var attempt = 0;
+      attempt < GhanaRequestPolicy.maxAttempts;
+      attempt += 1
+    ) {
+      final state = await _authService.login(phone, pin);
+      final retryable = _isRetryableLoginFailure(state.error);
+      final retriesExhausted =
+          attempt >= GhanaRequestPolicy.retryBackoffs.length;
+
+      if (!retryable || retriesExhausted) {
+        return state;
+      }
+
+      await Future<void>.delayed(GhanaRequestPolicy.retryBackoffs[attempt]);
+    }
+
+    return const AuthState.unauthenticated();
+  }
+
+  bool _isRetryableLoginFailure(AuthException? error) {
+    final cause = error?.cause;
+    return cause is AsmApiException &&
+        (cause.type == AsmApiExceptionType.network ||
+            cause.type == AsmApiExceptionType.timeout);
   }
 
   void _completeOtpVerification() {
@@ -524,8 +552,9 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
-  static const _signInFailedMessage =
-      'Sign in failed. Check your phone and PIN.';
+  static const _incorrectPhoneOrPinMessage = 'Incorrect phone number or PIN';
+  static const _passengerAccountMismatchMessage =
+      'This account cannot be used in the passenger app';
   static const _networkErrorMessage =
       'Cannot reach the server. Check your connection and try again.';
   static const _serverUnavailableMessage =
@@ -535,11 +564,11 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   String _passengerLoginErrorMessage(AuthException? error) {
     if (error == null) {
-      return _signInFailedMessage;
+      return _incorrectPhoneOrPinMessage;
     }
 
     if (error.message == authAppContextErrorMessage) {
-      return authAppContextErrorMessage;
+      return _passengerAccountMismatchMessage;
     }
 
     if (error.message == AsmApiClient.connectionNotConfiguredMessage) {
@@ -557,24 +586,28 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         return _serverUnavailableMessage;
       }
 
+      if (cause.statusCode == 403) {
+        return _passengerAccountMismatchMessage;
+      }
+
       if (cause.statusCode == 401 || cause.statusCode == 400) {
-        return _signInFailedMessage;
+        return _incorrectPhoneOrPinMessage;
       }
     }
 
     if (error.type == AuthExceptionType.accountType) {
-      return authAppContextErrorMessage;
+      return _passengerAccountMismatchMessage;
     }
 
     if (error.type == AuthExceptionType.validation) {
-      return _signInFailedMessage;
+      return _incorrectPhoneOrPinMessage;
     }
 
     if (error.type == AuthExceptionType.apiFailure) {
       return _unknownApiErrorMessage;
     }
 
-    return _signInFailedMessage;
+    return _incorrectPhoneOrPinMessage;
   }
 
   String? _phoneNumberFromSession(AuthSession? session) {
