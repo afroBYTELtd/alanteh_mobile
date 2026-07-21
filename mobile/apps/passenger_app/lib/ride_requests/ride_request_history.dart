@@ -529,6 +529,7 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
     required this.repository,
     this.onSignInRequired,
     this.onBookRide,
+    this.onBookAgain,
     this.paymentRatingRepository,
     super.key,
   });
@@ -536,6 +537,7 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
   final PassengerRideRequestHistoryRepository repository;
   final VoidCallback? onSignInRequired;
   final VoidCallback? onBookRide;
+  final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
 
   @override
@@ -716,7 +718,7 @@ class _PassengerRideRequestHistoryPageState
           return _RideRequestCard(
             record: record,
             onTap: () => _openDetail(record),
-            onBookAgain: widget.onBookRide,
+            onBookAgain: widget.onBookAgain,
           );
         },
       ),
@@ -733,7 +735,7 @@ class _RideRequestCard extends StatelessWidget {
 
   final PassengerRideRequestRecord record;
   final VoidCallback onTap;
-  final VoidCallback? onBookAgain;
+  final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -794,7 +796,9 @@ class _RideRequestCard extends StatelessWidget {
                   Expanded(
                     child: FilledButton(
                       key: const Key('history-card-book-again'),
-                      onPressed: onBookAgain,
+                      onPressed: onBookAgain == null
+                          ? null
+                          : () => onBookAgain!(record),
                       child: const Text('Book again'),
                     ),
                   ),

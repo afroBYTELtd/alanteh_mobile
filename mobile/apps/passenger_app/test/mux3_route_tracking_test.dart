@@ -454,7 +454,7 @@ void main() {
   ) async {
     _useSurface(tester);
 
-    var bookAgainCalled = false;
+    PassengerRideRequestRecord? selectedRecord;
 
     final record = _record(
       status: 'completed',
@@ -470,8 +470,8 @@ void main() {
             <Object>[record],
             listRecords: <PassengerRideRequestRecord>[record],
           ),
-          onBookRide: () {
-            bookAgainCalled = true;
+          onBookAgain: (record) {
+            selectedRecord = record;
           },
         ),
       ),
@@ -492,7 +492,7 @@ void main() {
     await tester.tap(find.byKey(const Key('history-card-book-again')));
     await tester.pump();
 
-    expect(bookAgainCalled, isTrue);
+    expect(selectedRecord, same(record));
   });
 
   testWidgets('tracking filters internal and sensitive messages', (

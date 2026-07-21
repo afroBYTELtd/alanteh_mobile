@@ -215,6 +215,25 @@ class _PassengerShellState extends State<PassengerShell> {
     }
   }
 
+  Future<void> _openBookAgain(PassengerRideRequestRecord record) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => BookingPage(
+          market: widget.configuration.market,
+          initialPickupDescription: record.pickupLocation,
+          initialDestinationDescription: record.destination,
+          rideRequestSubmitter: widget.rideRequestSubmitter,
+          onSignInRequired: widget.onSignInRequired,
+          rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
+          paymentRatingRepository: widget.paymentRatingRepository,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: _paymentNetwork,
+          fareEstimateRepository: widget.fareEstimateRepository,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openRideRequests() {
     final repository =
         widget.rideRequestHistoryRepository ??
@@ -230,6 +249,7 @@ class _PassengerShellState extends State<PassengerShell> {
             Navigator.of(context).pop();
             setState(() => _selectedIndex = 0);
           },
+          onBookAgain: _openBookAgain,
         ),
       ),
     );
@@ -262,6 +282,7 @@ class _PassengerShellState extends State<PassengerShell> {
         paymentRatingRepository: widget.paymentRatingRepository,
         onSignInRequired: widget.onSignInRequired,
         onBookRide: () => setState(() => _selectedIndex = 0),
+        onBookAgain: _openBookAgain,
       ),
       _ => PassengerAccountScreen(
         phoneNumber: widget.phoneNumber,

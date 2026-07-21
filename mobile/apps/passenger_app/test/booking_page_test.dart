@@ -12,6 +12,8 @@ import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_page.dart';
 import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/main.dart';
+import 'package:passenger_app/passenger_shell.dart';
+import 'package:passenger_app/ride_requests/ride_request_history.dart';
 
 void main() {
   testWidgets('renders simplified booking form without service context', (
@@ -708,6 +710,120 @@ void main() {
       'Step-free access',
     );
   });
+
+  testWidgets(
+    'Book again from embedded Trips opens prefilled form without submission',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final record = _bookAgainRecord();
+      final repository = _BookAgainHistoryRepository(record);
+      final submitter = _FakeRideRequestSubmitter.success();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: PassengerShell(
+            rideRequestHistoryRepository: repository,
+            rideRequestSubmitter: submitter,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final navigationBar = tester.widget<AsmBottomNavigationBar>(
+        find.byType(AsmBottomNavigationBar),
+      );
+      navigationBar.onDestinationSelected!.call(1);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Accra Mall → University of Ghana'), findsOneWidget);
+      expect(find.text('Accepted for trip preparation.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('history-card-book-again')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Book a ride'), findsWidgets);
+      expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+      expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+            .controller!
+            .text,
+        'Accra Mall',
+      );
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+            .controller!
+            .text,
+        'University of Ghana',
+      );
+      expect(
+        find.byKey(const Key('passenger-home-full-screen-map-layout')),
+        findsNothing,
+      );
+      expect(submitter.submissions, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'Book again from modal history opens same prefilled form without submission',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final record = _bookAgainRecord();
+      final repository = _BookAgainHistoryRepository(record);
+      final submitter = _FakeRideRequestSubmitter.success();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: PassengerShell(
+            rideRequestHistoryRepository: repository,
+            rideRequestSubmitter: submitter,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('passenger-home-full-screen-map-layout')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('open-ride-request-history')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Accra Mall → University of Ghana'), findsOneWidget);
+      expect(find.text('Accepted for trip preparation.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('history-card-book-again')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Book a ride'), findsWidgets);
+      expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+      expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+            .controller!
+            .text,
+        'Accra Mall',
+      );
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+            .controller!
+            .text,
+        'University of Ghana',
+      );
+      expect(
+        find.byKey(const Key('passenger-home-full-screen-map-layout')),
+        findsNothing,
+      );
+      expect(submitter.submissions, isEmpty);
+    },
+  );
 
   testWidgets('confirm and request shows loading then success', (tester) async {
     _useSurface(tester, const Size(430, 1000));
@@ -1713,6 +1829,45 @@ Future<void> _enterValidBooking(WidgetTester tester) async {
     find.byKey(const Key('booking-destination')),
     'Airport',
   );
+}
+
+PassengerRideRequestRecord _bookAgainRecord() {
+  return PassengerRideRequestRecord(
+    requestReference: 'RR-APP-BOOK-AGAIN-TEST',
+    status: 'accepted_for_trip',
+    pickupLocation: 'Accra Mall',
+    destination: 'University of Ghana',
+    passengerCount: 3,
+    createdAt: DateTime.utc(2026, 7, 21, 12),
+    updatedAt: DateTime.utc(2026, 7, 21, 13),
+    hasMobileReceipt: true,
+    tripCreated: false,
+    latestStaffState: 'Accepted for trip preparation.',
+    specialRequest: 'Do not prefill this note.',
+  );
+}
+
+class _BookAgainHistoryRepository
+    implements PassengerRideRequestHistoryRepository {
+  const _BookAgainHistoryRepository(this.record);
+
+  final PassengerRideRequestRecord record;
+
+  @override
+  Future<List<PassengerRideRequestRecord>> fetchRequests() async {
+    return <PassengerRideRequestRecord>[record];
+  }
+
+  @override
+  Future<PassengerRideRequestRecord> fetchRequest(
+    String requestReference,
+  ) async {
+    if (requestReference != record.requestReference) {
+      throw StateError('Unexpected request reference.');
+    }
+
+    return record;
+  }
 }
 
 class _FakeRideRequestSubmitter implements PassengerRideRequestSubmitter {
