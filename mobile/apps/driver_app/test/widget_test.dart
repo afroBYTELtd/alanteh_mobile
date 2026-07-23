@@ -4,9 +4,12 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/concern/driver_concern_page.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
+import 'package:driver_app/network/driver_trip_action_gateway.dart';
+import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
 import 'package:flutter/material.dart';
@@ -582,6 +585,10 @@ void main() {
     );
     await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
     await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(seconds: 8));
     await tester.pumpAndSettle();
 
     expect(
@@ -622,6 +629,10 @@ void main() {
       );
       await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
       await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pump(const Duration(seconds: 8));
       await tester.pumpAndSettle();
 
       expect(
@@ -911,12 +922,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Shift check'), findsOneWidget);
+    expect(find.text('LOCAL ONLY'), findsOneWidget);
+    expect(
+      find.text(
+        'Completing this checklist updates this device only. '
+        'It is not submitted to the Control Center.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Ghana'), findsOneWidget);
-    expect(find.text('Complete these checks before driving.'), findsOneWidget);
+    expect(
+      find.text('Use these checks as a local device reminder before driving.'),
+      findsOneWidget,
+    );
     for (final item in DriverReadinessItem.values) {
       expect(find.text(item.label), findsOneWidget);
     }
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('readiness-ready')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
@@ -933,7 +961,7 @@ void main() {
     await tester.tap(find.byKey(const Key('readiness-batteryStatus')));
     await tester.pumpAndSettle();
     expect(find.text('4 of 4 checks complete'), findsOneWidget);
-    expect(find.text('You’re ready to go online'), findsOneWidget);
+    expect(find.text('Local checklist complete'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('readiness-ready')),
       200,
@@ -956,7 +984,7 @@ void main() {
     await tester.tap(find.byKey(const Key('reset-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
-    expect(find.text('You’re ready to go online'), findsNothing);
+    expect(find.text('Local checklist complete'), findsNothing);
 
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
     await tester.pumpAndSettle();
@@ -981,7 +1009,7 @@ void main() {
   });
 
   testWidgets(
-    'local QA ready button returns home and marks the preview on shift',
+    'local checklist completion returns home without claiming online state',
     (tester) async {
       _useSurface(tester, const Size(430, 1000));
       await tester.pumpWidget(
@@ -997,6 +1025,12 @@ void main() {
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('readiness-ready')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       expect(
         tester
             .widget<FilledButton>(find.byKey(const Key('readiness-ready')))
@@ -1005,7 +1039,10 @@ void main() {
       );
 
       for (final item in DriverReadinessItem.values) {
-        await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
+        final itemFinder = find.byKey(ValueKey('readiness-${item.name}'));
+        await tester.ensureVisible(itemFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(itemFinder);
       }
       await tester.pumpAndSettle();
 
@@ -1070,7 +1107,10 @@ void main() {
     expect(find.text('Describe the issue.'), findsOneWidget);
 
     await _completeConcernForm(tester, description: '  Loose mirror  ');
-    expect(find.text('No issue report has been sent.'), findsOneWidget);
+    expect(
+      find.text('This report is not sent from the app yet.'),
+      findsOneWidget,
+    );
     expect(find.text('Service area'), findsOneWidget);
     expect(find.byKey(const Key('concern-market')), findsOneWidget);
     expect(find.text('Vehicle'), findsOneWidget);
@@ -1098,7 +1138,10 @@ void main() {
       find.byKey(const Key('concern-description')),
     );
     expect(reopenedField.controller!.text, isEmpty);
-    expect(find.text('No issue report has been sent.'), findsNothing);
+    expect(
+      find.text('This report is not sent from the app yet.'),
+      findsNothing,
+    );
     await tester.enterText(
       find.byKey(const Key('concern-description')),
       'x' * 241,
@@ -1134,9 +1177,9 @@ void main() {
     await tester.tap(find.byKey(const Key('close-concern')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Shift check'), findsOneWidget);
+    expect(find.text('Shift check · LOCAL ONLY'), findsOneWidget);
     expect(find.text('1 of 4 checks complete'), findsOneWidget);
-    expect(find.text('You’re ready to go online'), findsNothing);
+    expect(find.text('Local checklist complete'), findsNothing);
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
@@ -1363,7 +1406,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
-    expect(find.text('Shift check'), findsOneWidget);
+    expect(find.text('Shift check · LOCAL ONLY'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('readiness-batteryStatus')),
       200,
@@ -1960,6 +2003,128 @@ void main() {
       expect(find.text('Meet at the main entrance.'), findsOneWidget);
     });
 
+    testWidgets(
+      'Trip detail opens injected live actions from confirmed backend status',
+      (tester) async {
+        _useSurface(tester, const Size(430, 1200));
+        var factoryCalls = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AsmThemes.driver,
+            home: DriverTripDetailScreen(
+              gateway: _FakeDriverDutyGateway(
+                detail: Future.value(
+                  const DriverAssignedTrip(
+                    reference: 'TRIP-LIVE-DETAIL',
+                    status: 'in_progress',
+                    pickupLocation: 'Accra Mall',
+                    destination: 'Osu',
+                  ),
+                ),
+              ),
+              tripReference: 'TRIP-LIVE-DETAIL',
+              actionControllerFactory: (tripReference) async {
+                factoryCalls += 1;
+                expect(tripReference, 'TRIP-LIVE-DETAIL');
+                return DriverTripActionResilienceController(
+                  queue: _WidgetDriverTripActionQueue(),
+                  tripReference: tripReference,
+                  driverId: 'DRV-BACKEND-001',
+                  isOnline: () async => true,
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('driver-open-live-trip-actions')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('driver-open-live-trip-actions')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(factoryCalls, 1);
+        expect(
+          find.byKey(const Key('driver-trip-sequence-page')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+        expect(find.text('Trip in progress'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Trip detail 404 action does not retry and refreshes assigned trips',
+      (tester) async {
+        _useSurface(tester, const Size(430, 1200));
+        final queue = _WidgetPersistentDriverTripActionQueue();
+        final actionGateway = _WidgetNotFoundDriverTripActionGateway();
+        var assignedTripRefreshCalls = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AsmThemes.driver,
+            home: DriverTripDetailScreen(
+              gateway: _FakeDriverDutyGateway(
+                detail: Future.value(
+                  const DriverAssignedTrip(
+                    reference: 'TRIP-LIVE-404',
+                    status: 'assigned',
+                    pickupLocation: 'Accra Mall',
+                    destination: 'Osu',
+                  ),
+                ),
+              ),
+              tripReference: 'TRIP-LIVE-404',
+              actionControllerFactory: (tripReference) async {
+                return DriverTripActionResilienceController(
+                  queue: queue,
+                  gateway: actionGateway,
+                  tripReference: tripReference,
+                  driverId: 'DRV-BACKEND-404',
+                );
+              },
+              onRefreshTripList: () async {
+                assignedTripRefreshCalls += 1;
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('driver-open-live-trip-actions')),
+        );
+        await tester.pumpAndSettle();
+
+        final action = find.byKey(const Key('driver-mark-arrived-pickup'));
+        await tester.ensureVisible(action);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+
+        expect(actionGateway.calls, 1);
+        expect(actionGateway.idempotencyKeys, hasLength(1));
+        expect(assignedTripRefreshCalls, 1);
+        expect(queue.events, hasLength(1));
+        expect(
+          actionGateway.idempotencyKeys.single,
+          queue.events.single.idempotencyKey,
+        );
+        expect(queue.events.single.syncStatus, QueueSyncStatus.pending);
+        expect(
+          find.byKey(const Key('driver-navigate-to-pickup')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('driver-arrived-at-pickup')), findsNothing);
+      },
+    );
+
     testWidgets('Driver duty and trips do not render sensitive fields', (
       tester,
     ) async {
@@ -2274,6 +2439,84 @@ String _readM3aDartSources(String rootPath) {
     }
   }
   return buffer.toString();
+}
+
+final class _WidgetPersistentDriverTripActionQueue
+    implements DriverTripActionPersistentQueue {
+  final events = <QueuedEvent>[];
+
+  @override
+  Future<QueuedEvent> enqueue(QueuedEvent event) async {
+    final index = events.indexWhere((candidate) => candidate.id == event.id);
+    if (index < 0) {
+      events.add(event);
+    } else {
+      events[index] = event;
+    }
+    return event;
+  }
+
+  @override
+  Future<QueuedEvent?> eventById(String id) async {
+    for (final event in events) {
+      if (event.id == id) {
+        return event;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<List<QueuedEvent>> pendingEvents() async {
+    return events
+        .where(
+          (event) =>
+              event.syncStatus == QueueSyncStatus.pending ||
+              event.syncStatus == QueueSyncStatus.failed,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> markFailed(String id) async {}
+
+  @override
+  Future<void> markPermanentlyFailed(String id) async {}
+
+  @override
+  Future<void> markSynced(String id) async {
+    final event = await eventById(id);
+    if (event == null) {
+      return;
+    }
+    await enqueue(event.copyWith(syncStatus: QueueSyncStatus.synced));
+  }
+}
+
+final class _WidgetNotFoundDriverTripActionGateway
+    implements DriverTripActionGateway {
+  int calls = 0;
+  final idempotencyKeys = <String>[];
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+  }) async {
+    calls += 1;
+    idempotencyKeys.add(idempotencyKey);
+    throw const DriverTripActionException(
+      type: DriverTripActionFailureType.notFound,
+      message: 'This assigned trip could not be found.',
+    );
+  }
+}
+
+class _WidgetDriverTripActionQueue implements DriverTripActionQueue {
+  @override
+  Future<QueuedEvent> enqueue(QueuedEvent event) async => event;
 }
 
 class _FakeDriverDutyGateway implements DriverDutyGateway {

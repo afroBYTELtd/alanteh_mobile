@@ -66,7 +66,7 @@ void main() {
   });
 
   testWidgets(
-    'Driver readiness supports failure recheck ready and waiting-online states',
+    'Driver readiness remains local-only and never claims operational online state',
     (tester) async {
       _useSurface(tester, const Size(430, 1300));
 
@@ -84,8 +84,16 @@ void main() {
         find.byKey(const Key('driver-shift-readiness-screen')),
         findsOneWidget,
       );
-      expect(find.text('Shift readiness'), findsOneWidget);
-      expect(find.text('Before you go online'), findsOneWidget);
+      expect(find.text('Shift check'), findsOneWidget);
+      expect(find.text('LOCAL ONLY'), findsOneWidget);
+      expect(
+        find.text(
+          'Completing this checklist updates this device only. '
+          'It is not submitted to the Control Center.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Local pre-shift checklist'), findsOneWidget);
       expect(
         find.byKey(const Key('driver-pre-shift-vehicle-check')),
         findsOneWidget,
@@ -114,30 +122,30 @@ void main() {
       expect(find.byKey(const Key('readiness-failed')), findsNothing);
 
       for (final item in DriverReadinessItem.values) {
-        await tester.tap(find.byKey(ValueKey('readiness-${item.name}')));
+        final itemFinder = find.byKey(ValueKey('readiness-${item.name}'));
+        await tester.ensureVisible(itemFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(itemFinder);
       }
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('readiness-complete')), findsOneWidget);
-      expect(find.text('You’re ready to go online'), findsOneWidget);
+      expect(find.text('Local checklist complete'), findsOneWidget);
 
-      await tester.ensureVisible(find.byKey(const Key('readiness-ready')));
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('readiness-ready')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
       await tester.pumpAndSettle();
 
-      expect(find.text('You’re online'), findsOneWidget);
-      expect(find.byKey(const Key('driver-waiting-for-offer')), findsOneWidget);
-      expect(find.text('Waiting for offers'), findsOneWidget);
-      expect(find.text('WAITING FOR A RIDE OFFER NEARBY'), findsOneWidget);
-      expect(find.text('New trip'), findsNothing);
-      expect(find.text('Accept'), findsNothing);
-      expect(find.text('Decline'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('driver-duty-toggle')));
-      await tester.pumpAndSettle();
-
       expect(find.text('You’re offline'), findsOneWidget);
+      expect(find.text('You’re online'), findsNothing);
       expect(find.byKey(const Key('driver-waiting-for-offer')), findsNothing);
+      expect(find.byKey(const Key('driver-duty-toggle')), findsNothing);
+      expect(find.text('Waiting for offers'), findsNothing);
     },
   );
 

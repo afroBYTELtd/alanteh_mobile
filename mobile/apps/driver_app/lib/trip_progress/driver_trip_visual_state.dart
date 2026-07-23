@@ -22,6 +22,16 @@ final class DriverTripVisualState {
   const DriverTripVisualState.initial()
     : stage = DriverTripVisualStage.navigatingToPickup;
 
+  factory DriverTripVisualState.fromBackendStatus(String? status) {
+    return DriverTripVisualState._(switch (status?.trim()) {
+      'arrived_at_pickup' => DriverTripVisualStage.arrivedAtPickup,
+      'passenger_onboard' => DriverTripVisualStage.confirmingPassengerOnboard,
+      'in_progress' => DriverTripVisualStage.activeTrip,
+      'completed_pending_review' => DriverTripVisualStage.completed,
+      _ => DriverTripVisualStage.navigatingToPickup,
+    });
+  }
+
   final DriverTripVisualStage stage;
 
   DriverTripVisualState markArrivedAtPickup() {

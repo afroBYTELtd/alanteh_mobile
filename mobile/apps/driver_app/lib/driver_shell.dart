@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'concern/driver_concern_page.dart';
 import 'driver_duty_trips.dart';
 import 'driver_home.dart';
+import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
 import 'shift/driver_shift_history.dart';
@@ -15,6 +16,7 @@ class DriverShell extends StatefulWidget {
     this.localQaEnabled = false,
     this.onSignOut,
     this.driverDutyGateway,
+    this.driverTripActionControllerFactory,
     super.key,
   });
 
@@ -22,6 +24,7 @@ class DriverShell extends StatefulWidget {
   final bool localQaEnabled;
   final Future<void> Function()? onSignOut;
   final DriverDutyGateway? driverDutyGateway;
+  final DriverTripActionControllerFactory? driverTripActionControllerFactory;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -29,7 +32,7 @@ class DriverShell extends StatefulWidget {
 
 class _DriverShellState extends State<DriverShell> {
   int _selectedIndex = 0;
-  bool _isOnShift = false;
+  bool _localChecklistComplete = false;
 
   void _openAssignedTrips() {
     setState(() => _selectedIndex = 1);
@@ -39,11 +42,11 @@ class _DriverShellState extends State<DriverShell> {
     return DriverShiftRecord(
       id: 'current',
       dateLabel: 'Today',
-      dutyLabel: _isOnShift ? 'Online' : 'Offline',
-      status: _isOnShift
-          ? DriverShiftStatus.inProgress
-          : DriverShiftStatus.notStarted,
-      onlineDurationLabel: _isOnShift ? 'In progress' : 'Not started',
+      dutyLabel: _localChecklistComplete
+          ? 'Local checklist complete'
+          : 'Local checklist not completed',
+      status: DriverShiftStatus.notStarted,
+      onlineDurationLabel: 'LOCAL ONLY',
       completedTrips: 0,
       vehicleLabel: driverEmptyValue,
       serviceAreaLabel: widget.configuration.market.countryName,
@@ -79,7 +82,7 @@ class _DriverShellState extends State<DriverShell> {
     }
 
     setState(() {
-      _isOnShift = true;
+      _localChecklistComplete = true;
       _selectedIndex = 0;
     });
   }
@@ -105,16 +108,9 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
-  void _setDutyState(bool value) {
-    setState(() {
-      _isOnShift = value;
-      _selectedIndex = 0;
-    });
-  }
-
   Future<void> _signOut() async {
     setState(() {
-      _isOnShift = false;
+      _localChecklistComplete = false;
       _selectedIndex = 0;
     });
     await widget.onSignOut?.call();
@@ -124,7 +120,7 @@ class _DriverShellState extends State<DriverShell> {
     return switch (_selectedIndex) {
       0 => DriverHome(
         market: widget.configuration.market,
-        isOnShift: _isOnShift,
+        isOnShift: false,
         onOpenReadiness: _openReadiness,
         onRecordConcern: _openConcern,
         onPreviewIncomingRequest: _openRideOfferPreview,
@@ -132,10 +128,13 @@ class _DriverShellState extends State<DriverShell> {
         dutyGateway: widget.driverDutyGateway,
         onOpenAssignedTrips: _openAssignedTrips,
         onOpenShiftSummary: _openShiftSummary,
-        onDutyChanged: _setDutyState,
+        onDutyChanged: null,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
-      1 => DriverAssignedTripsScreen(gateway: widget.driverDutyGateway),
+      1 => DriverAssignedTripsScreen(
+        gateway: widget.driverDutyGateway,
+        actionControllerFactory: widget.driverTripActionControllerFactory,
+      ),
       _ => _DriverAccountPage(
         currentShift: _currentShift,
         onOpenShiftHistory: _openShiftHistory,

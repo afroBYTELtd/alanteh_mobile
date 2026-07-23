@@ -2,6 +2,10 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'network/driver_trip_action_gateway.dart';
+import 'network/driver_trip_action_resilience.dart';
+import 'trip_progress/driver_trip_visual_sequence.dart';
+
 const driverDutyPath = '/api/driver/me/';
 const driverTripsPath = '/api/driver/trips/';
 const driverEmptyValue = 'Not assigned yet';
@@ -36,14 +40,36 @@ abstract interface class DriverDutyGateway {
   Future<DriverAssignedTrip> fetchTripDetail(String tripReference);
 }
 
-final class AsmDriverDutyGateway implements DriverDutyGateway {
-  const AsmDriverDutyGateway(this.client);
+abstract interface class DriverDutyApiClient {
+  Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder});
+}
+
+final class AsmDriverDutyApiClient implements DriverDutyApiClient {
+  const AsmDriverDutyApiClient(this.client);
 
   final AsmApiClient client;
 
   @override
+  Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder}) {
+    return client.get<T>(path, decoder: decoder);
+  }
+}
+
+final class AsmDriverDutyGateway implements DriverDutyGateway {
+  AsmDriverDutyGateway(AsmApiClient client, {this.refreshAccessToken})
+    : apiClient = AsmDriverDutyApiClient(client);
+
+  AsmDriverDutyGateway.withApiClient({
+    required this.apiClient,
+    this.refreshAccessToken,
+  });
+
+  final DriverDutyApiClient apiClient;
+  final DriverAccessTokenRefresh? refreshAccessToken;
+
+  @override
   Future<DriverDutySummary> fetchDuty() async {
-    final response = await client.get<DriverDutySummary>(
+    final response = await _getWithRefresh<DriverDutySummary>(
       driverDutyPath,
       decoder: DriverDutySummary.fromJson,
     );
@@ -52,7 +78,7 @@ final class AsmDriverDutyGateway implements DriverDutyGateway {
 
   @override
   Future<List<DriverAssignedTrip>> fetchTrips() async {
-    final response = await client.get<List<DriverAssignedTrip>>(
+    final response = await _getWithRefresh<List<DriverAssignedTrip>>(
       driverTripsPath,
       decoder: DriverAssignedTrip.decodeListResponse,
     );
@@ -69,11 +95,49 @@ final class AsmDriverDutyGateway implements DriverDutyGateway {
       );
     }
 
-    final response = await client.get<DriverAssignedTrip>(
+    final response = await _getWithRefresh<DriverAssignedTrip>(
       '$driverTripsPath${Uri.encodeComponent(cleanReference)}/',
       decoder: DriverAssignedTrip.fromJson,
     );
     return _successOrThrow(response);
+  }
+
+  Future<ApiResponse<T>> _getWithRefresh<T>(
+    String path, {
+    required JsonDecoder<T> decoder,
+  }) async {
+    var response = await apiClient.get<T>(path, decoder: decoder);
+
+    if (!_isUnauthorized(response)) {
+      return response;
+    }
+
+    final refresh = refreshAccessToken;
+    if (refresh == null) {
+      return response;
+    }
+
+    final outcome = await refresh();
+    switch (outcome) {
+      case DriverTokenRefreshOutcome.refreshed:
+        response = await apiClient.get<T>(path, decoder: decoder);
+        return response;
+      case DriverTokenRefreshOutcome.temporarilyUnavailable:
+        throw const DriverDutyApiException(
+          DriverDutyApiFailureType.unavailable,
+          'Driver information is temporarily unavailable.',
+        );
+      case DriverTokenRefreshOutcome.sessionExpired:
+        throw const DriverDutyApiException(
+          DriverDutyApiFailureType.sessionExpired,
+          driverSessionExpiredMessage,
+        );
+    }
+  }
+
+  bool _isUnauthorized<T>(ApiResponse<T> response) {
+    return response.statusCode == 401 ||
+        response.error?.type == AsmApiExceptionType.authentication;
   }
 
   T _successOrThrow<T>(ApiResponse<T> response) {
@@ -251,6 +315,18 @@ final class DriverAssignedTrip {
   }
 }
 
+bool driverCanOpenLiveTripActions(String? status) {
+  return const <String>{
+    'assigned',
+    'accepted_for_trip',
+    'driver_accepted',
+    'driver_en_route',
+    'arrived_at_pickup',
+    'passenger_onboard',
+    'in_progress',
+  }.contains(status?.trim());
+}
+
 String driverStatusLabel(String? status) {
   return switch (status?.trim()) {
     'assigned' => 'Assigned',
@@ -258,6 +334,9 @@ String driverStatusLabel(String? status) {
     'driver_en_route' => 'On the way to pickup',
     'arrived_at_pickup' => 'Arrived at pickup',
     'passenger_onboard' => 'Passenger onboard',
+    'in_progress' => 'Trip in progress',
+    'completed_pending_review' => 'Trip completed — awaiting operations review',
+    'completed_confirmed' => 'Status unavailable',
     'completed' => 'Completed',
     'cancelled' => 'Cancelled',
     final value? when value.isNotEmpty => _sentenceCase(
@@ -515,9 +594,14 @@ class _DriverDutySummaryCard extends StatelessWidget {
 }
 
 class DriverAssignedTripsScreen extends StatefulWidget {
-  const DriverAssignedTripsScreen({required this.gateway, super.key});
+  const DriverAssignedTripsScreen({
+    required this.gateway,
+    this.actionControllerFactory,
+    super.key,
+  });
 
   final DriverDutyGateway? gateway;
+  final DriverTripActionControllerFactory? actionControllerFactory;
 
   @override
   State<DriverAssignedTripsScreen> createState() =>
@@ -536,7 +620,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   @override
   void didUpdateWidget(covariant DriverAssignedTripsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.gateway != widget.gateway) {
+    if (oldWidget.gateway != widget.gateway ||
+        oldWidget.actionControllerFactory != widget.actionControllerFactory) {
       _future = _loadTrips();
     }
   }
@@ -604,7 +689,7 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
               ),
               const SizedBox(height: AsmSpacing.space8),
               Text(
-                'Read-only trip information from ALANTEH operations.',
+                'Live trip information and confirmed Driver actions.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AsmColors.driverTextSecondary,
                   height: 1.35,
@@ -634,20 +719,31 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                 for (final trip in trips) ...[
                   _DriverTripCard(
                     trip: trip,
-                    onTap: () {
+                    onTap: () async {
                       final gateway = widget.gateway;
                       if (gateway == null) {
                         return;
                       }
 
-                      Navigator.of(context).push<void>(
+                      await Navigator.of(context).push<void>(
                         MaterialPageRoute<void>(
                           builder: (_) => DriverTripDetailScreen(
                             gateway: gateway,
                             tripReference: trip.reference,
+                            actionControllerFactory:
+                                widget.actionControllerFactory,
+                            onRefreshTripList: () async {
+                              if (mounted) {
+                                _refresh();
+                              }
+                            },
                           ),
                         ),
                       );
+
+                      if (mounted) {
+                        _refresh();
+                      }
                     },
                   ),
                   const SizedBox(height: AsmSpacing.space12),
@@ -664,11 +760,15 @@ class DriverTripDetailScreen extends StatefulWidget {
   const DriverTripDetailScreen({
     required this.gateway,
     required this.tripReference,
+    this.actionControllerFactory,
+    this.onRefreshTripList,
     super.key,
   });
 
   final DriverDutyGateway gateway;
   final String tripReference;
+  final DriverTripActionControllerFactory? actionControllerFactory;
+  final Future<void> Function()? onRefreshTripList;
 
   @override
   State<DriverTripDetailScreen> createState() => _DriverTripDetailScreenState();
@@ -676,6 +776,7 @@ class DriverTripDetailScreen extends StatefulWidget {
 
 class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
   late Future<DriverAssignedTrip> _future;
+  bool _openingLiveActions = false;
 
   @override
   void initState() {
@@ -687,6 +788,71 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
     setState(() {
       _future = widget.gateway.fetchTripDetail(widget.tripReference);
     });
+  }
+
+  Future<void> _openLiveActions(DriverAssignedTrip trip) async {
+    final factory = widget.actionControllerFactory;
+    if (factory == null || _openingLiveActions) {
+      return;
+    }
+
+    setState(() => _openingLiveActions = true);
+
+    DriverTripActionResilienceController controller;
+    try {
+      controller = await factory(trip.reference);
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _openingLiveActions = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Live trip actions could not be prepared safely. Refresh and retry.',
+            ),
+          ),
+        );
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => DriverTripVisualSequencePage(
+          actionRecorder: controller,
+          initialStatus: trip.status,
+          onActionRejected: _handleRejectedAction,
+        ),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => _openingLiveActions = false);
+    _refresh();
+    await widget.onRefreshTripList?.call();
+  }
+
+  Future<void> _handleRejectedAction(
+    DriverTripActionRecordResult result,
+  ) async {
+    final type = result.error?.type;
+    if (type == DriverTripActionFailureType.invalidTransition) {
+      _refresh();
+      await widget.onRefreshTripList?.call();
+      return;
+    }
+    if (type == DriverTripActionFailureType.notFound) {
+      await widget.onRefreshTripList?.call();
+    }
   }
 
   @override
@@ -738,7 +904,16 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
               );
             }
 
-            return _DriverTripDetailCard(trip: trip, onRefresh: _refresh);
+            return _DriverTripDetailCard(
+              trip: trip,
+              onRefresh: _refresh,
+              onOpenLiveActions:
+                  widget.actionControllerFactory != null &&
+                      driverCanOpenLiveTripActions(trip.status)
+                  ? () => _openLiveActions(trip)
+                  : null,
+              openingLiveActions: _openingLiveActions,
+            );
           },
         ),
       ),
@@ -792,10 +967,17 @@ class _DriverTripCard extends StatelessWidget {
 }
 
 class _DriverTripDetailCard extends StatelessWidget {
-  const _DriverTripDetailCard({required this.trip, required this.onRefresh});
+  const _DriverTripDetailCard({
+    required this.trip,
+    required this.onRefresh,
+    required this.onOpenLiveActions,
+    required this.openingLiveActions,
+  });
 
   final DriverAssignedTrip trip;
   final VoidCallback onRefresh;
+  final VoidCallback? onOpenLiveActions;
+  final bool openingLiveActions;
 
   @override
   Widget build(BuildContext context) {
@@ -828,11 +1010,30 @@ class _DriverTripDetailCard extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               key: const Key('driver-trip-detail-refresh'),
-              onPressed: onRefresh,
+              onPressed: openingLiveActions ? null : onRefresh,
               icon: const Icon(Icons.refresh_outlined),
               label: const Text('Refresh'),
             ),
           ),
+          if (onOpenLiveActions != null) ...[
+            const SizedBox(height: AsmSpacing.space8),
+            FilledButton.icon(
+              key: const Key('driver-open-live-trip-actions'),
+              onPressed: openingLiveActions ? null : onOpenLiveActions,
+              icon: openingLiveActions
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.route_outlined),
+              label: Text(
+                openingLiveActions ? 'Preparing...' : 'Continue live trip',
+              ),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+          ],
         ],
       ),
     );

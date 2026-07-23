@@ -9,9 +9,17 @@ import 'driver_trip_route.dart';
 import 'driver_trip_visual_state.dart';
 
 class DriverTripVisualSequencePage extends StatefulWidget {
-  const DriverTripVisualSequencePage({this.actionRecorder, super.key});
+  const DriverTripVisualSequencePage({
+    this.actionRecorder,
+    this.initialStatus,
+    this.onActionRejected,
+    super.key,
+  });
 
   final DriverTripActionResilienceController? actionRecorder;
+  final String? initialStatus;
+  final Future<void> Function(DriverTripActionRecordResult result)?
+  onActionRejected;
 
   @override
   State<DriverTripVisualSequencePage> createState() =>
@@ -20,57 +28,116 @@ class DriverTripVisualSequencePage extends StatefulWidget {
 
 class _DriverTripVisualSequencePageState
     extends State<DriverTripVisualSequencePage> {
-  DriverTripVisualState _state = const DriverTripVisualState.initial();
+  late DriverTripVisualState _state;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _state = DriverTripVisualState.fromBackendStatus(widget.initialStatus);
+  }
 
   Future<void> _applyResilientAction({
     required String eventType,
-    required Map<String, Object?> payload,
     required DriverTripVisualState Function(DriverTripVisualState state)
     transition,
   }) async {
+    if (_isSubmitting) {
+      return;
+    }
+
     final recorder = widget.actionRecorder;
-    DriverTripActionRecordResult? result;
-    if (recorder != null) {
+    if (recorder == null) {
+      setState(() => _state = transition(_state));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    DriverTripActionRecordResult result;
+    try {
       result = await recorder.recordAction(
         eventType: eventType,
-        payload: payload,
+        payload: const <String, Object?>{},
       );
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() => _isSubmitting = false);
+      _showActionMessage(
+        'This action could not be confirmed. Check your connection and retry.',
+      );
+      return;
     }
 
     if (!mounted) {
       return;
     }
 
-    setState(() => _state = transition(_state));
-    if (result?.queuedOffline == true) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            key: Key('driver-trip-action-queued-snackbar'),
-            content: Text(
-              'Saved on this device. Server sync waits for the accepted live Driver trip-action connection.',
-            ),
-          ),
+    if (!result.canAdvance) {
+      setState(() => _isSubmitting = false);
+
+      final rejectionHandler = widget.onActionRejected;
+      if (rejectionHandler != null) {
+        try {
+          await rejectionHandler(result);
+        } on Object {
+          // The action remains unconfirmed even if refresh recovery fails.
+        }
+        if (!mounted) {
+          return;
+        }
+      }
+
+      if (result.queuedOffline) {
+        _showActionMessage(
+          'Saved on this device, but it is not confirmed by the server. '
+          'Retry when the connection is stable.',
+          key: const Key('driver-trip-action-queued-snackbar'),
         );
+      } else {
+        _showActionMessage(
+          result.error?.message ??
+              'This action was not confirmed. Refresh the trip and retry.',
+        );
+      }
+      return;
     }
+
+    setState(() {
+      _state = transition(_state);
+      _isSubmitting = false;
+    });
+  }
+
+  void _showActionMessage(String message, {Key? key}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(key: key, content: Text(message)));
   }
 
   void _markArrivedAtPickup() {
     unawaited(
       _applyResilientAction(
         eventType: 'arrived-pickup',
-        payload: const <String, Object?>{'action': 'arrived-pickup'},
         transition: (state) => state.markArrivedAtPickup(),
       ),
     );
   }
 
   void _openPassengerConfirmation() {
+    if (_isSubmitting) {
+      return;
+    }
     setState(() => _state = _state.openPassengerOnboardConfirmation());
   }
 
   void _cancelPassengerConfirmation() {
+    if (_isSubmitting) {
+      return;
+    }
     setState(() => _state = _state.cancelPassengerOnboardConfirmation());
   }
 
@@ -78,13 +145,15 @@ class _DriverTripVisualSequencePageState
     unawaited(
       _applyResilientAction(
         eventType: 'start-trip',
-        payload: const <String, Object?>{'action': 'start-trip'},
         transition: (state) => state.confirmPassengerOnboard(),
       ),
     );
   }
 
   void _markArrivedAtDestination() {
+    if (_isSubmitting) {
+      return;
+    }
     setState(() => _state = _state.markArrivedAtDestination());
   }
 
@@ -92,7 +161,6 @@ class _DriverTripVisualSequencePageState
     unawaited(
       _applyResilientAction(
         eventType: 'complete-trip',
-        payload: const <String, Object?>{'action': 'complete-trip'},
         transition: (state) => state.completeTrip(),
       ),
     );
@@ -116,7 +184,8 @@ class _DriverTripVisualSequencePageState
             'Passenger onboard',
           DriverTripVisualStage.activeTrip => 'Active trip',
           DriverTripVisualStage.arrivedAtDestination => 'Destination',
-          DriverTripVisualStage.completed => 'Trip completed',
+          DriverTripVisualStage.completed =>
+            'Trip completed — awaiting operations review',
         }),
       ),
       body: switch (stage) {
@@ -135,6 +204,7 @@ class _DriverTripVisualSequencePageState
           actionKey: const Key('driver-mark-arrived-pickup'),
           actionLabel: "I've arrived",
           actionIcon: Icons.location_on_outlined,
+          isActionPending: _isSubmitting,
           onAction: _markArrivedAtPickup,
         ),
         DriverTripVisualStage.arrivedAtPickup => _DriverStateScreen(
@@ -159,6 +229,7 @@ class _DriverTripVisualSequencePageState
           primaryActionKey: const Key('driver-confirm-onboard'),
           primaryActionLabel: 'Start trip',
           primaryActionIcon: Icons.play_arrow_outlined,
+          isPrimaryActionPending: _isSubmitting,
           onPrimaryAction: _confirmPassengerOnboard,
           secondaryActionKey: const Key('driver-cancel-onboard-confirmation'),
           secondaryActionLabel: 'Back',
@@ -189,6 +260,7 @@ class _DriverTripVisualSequencePageState
           primaryActionKey: const Key('driver-complete-trip'),
           primaryActionLabel: 'Complete trip',
           primaryActionIcon: Icons.check_circle_outline,
+          isPrimaryActionPending: _isSubmitting,
           onPrimaryAction: _completeTrip,
         ),
         DriverTripVisualStage.completed => _DriverTripCompletedScreen(
@@ -215,6 +287,7 @@ class _DriverMapStage extends StatelessWidget {
     required this.actionKey,
     required this.actionLabel,
     required this.actionIcon,
+    this.isActionPending = false,
     required this.onAction,
   });
 
@@ -231,6 +304,7 @@ class _DriverMapStage extends StatelessWidget {
   final Key actionKey;
   final String actionLabel;
   final IconData actionIcon;
+  final bool isActionPending;
   final VoidCallback onAction;
 
   @override
@@ -340,9 +414,16 @@ class _DriverMapStage extends StatelessWidget {
                     const SizedBox(height: AsmSpacing.space16),
                     FilledButton.icon(
                       key: actionKey,
-                      onPressed: onAction,
-                      icon: Icon(actionIcon),
-                      label: Text(actionLabel),
+                      onPressed: isActionPending ? null : onAction,
+                      icon: isActionPending
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(actionIcon),
+                      label: Text(
+                        isActionPending ? 'Confirming...' : actionLabel,
+                      ),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(54),
                       ),
@@ -368,6 +449,7 @@ class _DriverStateScreen extends StatelessWidget {
     required this.primaryActionLabel,
     required this.primaryActionIcon,
     required this.onPrimaryAction,
+    this.isPrimaryActionPending = false,
     this.secondaryActionKey,
     this.secondaryActionLabel,
     this.onSecondaryAction,
@@ -380,6 +462,7 @@ class _DriverStateScreen extends StatelessWidget {
   final String primaryActionLabel;
   final IconData primaryActionIcon;
   final VoidCallback onPrimaryAction;
+  final bool isPrimaryActionPending;
   final Key? secondaryActionKey;
   final String? secondaryActionLabel;
   final VoidCallback? onSecondaryAction;
@@ -420,9 +503,16 @@ class _DriverStateScreen extends StatelessWidget {
             const SizedBox(height: AsmSpacing.space32),
             FilledButton.icon(
               key: primaryActionKey,
-              onPressed: onPrimaryAction,
-              icon: Icon(primaryActionIcon),
-              label: Text(primaryActionLabel),
+              onPressed: isPrimaryActionPending ? null : onPrimaryAction,
+              icon: isPrimaryActionPending
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(primaryActionIcon),
+              label: Text(
+                isPrimaryActionPending ? 'Confirming...' : primaryActionLabel,
+              ),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(54),
               ),
@@ -433,7 +523,7 @@ class _DriverStateScreen extends StatelessWidget {
               const SizedBox(height: AsmSpacing.space8),
               OutlinedButton(
                 key: secondaryActionKey,
-                onPressed: onSecondaryAction,
+                onPressed: isPrimaryActionPending ? null : onSecondaryAction,
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                 ),
@@ -470,13 +560,13 @@ class _DriverTripCompletedScreen extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space20),
           const Text(
-            'Trip completed',
+            'Trip completed — awaiting operations review',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: AsmSpacing.space8),
           const Text(
-            'Trip logged',
+            'Awaiting operations review',
             style: TextStyle(
               color: AsmColors.driverMintAction,
               fontWeight: FontWeight.w900,
@@ -518,7 +608,7 @@ class _DriverTripCompletedScreen extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space16),
           const Text(
-            'This completed trip is ready for shift review.',
+            'Completion is not confirmed until ALANTEH operations reviews the trip.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AsmColors.driverTextSecondary,

@@ -31,7 +31,7 @@ class DriverReadinessContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totalCount = DriverReadinessItem.values.length;
-    final canGoOnline = check.isComplete && !batteryNeedsAttention;
+    final canCompleteLocally = check.isComplete && !batteryNeedsAttention;
 
     return SafeArea(
       child: ListView(
@@ -53,13 +53,47 @@ class DriverReadinessContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AsmSpacing.space16),
+          Container(
+            key: const Key('readiness-local-only'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(AsmSpacing.space16),
+            decoration: BoxDecoration(
+              color: AsmColors.driverCardElevated,
+              borderRadius: BorderRadius.circular(AsmRadii.radius16),
+              border: Border.all(color: AsmColors.driverMintAction),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'LOCAL ONLY',
+                  style: TextStyle(
+                    color: AsmColors.driverMintAction,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: AsmSpacing.space8),
+                Text(
+                  'Completing this checklist updates this device only. '
+                  'It is not submitted to the Control Center.',
+                  style: TextStyle(
+                    color: AsmColors.driverTextSecondary,
+                    height: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AsmSpacing.space16),
           const Text(
-            'Shift readiness',
+            'Shift check',
             style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: AsmSpacing.space8),
           const Text(
-            'Before you go online',
+            'Local pre-shift checklist',
             style: TextStyle(
               color: AsmColors.driverMintAction,
               fontSize: 18,
@@ -68,7 +102,7 @@ class DriverReadinessContent extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space8),
           const Text(
-            'Complete these checks before driving.',
+            'Use these checks as a local device reminder before driving.',
             style: TextStyle(
               color: AsmColors.driverTextSecondary,
               height: 1.4,
@@ -171,7 +205,7 @@ class DriverReadinessContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AsmSpacing.space8),
                   const Text(
-                    'Battery must be above 30% to go online. '
+                    'Battery must be above 30% to complete this local checklist. '
                     'Please charge before starting your shift.',
                     style: TextStyle(height: 1.4),
                   ),
@@ -186,7 +220,7 @@ class DriverReadinessContent extends StatelessWidget {
               ),
             ),
           ],
-          if (canGoOnline) ...[
+          if (canCompleteLocally) ...[
             const SizedBox(height: AsmSpacing.space16),
             Container(
               key: const Key('readiness-complete'),
@@ -206,13 +240,13 @@ class DriverReadinessContent extends StatelessWidget {
                   ),
                   SizedBox(height: AsmSpacing.space12),
                   Text(
-                    'You’re ready to go online',
+                    'Local checklist complete',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                   ),
                   SizedBox(height: AsmSpacing.space8),
                   Text(
-                    'All checks passed. You can now start your shift.',
+                    'These checks remain on this device and do not place you online.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AsmColors.driverTextSecondary,
@@ -231,9 +265,9 @@ class DriverReadinessContent extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space12),
           FilledButton.icon(
             key: const Key('readiness-ready'),
-            onPressed: canGoOnline ? onReady : null,
-            icon: const Icon(Icons.online_prediction),
-            label: const Text('Go online'),
+            onPressed: canCompleteLocally ? onReady : null,
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('Complete local checklist'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(54),
             ),

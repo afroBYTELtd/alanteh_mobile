@@ -39,7 +39,7 @@ class DriverConcernReview extends StatelessWidget {
         ),
         const SizedBox(height: AsmSpacing.space8),
         const Text(
-          'Confirm before sending',
+          'Review this local draft',
           style: TextStyle(
             color: AsmColors.driverTextSecondary,
             fontSize: 16,
@@ -59,7 +59,7 @@ class DriverConcernReview extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'No issue report has been sent.',
+                'This report is not sent from the app yet.',
                 style: TextStyle(
                   color: AsmColors.driverTextSecondary,
                   fontWeight: FontWeight.w700,
@@ -91,8 +91,8 @@ class DriverConcernReview extends StatelessWidget {
         FilledButton.icon(
           key: const Key('confirm-concern'),
           onPressed: onConfirm,
-          icon: const Icon(Icons.send_outlined),
-          label: const Text('Confirm & send'),
+          icon: const Icon(Icons.info_outline),
+          label: const Text('Continue without sending'),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
         ),
         const SizedBox(height: AsmSpacing.space8),
@@ -109,7 +109,7 @@ class DriverConcernReview extends StatelessWidget {
         TextButton(
           key: const Key('close-concern'),
           onPressed: onClose,
-          child: const Text('Close without sending'),
+          child: const Text('Close'),
         ),
       ],
     );

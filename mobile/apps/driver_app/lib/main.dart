@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'driver_duty_trips.dart';
 import 'driver_shell.dart';
 import 'foundation/driver_foundation_widgets.dart';
+import 'network/driver_trip_action_gateway.dart';
+import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
 
 export 'driver_shell.dart';
@@ -23,6 +25,177 @@ void main() {
   );
 }
 
+Future<AuthState> driverLoginWithGhanaRetry({
+  required Future<AuthState> Function() attempt,
+  Future<void> Function(Duration duration)? delay,
+}) async {
+  final wait = delay ?? Future<void>.delayed;
+  AuthState? lastState;
+
+  for (
+    var attemptIndex = 0;
+    attemptIndex < GhanaRequestPolicy.maxAttempts;
+    attemptIndex += 1
+  ) {
+    try {
+      final state = await attempt();
+      lastState = state;
+
+      if (state.isAuthenticated || !_isTransientAuthFailure(state.error)) {
+        return state;
+      }
+    } on AuthException catch (error) {
+      if (!_isTransientAuthFailure(error)) {
+        rethrow;
+      }
+      lastState = AuthState.unauthenticated(error);
+    }
+
+    if (attemptIndex >= GhanaRequestPolicy.retryBackoffs.length) {
+      break;
+    }
+
+    await wait(GhanaRequestPolicy.retryBackoffs[attemptIndex]);
+  }
+
+  return lastState ??
+      const AuthState.unauthenticated(
+        AuthException(
+          type: AuthExceptionType.apiFailure,
+          message: 'Authentication request failed.',
+        ),
+      );
+}
+
+bool _isTransientAuthFailure(AuthException? error) {
+  final cause = error?.cause;
+  return cause is AsmApiException &&
+      (cause.type == AsmApiExceptionType.network ||
+          cause.type == AsmApiExceptionType.timeout);
+}
+
+abstract interface class DriverSessionRefreshApiGateway {
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    required Map<String, Object?> body,
+    JsonDecoder<T>? decoder,
+  });
+}
+
+final class AsmDriverSessionRefreshApiGateway
+    implements DriverSessionRefreshApiGateway {
+  const AsmDriverSessionRefreshApiGateway(this.client);
+
+  final AsmApiClient client;
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    required Map<String, Object?> body,
+    JsonDecoder<T>? decoder,
+  }) {
+    return client.post<T>(path, data: body, decoder: decoder);
+  }
+}
+
+final class DriverSessionRefreshController {
+  DriverSessionRefreshController({
+    required this.apiGateway,
+    required this.tokenStore,
+    GhanaRetryPolicy? retryPolicy,
+  }) : _retryPolicy = retryPolicy ?? GhanaRetryPolicy();
+
+  final DriverSessionRefreshApiGateway apiGateway;
+  final AuthTokenStore tokenStore;
+  final GhanaRetryPolicy _retryPolicy;
+
+  Future<DriverTokenRefreshOutcome> refresh() async {
+    final storedRefreshToken = (await tokenStore.readRefreshToken())?.trim();
+
+    if (storedRefreshToken == null || storedRefreshToken.isEmpty) {
+      await tokenStore.clearTokens();
+      return DriverTokenRefreshOutcome.sessionExpired;
+    }
+
+    final response = await _retryPolicy.execute<Map<String, Object?>>(
+      safeToRetry: true,
+      operation: () => apiGateway.post<Map<String, Object?>>(
+        AuthService.refreshPath,
+        body: <String, Object?>{'refresh': storedRefreshToken},
+        decoder: _decodeRefreshResponse,
+      ),
+    );
+
+    if (response.isSuccess && response.data != null) {
+      final accessToken = _firstToken(response.data!, const <String>[
+        'access',
+        'accessToken',
+        'access_token',
+      ]);
+      final refreshToken =
+          _firstToken(response.data!, const <String>[
+            'refresh',
+            'refreshToken',
+            'refresh_token',
+          ]) ??
+          storedRefreshToken;
+
+      if (accessToken == null || refreshToken.trim().isEmpty) {
+        await tokenStore.clearTokens();
+        return DriverTokenRefreshOutcome.sessionExpired;
+      }
+
+      await tokenStore.saveTokens(
+        AuthTokens(accessToken: accessToken, refreshToken: refreshToken),
+      );
+      return DriverTokenRefreshOutcome.refreshed;
+    }
+
+    if (_isTransientRefreshResponse(response)) {
+      return DriverTokenRefreshOutcome.temporarilyUnavailable;
+    }
+
+    await tokenStore.clearTokens();
+    return DriverTokenRefreshOutcome.sessionExpired;
+  }
+
+  static Map<String, Object?> _decodeRefreshResponse(Object? json) {
+    if (json is Map<String, Object?>) {
+      return json;
+    }
+
+    if (json is Map) {
+      return json.map((key, value) => MapEntry(key.toString(), value));
+    }
+
+    throw const FormatException(
+      'Token refresh response was not a JSON object.',
+    );
+  }
+
+  static String? _firstToken(Map<String, Object?> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  static bool _isTransientRefreshResponse(
+    ApiResponse<Map<String, Object?>> response,
+  ) {
+    final error = response.error;
+    return error?.type == AsmApiExceptionType.network ||
+        error?.type == AsmApiExceptionType.timeout ||
+        error?.type == AsmApiExceptionType.server ||
+        response.statusCode == 502 ||
+        response.statusCode == 503 ||
+        response.statusCode == 504;
+  }
+}
+
 class DriverApp extends StatelessWidget {
   const DriverApp({
     this.configuration = AsmAppConfig.localGhana,
@@ -32,6 +205,7 @@ class DriverApp extends StatelessWidget {
     this.authService,
     this.authTokenStore,
     this.driverDutyGateway,
+    this.driverTripActionControllerFactory,
     super.key,
   });
 
@@ -42,6 +216,7 @@ class DriverApp extends StatelessWidget {
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final DriverDutyGateway? driverDutyGateway;
+  final DriverTripActionControllerFactory? driverTripActionControllerFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -56,12 +231,32 @@ class DriverApp extends StatelessWidget {
           tokenStore: tokenStore,
           appContext: AuthAppContext.driver,
         );
+    final sessionRefreshController = authService == null
+        ? _driverSessionRefreshControllerFor(
+            baseUrl: apiBaseUrl,
+            tokenStore: tokenStore,
+          )
+        : null;
     final shouldCreateDefaultDutyGateway =
         showLoginShell && authService == null && authTokenStore == null;
     final dutyGateway =
         driverDutyGateway ??
         (shouldCreateDefaultDutyGateway
-            ? _driverDutyGatewayFor(baseUrl: apiBaseUrl, tokenStore: tokenStore)
+            ? _driverDutyGatewayFor(
+                baseUrl: apiBaseUrl,
+                tokenStore: tokenStore,
+                refreshAccessToken: sessionRefreshController?.refresh,
+              )
+            : null);
+    final actionControllerFactory =
+        driverTripActionControllerFactory ??
+        (shouldCreateDefaultDutyGateway && dutyGateway != null
+            ? _driverTripActionControllerFactoryFor(
+                baseUrl: apiBaseUrl,
+                tokenStore: tokenStore,
+                dutyGateway: dutyGateway,
+                refreshAccessToken: sessionRefreshController?.refresh,
+              )
             : null);
 
     final home = showLoginShell
@@ -71,11 +266,14 @@ class DriverApp extends StatelessWidget {
             authTokenStore: tokenStore,
             localQaEnabled: configuration.localQaEnabled,
             driverDutyGateway: dutyGateway,
+            driverTripActionControllerFactory: actionControllerFactory,
+            accessTokenRefresh: sessionRefreshController?.refresh,
           )
         : DriverShell(
             configuration: configuration,
             localQaEnabled: configuration.localQaEnabled,
             driverDutyGateway: dutyGateway,
+            driverTripActionControllerFactory: actionControllerFactory,
           );
 
     return MaterialApp(
@@ -102,6 +300,8 @@ class DriverLoginShell extends StatefulWidget {
     this.configuration = AsmAppConfig.localGhana,
     this.localQaEnabled = false,
     this.driverDutyGateway,
+    this.driverTripActionControllerFactory,
+    this.accessTokenRefresh,
     super.key,
   });
 
@@ -110,6 +310,8 @@ class DriverLoginShell extends StatefulWidget {
   final AuthTokenStore authTokenStore;
   final bool localQaEnabled;
   final DriverDutyGateway? driverDutyGateway;
+  final DriverTripActionControllerFactory? driverTripActionControllerFactory;
+  final DriverAccessTokenRefresh? accessTokenRefresh;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -149,6 +351,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       if (hadStoredSession) {
         await widget.authTokenStore.clearTokens();
       }
+
       if (!mounted || _localDemoOpened || _signedIn) {
         return;
       }
@@ -161,6 +364,45 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             : null;
       });
       return;
+    }
+
+    final controlledRefresh = widget.accessTokenRefresh;
+    if (controlledRefresh != null) {
+      final outcome = await controlledRefresh();
+
+      if (!mounted || _localDemoOpened) {
+        return;
+      }
+
+      switch (outcome) {
+        case DriverTokenRefreshOutcome.refreshed:
+          setState(() {
+            _signedIn = true;
+            _isSigningIn = false;
+            _loginError = null;
+          });
+          return;
+        case DriverTokenRefreshOutcome.temporarilyUnavailable:
+          setState(() {
+            _signedIn = false;
+            _isSigningIn = false;
+            _loginError =
+                'Cannot refresh your session right now. '
+                'Your stored sign-in was kept. Check your connection and retry.';
+          });
+          return;
+        case DriverTokenRefreshOutcome.sessionExpired:
+          await widget.authTokenStore.clearTokens();
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _signedIn = false;
+            _isSigningIn = false;
+            _loginError = 'Please sign in again to continue.';
+          });
+          return;
+      }
     }
 
     AuthState state;
@@ -246,9 +488,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     });
 
     try {
-      final state = await widget.authService.login(
-        _phoneController.text,
-        _pinController.text,
+      final state = await driverLoginWithGhanaRetry(
+        attempt: () => widget.authService.login(
+          _phoneController.text,
+          _pinController.text,
+        ),
       );
 
       if (!mounted) {
@@ -325,6 +569,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         localQaEnabled: widget.localQaEnabled,
         onSignOut: _signOut,
         driverDutyGateway: widget.driverDutyGateway,
+        driverTripActionControllerFactory:
+            widget.driverTripActionControllerFactory,
       );
     }
 
@@ -584,9 +830,26 @@ AuthService _authServiceFor({
   );
 }
 
+DriverSessionRefreshController? _driverSessionRefreshControllerFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  return DriverSessionRefreshController(
+    apiGateway: AsmDriverSessionRefreshApiGateway(
+      GhanaResilientApiClient(baseUrl: baseUrl!),
+    ),
+    tokenStore: tokenStore,
+  );
+}
+
 DriverDutyGateway? _driverDutyGatewayFor({
   required String? baseUrl,
   required AuthTokenStore tokenStore,
+  DriverAccessTokenRefresh? refreshAccessToken,
 }) {
   if (!AsmApiBaseUrl.isUsable(baseUrl)) {
     return null;
@@ -597,7 +860,53 @@ DriverDutyGateway? _driverDutyGatewayFor({
       baseUrl: baseUrl!,
       tokenProvider: _StoredAccessTokenProvider(tokenStore),
     ),
+    refreshAccessToken: refreshAccessToken,
   );
+}
+
+DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  required DriverDutyGateway dutyGateway,
+  DriverAccessTokenRefresh? refreshAccessToken,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  final liveGateway = ApiDriverTripActionGateway(
+    apiGateway: AsmDriverTripActionApiGateway(
+      GhanaResilientApiClient(baseUrl: baseUrl!),
+    ),
+    tokenStore: tokenStore,
+    refreshAccessToken: refreshAccessToken,
+  );
+  final persistentQueue = PersistentDriverTripActionQueue();
+
+  return (tripReference) async {
+    final duty = await dutyGateway.fetchDuty();
+    final driverReference = duty.driverReference?.trim();
+    if (driverReference == null || driverReference.isEmpty) {
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.badResponse,
+        'Driver identity could not be confirmed safely.',
+      );
+    }
+
+    return DriverTripActionResilienceController(
+      queue: persistentQueue,
+      gateway: liveGateway,
+      tripReference: tripReference,
+      driverId: driverReference,
+      verifyServerState: (action, receipt) async {
+        final refreshedTrip = await dutyGateway.fetchTripDetail(
+          receipt.tripReference,
+        );
+        return refreshedTrip.reference == receipt.tripReference &&
+            refreshedTrip.status?.trim() == action.expectedStatus;
+      },
+    );
+  };
 }
 
 final class _StoredAccessTokenProvider implements TokenProvider {

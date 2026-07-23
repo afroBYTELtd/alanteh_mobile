@@ -154,7 +154,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Saved on this device'), findsOneWidget);
-    expect(queue.events.single.eventType, 'arrived-pickup');
+    expect(
+      queue.events.single.eventType,
+      '/api/driver/trips/TRIP-GHANA-002/actions/arrived-pickup/',
+    );
+    expect(queue.events.single.payloadJson, isEmpty);
   });
 }
 

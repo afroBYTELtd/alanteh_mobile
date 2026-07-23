@@ -70,7 +70,7 @@ class _DriverConcernPageState extends State<DriverConcernPage> {
         title: Text(switch (_screen) {
           _DriverConcernScreen.form => 'Report an issue',
           _DriverConcernScreen.review => 'Review report',
-          _DriverConcernScreen.submitted => 'Report sent',
+          _DriverConcernScreen.submitted => 'Report not sent',
         }),
       ),
       body: SafeArea(
@@ -129,14 +129,15 @@ class _DriverConcernSubmitted extends StatelessWidget {
             ),
             const SizedBox(height: AsmSpacing.space20),
             const Text(
-              'Report sent',
+              'Report not sent',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: AsmSpacing.space12),
             const Text(
-              "ALANTEH's operations team has received your report and "
-              'will follow up if needed.',
+              'This report is not sent from the app yet. '
+              'Use an approved contact channel if operations follow-up '
+              'is required.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AsmColors.driverTextSecondary,
