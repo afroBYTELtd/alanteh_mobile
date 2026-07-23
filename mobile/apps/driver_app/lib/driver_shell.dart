@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'concern/driver_concern_page.dart';
 import 'driver_duty_trips.dart';
 import 'driver_home.dart';
+import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
@@ -17,6 +18,7 @@ class DriverShell extends StatefulWidget {
     this.onSignOut,
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
+    this.driverOfferResponseControllerFactory,
     super.key,
   });
 
@@ -25,6 +27,8 @@ class DriverShell extends StatefulWidget {
   final Future<void> Function()? onSignOut;
   final DriverDutyGateway? driverDutyGateway;
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
+  final DriverOfferResponseControllerFactory?
+  driverOfferResponseControllerFactory;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -134,6 +138,8 @@ class _DriverShellState extends State<DriverShell> {
       1 => DriverAssignedTripsScreen(
         gateway: widget.driverDutyGateway,
         actionControllerFactory: widget.driverTripActionControllerFactory,
+        offerResponseControllerFactory:
+            widget.driverOfferResponseControllerFactory,
       ),
       _ => _DriverAccountPage(
         currentShift: _currentShift,

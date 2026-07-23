@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'driver_duty_trips.dart';
 import 'driver_shell.dart';
 import 'foundation/driver_foundation_widgets.dart';
+import 'network/driver_offer_response_gateway.dart';
+import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
@@ -206,6 +208,7 @@ class DriverApp extends StatelessWidget {
     this.authTokenStore,
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
+    this.driverOfferResponseControllerFactory,
     super.key,
   });
 
@@ -217,6 +220,8 @@ class DriverApp extends StatelessWidget {
   final AuthTokenStore? authTokenStore;
   final DriverDutyGateway? driverDutyGateway;
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
+  final DriverOfferResponseControllerFactory?
+  driverOfferResponseControllerFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -258,6 +263,16 @@ class DriverApp extends StatelessWidget {
                 refreshAccessToken: sessionRefreshController?.refresh,
               )
             : null);
+    final offerResponseControllerFactory =
+        driverOfferResponseControllerFactory ??
+        (shouldCreateDefaultDutyGateway && dutyGateway != null
+            ? _driverOfferResponseControllerFactoryFor(
+                baseUrl: apiBaseUrl,
+                tokenStore: tokenStore,
+                dutyGateway: dutyGateway,
+                refreshAccessToken: sessionRefreshController?.refresh,
+              )
+            : null);
 
     final home = showLoginShell
         ? DriverLoginShell(
@@ -267,6 +282,8 @@ class DriverApp extends StatelessWidget {
             localQaEnabled: configuration.localQaEnabled,
             driverDutyGateway: dutyGateway,
             driverTripActionControllerFactory: actionControllerFactory,
+            driverOfferResponseControllerFactory:
+                offerResponseControllerFactory,
             accessTokenRefresh: sessionRefreshController?.refresh,
           )
         : DriverShell(
@@ -274,6 +291,8 @@ class DriverApp extends StatelessWidget {
             localQaEnabled: configuration.localQaEnabled,
             driverDutyGateway: dutyGateway,
             driverTripActionControllerFactory: actionControllerFactory,
+            driverOfferResponseControllerFactory:
+                offerResponseControllerFactory,
           );
 
     return MaterialApp(
@@ -301,6 +320,7 @@ class DriverLoginShell extends StatefulWidget {
     this.localQaEnabled = false,
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
+    this.driverOfferResponseControllerFactory,
     this.accessTokenRefresh,
     super.key,
   });
@@ -311,6 +331,8 @@ class DriverLoginShell extends StatefulWidget {
   final bool localQaEnabled;
   final DriverDutyGateway? driverDutyGateway;
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
+  final DriverOfferResponseControllerFactory?
+  driverOfferResponseControllerFactory;
   final DriverAccessTokenRefresh? accessTokenRefresh;
 
   @override
@@ -571,6 +593,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverDutyGateway: widget.driverDutyGateway,
         driverTripActionControllerFactory:
             widget.driverTripActionControllerFactory,
+        driverOfferResponseControllerFactory:
+            widget.driverOfferResponseControllerFactory,
       );
     }
 
@@ -904,6 +928,54 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
         );
         return refreshedTrip.reference == receipt.tripReference &&
             refreshedTrip.status?.trim() == action.expectedStatus;
+      },
+    );
+  };
+}
+
+DriverOfferResponseControllerFactory? _driverOfferResponseControllerFactoryFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  required DriverDutyGateway dutyGateway,
+  DriverAccessTokenRefresh? refreshAccessToken,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  final liveGateway = ApiDriverOfferResponseGateway(
+    apiGateway: AsmDriverOfferResponseApiGateway(
+      GhanaResilientApiClient(baseUrl: baseUrl!),
+    ),
+    tokenStore: tokenStore,
+    refreshAccessToken: refreshAccessToken,
+  );
+  final persistentQueue = PersistentDriverTripActionQueue();
+
+  return (tripReference) async {
+    final duty = await dutyGateway.fetchDuty();
+    final driverReference = duty.driverReference?.trim();
+    if (driverReference == null || driverReference.isEmpty) {
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.badResponse,
+        'Driver identity could not be confirmed safely.',
+      );
+    }
+
+    return DriverOfferResponseResilienceController(
+      queue: persistentQueue,
+      gateway: liveGateway,
+      tripReference: tripReference,
+      driverId: driverReference,
+      verifyServerState: (receipt) async {
+        final refreshedTrip = await dutyGateway.fetchTripDetail(
+          receipt.tripReference ?? tripReference,
+        );
+        return DriverOfferVerifiedTrip(
+          tripReference: refreshedTrip.reference,
+          status: refreshedTrip.status?.trim() ?? '',
+          source: refreshedTrip,
+        );
       },
     );
   };

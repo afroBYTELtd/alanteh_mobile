@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'trip_progress/driver_trip_visual_sequence.dart';
@@ -315,12 +318,16 @@ final class DriverAssignedTrip {
   }
 }
 
+bool driverIsOfferPending(String? status) {
+  return status?.trim() == 'driver_offer_sent';
+}
+
 bool driverCanOpenLiveTripActions(String? status) {
   return const <String>{
     'assigned',
-    'accepted_for_trip',
     'driver_accepted',
     'driver_en_route',
+    'dispatched',
     'arrived_at_pickup',
     'passenger_onboard',
     'in_progress',
@@ -331,7 +338,10 @@ String driverStatusLabel(String? status) {
   return switch (status?.trim()) {
     'assigned' => 'Assigned',
     'accepted_for_trip' => 'Accepted for trip preparation',
+    'driver_offer_sent' => 'Driver offer sent',
+    'driver_accepted' => 'Driver accepted',
     'driver_en_route' => 'On the way to pickup',
+    'dispatched' => 'Dispatched',
     'arrived_at_pickup' => 'Arrived at pickup',
     'passenger_onboard' => 'Passenger onboard',
     'in_progress' => 'Trip in progress',
@@ -597,11 +607,13 @@ class DriverAssignedTripsScreen extends StatefulWidget {
   const DriverAssignedTripsScreen({
     required this.gateway,
     this.actionControllerFactory,
+    this.offerResponseControllerFactory,
     super.key,
   });
 
   final DriverDutyGateway? gateway;
   final DriverTripActionControllerFactory? actionControllerFactory;
+  final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
 
   @override
   State<DriverAssignedTripsScreen> createState() =>
@@ -621,7 +633,9 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   void didUpdateWidget(covariant DriverAssignedTripsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.gateway != widget.gateway ||
-        oldWidget.actionControllerFactory != widget.actionControllerFactory) {
+        oldWidget.actionControllerFactory != widget.actionControllerFactory ||
+        oldWidget.offerResponseControllerFactory !=
+            widget.offerResponseControllerFactory) {
       _future = _loadTrips();
     }
   }
@@ -732,6 +746,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                             tripReference: trip.reference,
                             actionControllerFactory:
                                 widget.actionControllerFactory,
+                            offerResponseControllerFactory:
+                                widget.offerResponseControllerFactory,
                             onRefreshTripList: () async {
                               if (mounted) {
                                 _refresh();
@@ -761,6 +777,7 @@ class DriverTripDetailScreen extends StatefulWidget {
     required this.gateway,
     required this.tripReference,
     this.actionControllerFactory,
+    this.offerResponseControllerFactory,
     this.onRefreshTripList,
     super.key,
   });
@@ -768,6 +785,7 @@ class DriverTripDetailScreen extends StatefulWidget {
   final DriverDutyGateway gateway;
   final String tripReference;
   final DriverTripActionControllerFactory? actionControllerFactory;
+  final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
   final Future<void> Function()? onRefreshTripList;
 
   @override
@@ -777,17 +795,94 @@ class DriverTripDetailScreen extends StatefulWidget {
 class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
   late Future<DriverAssignedTrip> _future;
   bool _openingLiveActions = false;
+  bool _preparingOfferResponse = false;
+  bool _submittingOfferResponse = false;
+  DriverOfferResponseResilienceController? _offerResponseController;
+  DriverOfferAcceptanceResult? _offerAcceptanceResult;
+  String? _offerPreparationError;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.gateway.fetchTripDetail(widget.tripReference);
+    _future = _loadTrip();
+  }
+
+  Future<DriverAssignedTrip> _loadTrip() async {
+    final trip = await widget.gateway.fetchTripDetail(widget.tripReference);
+    if (driverIsOfferPending(trip.status)) {
+      await _prepareOfferResponse(trip);
+    }
+    return trip;
+  }
+
+  Future<void> _prepareOfferResponse(DriverAssignedTrip trip) async {
+    if (_offerResponseController != null || _preparingOfferResponse) {
+      return;
+    }
+
+    final factory = widget.offerResponseControllerFactory;
+    if (factory == null) {
+      _offerPreparationError =
+          'Offer acceptance is not available. Refresh and try again.';
+      return;
+    }
+
+    _preparingOfferResponse = true;
+    _offerPreparationError = null;
+
+    try {
+      final controller = await factory(trip.reference);
+      await controller.prepareWhenOfferDisplayed();
+      _offerResponseController = controller;
+    } on Object {
+      _offerPreparationError =
+          'Offer acceptance could not be prepared safely. Refresh and try again.';
+    } finally {
+      _preparingOfferResponse = false;
+    }
   }
 
   void _refresh() {
     setState(() {
-      _future = widget.gateway.fetchTripDetail(widget.tripReference);
+      _future = _loadTrip();
     });
+  }
+
+  Future<void> _acceptOffer({required bool manualRetry}) async {
+    final controller = _offerResponseController;
+    if (controller == null || _submittingOfferResponse) {
+      return;
+    }
+
+    setState(() {
+      _submittingOfferResponse = true;
+      _offerAcceptanceResult = null;
+    });
+
+    final result = manualRetry
+        ? await controller.retry()
+        : await controller.accept();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _submittingOfferResponse = false;
+      _offerAcceptanceResult = result;
+    });
+
+    if (!result.accepted) {
+      return;
+    }
+
+    final refreshedSource = result.refreshedTrip?.source;
+    setState(() {
+      _future = refreshedSource is DriverAssignedTrip
+          ? Future<DriverAssignedTrip>.value(refreshedSource)
+          : widget.gateway.fetchTripDetail(widget.tripReference);
+    });
+    await widget.onRefreshTripList?.call();
   }
 
   Future<void> _openLiveActions(DriverAssignedTrip trip) async {
@@ -913,6 +1008,14 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                   ? () => _openLiveActions(trip)
                   : null,
               openingLiveActions: _openingLiveActions,
+              offerPending: driverIsOfferPending(trip.status),
+              offerPreparing: _preparingOfferResponse,
+              offerSubmitting: _submittingOfferResponse,
+              offerPrepared: _offerResponseController != null,
+              offerPreparationError: _offerPreparationError,
+              offerAcceptanceResult: _offerAcceptanceResult,
+              onAcceptOffer: () => _acceptOffer(manualRetry: false),
+              onRetryOffer: () => _acceptOffer(manualRetry: true),
             );
           },
         ),
@@ -972,12 +1075,28 @@ class _DriverTripDetailCard extends StatelessWidget {
     required this.onRefresh,
     required this.onOpenLiveActions,
     required this.openingLiveActions,
+    required this.offerPending,
+    required this.offerPreparing,
+    required this.offerSubmitting,
+    required this.offerPrepared,
+    required this.offerPreparationError,
+    required this.offerAcceptanceResult,
+    required this.onAcceptOffer,
+    required this.onRetryOffer,
   });
 
   final DriverAssignedTrip trip;
   final VoidCallback onRefresh;
   final VoidCallback? onOpenLiveActions;
   final bool openingLiveActions;
+  final bool offerPending;
+  final bool offerPreparing;
+  final bool offerSubmitting;
+  final bool offerPrepared;
+  final String? offerPreparationError;
+  final DriverOfferAcceptanceResult? offerAcceptanceResult;
+  final VoidCallback onAcceptOffer;
+  final VoidCallback onRetryOffer;
 
   @override
   Widget build(BuildContext context) {
@@ -1015,6 +1134,80 @@ class _DriverTripDetailCard extends StatelessWidget {
               label: const Text('Refresh'),
             ),
           ),
+          if (offerPending) ...[
+            const SizedBox(height: AsmSpacing.space12),
+            Text(
+              'A trip offer is waiting for your response.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AsmColors.driverTextSecondary,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: AsmSpacing.space12),
+            FilledButton.icon(
+              key: const Key('driver-accept-offer'),
+              onPressed: offerPrepared && !offerSubmitting
+                  ? onAcceptOffer
+                  : null,
+              icon: offerSubmitting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_outlined),
+              label: Text(
+                offerSubmitting
+                    ? 'Confirming acceptance...'
+                    : offerPreparing
+                    ? 'Preparing offer...'
+                    : 'Accept',
+              ),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            OutlinedButton.icon(
+              key: const Key('driver-decline-offer-disabled'),
+              onPressed: null,
+              icon: const Icon(Icons.close_outlined),
+              label: const Text('Decline'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            Text(
+              'Decline is not available in this build.',
+              key: const Key('driver-decline-offer-explanation'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AsmColors.driverTextSecondary,
+              ),
+            ),
+            if (offerPreparationError != null) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              Text(
+                offerPreparationError!,
+                key: const Key('driver-offer-preparation-error'),
+              ),
+            ],
+            if (offerAcceptanceResult?.message != null) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              Text(
+                offerAcceptanceResult!.message!,
+                key: const Key('driver-offer-response-error'),
+              ),
+            ],
+            if (offerAcceptanceResult?.permitsManualRetry == true) ...[
+              const SizedBox(height: AsmSpacing.space8),
+              TextButton.icon(
+                key: const Key('driver-offer-manual-retry'),
+                onPressed: offerSubmitting ? null : onRetryOffer,
+                icon: const Icon(Icons.refresh_outlined),
+                label: const Text('Retry'),
+              ),
+            ],
+          ],
           if (onOpenLiveActions != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             FilledButton.icon(
