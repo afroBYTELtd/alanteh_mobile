@@ -207,6 +207,25 @@ final class DriverDutySummary {
 
   static DriverDutySummary fromJson(Object? json) {
     final map = _decodeMap(json, 'Driver duty response was not a JSON object.');
+
+    Map<String, Object?> nestedMap(Object? value) {
+      if (value is Map<String, Object?>) {
+        return value;
+      }
+      if (value is Map) {
+        return value.map((key, nestedValue) => MapEntry('$key', nestedValue));
+      }
+      return const <String, Object?>{};
+    }
+
+    final driver = nestedMap(map['driver']);
+    final duty = nestedMap(map['duty']);
+    final driverReferenceValue = driver['driver_reference'];
+    final driverReference =
+        driverReferenceValue is String && driverReferenceValue.trim().isNotEmpty
+        ? driverReferenceValue.trim()
+        : null;
+
     return DriverDutySummary(
       displayName: _firstString(map, const [
         'display_name',
@@ -214,12 +233,7 @@ final class DriverDutySummary {
         'name',
         'full_name',
       ]),
-      driverReference: _firstString(map, const [
-        'driver_reference',
-        'driver_code',
-        'reference',
-        'code',
-      ]),
+      driverReference: driverReference,
       phone: _firstString(map, const ['phone', 'phone_number', 'mobile']),
       status: _firstString(map, const ['driver_status', 'status']),
       assignedVehicleReference: _firstString(map, const [
@@ -227,9 +241,11 @@ final class DriverDutySummary {
         'vehicle_reference',
         'vehicle',
       ]),
-      canReceiveAssignments: _firstBool(map, const ['can_receive_assignments']),
-      activeTripCount: _firstInt(map, const ['active_trip_count']),
-      assignedTripCount: _firstInt(map, const ['assigned_trip_count']),
+      canReceiveAssignments: _firstBool(duty, const [
+        'can_receive_assignments',
+      ]),
+      activeTripCount: _firstInt(duty, const ['active_trip_count']),
+      assignedTripCount: _firstInt(duty, const ['assigned_trip_count']),
     );
   }
 }

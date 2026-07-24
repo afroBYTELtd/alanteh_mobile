@@ -789,6 +789,138 @@ void main() {
     });
   });
 
+  group('Driver duty production response parser', () {
+    test('test_exact_production_response_shape', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'driver': <String, Object?>{'driver_reference': 'QA-DRV-001'},
+        'duty': <String, Object?>{
+          'can_receive_assignments': true,
+          'active_trip_count': 1,
+          'assigned_trip_count': 2,
+        },
+      });
+
+      expect(summary.driverReference, 'QA-DRV-001');
+      expect(summary.canReceiveAssignments, isTrue);
+      expect(summary.activeTripCount, 1);
+      expect(summary.assignedTripCount, 2);
+    });
+
+    test('test_valid_nested_driver_reference', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'driver': <String, Object?>{'driver_reference': '  QA-DRV-001  '},
+      });
+
+      expect(summary.driverReference, 'QA-DRV-001');
+    });
+
+    test('test_missing_driver_object', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{});
+
+      expect(summary.driverReference, isNull);
+    });
+
+    test('test_null_driver_reference_value', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'driver': <String, Object?>{'driver_reference': null},
+      });
+
+      expect(summary.driverReference, isNull);
+    });
+
+    test('test_blank_driver_reference_value', () {
+      for (final value in <String>['', '   ']) {
+        final summary = DriverDutySummary.fromJson(<String, Object?>{
+          'driver': <String, Object?>{'driver_reference': value},
+        });
+
+        expect(summary.driverReference, isNull, reason: 'value=<$value>');
+      }
+    });
+
+    test('test_wrong_value_type', () {
+      for (final value in <Object?>[
+        42,
+        true,
+        const <String, Object?>{'unexpected': 'map'},
+        const <Object?>['unexpected', 'list'],
+      ]) {
+        final summary = DriverDutySummary.fromJson(<String, Object?>{
+          'driver': <String, Object?>{'driver_reference': value},
+        });
+
+        expect(summary.driverReference, isNull, reason: 'value=$value');
+      }
+    });
+
+    test('test_nested_duty_fields', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'duty': <String, Object?>{
+          'can_receive_assignments': true,
+          'active_trip_count': 3,
+          'assigned_trip_count': 4,
+        },
+      });
+
+      expect(summary.canReceiveAssignments, isTrue);
+      expect(summary.activeTripCount, 3);
+      expect(summary.assignedTripCount, 4);
+    });
+
+    test('test_duty_does_not_supply_driver_reference', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'duty': <String, Object?>{
+          'driver_reference': 'DUTY-MUST-NOT-BE-USED',
+          'can_receive_assignments': true,
+          'active_trip_count': 1,
+          'assigned_trip_count': 1,
+        },
+      });
+
+      expect(summary.driverReference, isNull);
+    });
+
+    test('test_root_level_legacy_fields_do_not_populate_driver_reference', () {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'driver_reference': 'ROOT-DRIVER-REFERENCE',
+        'driver_code': 'ROOT-DRIVER-CODE',
+        'reference': 'ROOT-REFERENCE',
+        'code': 'ROOT-CODE',
+      });
+
+      expect(summary.driverReference, isNull);
+    });
+
+    test('test_production_factory_receives_mapped_reference', () async {
+      final summary = DriverDutySummary.fromJson(const <String, Object?>{
+        'driver': <String, Object?>{'driver_reference': '  QA-DRV-001  '},
+        'duty': <String, Object?>{
+          'can_receive_assignments': true,
+          'active_trip_count': 0,
+          'assigned_trip_count': 1,
+        },
+      });
+      final queue = _MemoryOfferQueue();
+      final offerGateway = _RecordingOfferGateway();
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async => summary,
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+
+      final controller = await _diagnosticProductionFactory(
+        dutyGateway: dutyGateway,
+        queue: queue,
+        offerGateway: offerGateway,
+      )('TRIP-OFFER-001');
+
+      final prepared = await controller.prepareWhenOfferDisplayed();
+
+      expect(prepared.driverId, 'QA-DRV-001');
+      expect(offerGateway.calls, 0);
+      expect(await queue.pendingEvents(), hasLength(1));
+    });
+  });
+
   group('Typed offer-preparation diagnostics', () {
     test('exact sanitized preparation codes remain stable', () {
       expect(
