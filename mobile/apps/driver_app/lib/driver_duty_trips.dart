@@ -799,7 +799,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
   bool _submittingOfferResponse = false;
   DriverOfferResponseResilienceController? _offerResponseController;
   DriverOfferAcceptanceResult? _offerAcceptanceResult;
-  String? _offerPreparationError;
+  String? _offerPreparationStatus;
 
   @override
   void initState() {
@@ -815,31 +815,58 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
     return trip;
   }
 
-  Future<void> _prepareOfferResponse(DriverAssignedTrip trip) async {
+  Future<void> _prepareOfferResponse(
+    DriverAssignedTrip trip, {
+    bool notify = false,
+  }) async {
     if (_offerResponseController != null || _preparingOfferResponse) {
       return;
     }
 
+    void update(VoidCallback mutation) {
+      if (notify && mounted) {
+        setState(mutation);
+        return;
+      }
+      mutation();
+    }
+
     final factory = widget.offerResponseControllerFactory;
     if (factory == null) {
-      _offerPreparationError =
-          'Offer acceptance is not available. Refresh and try again.';
+      update(() {
+        _offerPreparationStatus =
+            'PREP_FAILED: '
+            '${DriverOfferPreparationFailureCode.factoryUnavailable.value}';
+      });
       return;
     }
 
-    _preparingOfferResponse = true;
-    _offerPreparationError = null;
+    update(() {
+      _preparingOfferResponse = true;
+    });
 
     try {
       final controller = await factory(trip.reference);
       await controller.prepareWhenOfferDisplayed();
-      _offerResponseController = controller;
-    } on Object {
-      _offerPreparationError =
-          'Offer acceptance could not be prepared safely. Refresh and try again.';
+
+      update(() {
+        _offerResponseController = controller;
+        _offerPreparationStatus = 'PREP_READY';
+      });
+    } on DriverOfferPreparationException catch (error) {
+      update(() {
+        _offerResponseController = null;
+        _offerPreparationStatus = 'PREP_FAILED: ${error.code.value}';
+      });
     } finally {
-      _preparingOfferResponse = false;
+      update(() {
+        _preparingOfferResponse = false;
+      });
     }
+  }
+
+  Future<void> _retryOfferPreparation(DriverAssignedTrip trip) {
+    return _prepareOfferResponse(trip, notify: true);
   }
 
   void _refresh() {
@@ -1012,9 +1039,10 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
               offerPreparing: _preparingOfferResponse,
               offerSubmitting: _submittingOfferResponse,
               offerPrepared: _offerResponseController != null,
-              offerPreparationError: _offerPreparationError,
+              offerPreparationStatus: _offerPreparationStatus,
               offerAcceptanceResult: _offerAcceptanceResult,
               onAcceptOffer: () => _acceptOffer(manualRetry: false),
+              onRetryPreparation: () => _retryOfferPreparation(trip),
               onRetryOffer: () => _acceptOffer(manualRetry: true),
             );
           },
@@ -1079,9 +1107,10 @@ class _DriverTripDetailCard extends StatelessWidget {
     required this.offerPreparing,
     required this.offerSubmitting,
     required this.offerPrepared,
-    required this.offerPreparationError,
+    required this.offerPreparationStatus,
     required this.offerAcceptanceResult,
     required this.onAcceptOffer,
+    required this.onRetryPreparation,
     required this.onRetryOffer,
   });
 
@@ -1093,9 +1122,10 @@ class _DriverTripDetailCard extends StatelessWidget {
   final bool offerPreparing;
   final bool offerSubmitting;
   final bool offerPrepared;
-  final String? offerPreparationError;
+  final String? offerPreparationStatus;
   final DriverOfferAcceptanceResult? offerAcceptanceResult;
   final VoidCallback onAcceptOffer;
+  final VoidCallback onRetryPreparation;
   final VoidCallback onRetryOffer;
 
   @override
@@ -1146,7 +1176,7 @@ class _DriverTripDetailCard extends StatelessWidget {
             const SizedBox(height: AsmSpacing.space12),
             FilledButton.icon(
               key: const Key('driver-accept-offer'),
-              onPressed: offerPrepared && !offerSubmitting
+              onPressed: offerPrepared && !offerPreparing && !offerSubmitting
                   ? onAcceptOffer
                   : null,
               icon: offerSubmitting
@@ -1184,11 +1214,21 @@ class _DriverTripDetailCard extends StatelessWidget {
                 color: AsmColors.driverTextSecondary,
               ),
             ),
-            if (offerPreparationError != null) ...[
+            if (offerPreparationStatus != null) ...[
               const SizedBox(height: AsmSpacing.space12),
               Text(
-                offerPreparationError!,
-                key: const Key('driver-offer-preparation-error'),
+                offerPreparationStatus!,
+                key: const Key('driver-offer-preparation-status'),
+              ),
+            ],
+            if (offerPreparationStatus?.startsWith('PREP_FAILED: ') ==
+                true) ...[
+              const SizedBox(height: AsmSpacing.space8),
+              TextButton.icon(
+                key: const Key('driver-offer-preparation-retry'),
+                onPressed: offerPreparing ? null : onRetryPreparation,
+                icon: const Icon(Icons.refresh_outlined),
+                label: const Text('Retry preparation'),
               ),
             ],
             if (offerAcceptanceResult?.message != null) ...[

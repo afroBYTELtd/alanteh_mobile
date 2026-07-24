@@ -27,6 +27,45 @@ typedef DriverOfferResponseControllerFactory =
       String tripReference,
     );
 
+enum DriverOfferPreparationFailureCode {
+  factoryUnavailable,
+  driverDutyFetchFailed,
+  driverReferenceMissing,
+  persistentQueueOpenOrReadFailed,
+  conflictingOfferRecord,
+  invalidOfferRecord,
+  queueEnqueueFailed,
+}
+
+extension DriverOfferPreparationFailureCodeValue
+    on DriverOfferPreparationFailureCode {
+  String get value => switch (this) {
+    DriverOfferPreparationFailureCode.factoryUnavailable =>
+      'factory_unavailable',
+    DriverOfferPreparationFailureCode.driverDutyFetchFailed =>
+      'driver_duty_fetch_failed',
+    DriverOfferPreparationFailureCode.driverReferenceMissing =>
+      'driver_reference_missing',
+    DriverOfferPreparationFailureCode.persistentQueueOpenOrReadFailed =>
+      'persistent_queue_open_or_read_failed',
+    DriverOfferPreparationFailureCode.conflictingOfferRecord =>
+      'conflicting_offer_record',
+    DriverOfferPreparationFailureCode.invalidOfferRecord =>
+      'invalid_offer_record',
+    DriverOfferPreparationFailureCode.queueEnqueueFailed =>
+      'queue_enqueue_failed',
+  };
+}
+
+final class DriverOfferPreparationException implements Exception {
+  const DriverOfferPreparationException(this.code);
+
+  final DriverOfferPreparationFailureCode code;
+
+  @override
+  String toString() => 'DriverOfferPreparationException(code=${code.value})';
+}
+
 enum DriverOfferAcceptanceDisposition {
   accepted,
   duplicateRecovered,
@@ -112,15 +151,39 @@ final class DriverOfferResponseResilienceController {
   String get _keyPrefix => 'DRIVER-OFFER-$_normalizedTripReference-';
 
   Future<QueuedEvent> prepareWhenOfferDisplayed() async {
-    final persisted = await queue.eventById(_recordId);
-    final matches = await _pendingAcceptanceEvents();
-    final conflictingMatches = matches
-        .where((event) => event.id != _recordId)
+    final normalizedTripReference = _normalizedTripReference;
+    final normalizedDriverId = _normalizedDriverId;
+    final recordId = _recordId;
+    final eventType = _eventType;
+    final keyPrefix = _keyPrefix;
+
+    QueuedEvent? persisted;
+    List<QueuedEvent> pending;
+
+    try {
+      persisted = await queue.eventById(recordId);
+      pending = await queue.pendingEvents();
+    } on DriverOfferPreparationException {
+      rethrow;
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.persistentQueueOpenOrReadFailed,
+      );
+    }
+
+    final conflictingMatches = pending
+        .where(
+          (event) =>
+              event.id != recordId &&
+              event.tripReference == normalizedTripReference &&
+              event.driverId == normalizedDriverId &&
+              event.eventType == eventType,
+        )
         .toList(growable: false);
 
     if (conflictingMatches.isNotEmpty) {
-      throw StateError(
-        'Another pending acceptance record exists for this Trip.',
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.conflictingOfferRecord,
       );
     }
 
@@ -130,10 +193,10 @@ final class DriverOfferResponseResilienceController {
     }
 
     final seed = QueuedEvent(
-      id: _recordId,
-      eventType: _eventType,
-      tripReference: _normalizedTripReference,
-      driverId: _normalizedDriverId,
+      id: recordId,
+      eventType: eventType,
+      tripReference: normalizedTripReference,
+      driverId: normalizedDriverId,
       payloadJson: const <String, Object?>{
         'response': driverOfferAcceptResponse,
       },
@@ -145,7 +208,7 @@ final class DriverOfferResponseResilienceController {
       tripReference: seed.tripReference,
       driverId: seed.driverId,
       payloadJson: seed.payloadJson,
-      idempotencyKey: '$_keyPrefix${seed.idempotencyKey}',
+      idempotencyKey: '$keyPrefix${seed.idempotencyKey}',
       deviceTimestamp: seed.deviceTimestamp,
       syncStatus: QueueSyncStatus.pending,
       retryCount: seed.retryCount,
@@ -153,7 +216,16 @@ final class DriverOfferResponseResilienceController {
       updatedAt: seed.updatedAt,
     );
 
-    await queue.enqueue(prepared);
+    try {
+      await queue.enqueue(prepared);
+    } on DriverOfferPreparationException {
+      rethrow;
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.queueEnqueueFailed,
+      );
+    }
+
     return prepared;
   }
 
@@ -309,18 +381,6 @@ final class DriverOfferResponseResilienceController {
     return normalized;
   }
 
-  Future<List<QueuedEvent>> _pendingAcceptanceEvents() async {
-    final events = await queue.pendingEvents();
-    return events
-        .where(
-          (event) =>
-              event.tripReference == _normalizedTripReference &&
-              event.driverId == _normalizedDriverId &&
-              event.eventType == _eventType,
-        )
-        .toList(growable: false);
-  }
-
   void _validateExistingEvent(QueuedEvent event) {
     final rawTimestamp = event.payloadJson['device_timestamp'];
     final parsedTimestamp = rawTimestamp is String
@@ -342,7 +402,9 @@ final class DriverOfferResponseResilienceController {
         event.idempotencyKey.length <= _keyPrefix.length ||
         event.payloadJson['response'] != driverOfferAcceptResponse ||
         !timestampIsValid) {
-      throw StateError('The persisted offer acceptance record is invalid.');
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.invalidOfferRecord,
+      );
     }
   }
 }

@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/driver_duty_trips.dart';
+import 'package:driver_app/main.dart' as driver_main;
 import 'package:driver_app/network/driver_offer_response_gateway.dart';
 import 'package:driver_app/network/driver_offer_response_resilience.dart';
 import 'package:driver_app/network/driver_trip_action_gateway.dart';
@@ -12,8 +15,13 @@ import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/network/ghana_network_resilience.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+
   group('Driver offer-response gateway', () {
     test(
       'uses exact endpoint, bearer token, stable key, and exact body',
@@ -780,6 +788,503 @@ void main() {
       expect(queue.events.single.syncStatus, QueueSyncStatus.synced);
     });
   });
+
+  group('Typed offer-preparation diagnostics', () {
+    test('exact sanitized preparation codes remain stable', () {
+      expect(
+        DriverOfferPreparationFailureCode.values.map((code) => code.value),
+        <String>[
+          'factory_unavailable',
+          'driver_duty_fetch_failed',
+          'driver_reference_missing',
+          'persistent_queue_open_or_read_failed',
+          'conflicting_offer_record',
+          'invalid_offer_record',
+          'queue_enqueue_failed',
+        ],
+      );
+    });
+
+    testWidgets(
+      'production-style preparation enables Accept only after persistence',
+      (tester) async {
+        final queue = _MemoryOfferQueue();
+
+        final dutyGateway = _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        );
+        final offerGateway = _RecordingOfferGateway();
+
+        await _pumpDiagnosticOffer(
+          tester,
+          dutyGateway: dutyGateway,
+          factory: _diagnosticProductionFactory(
+            dutyGateway: dutyGateway,
+            queue: queue,
+            offerGateway: offerGateway,
+          ),
+        );
+
+        expect(find.text('PREP_READY'), findsOneWidget);
+        expect(_acceptButton(tester).onPressed, isNotNull);
+        expect(offerGateway.calls, 0);
+        expect(queue.events, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'factory unavailable is exact and preserves all fail-closed gates',
+      (tester) async {
+        final dutyGateway = _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        );
+
+        await _pumpDiagnosticOffer(
+          tester,
+          dutyGateway: dutyGateway,
+          factory: null,
+        );
+
+        expect(find.text('PREP_FAILED: factory_unavailable'), findsOneWidget);
+        expect(_acceptButton(tester).onPressed, isNull);
+        expect(
+          find.byKey(const Key('driver-offer-preparation-retry')),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<OutlinedButton>(
+                find.byKey(const Key('driver-decline-offer-disabled')),
+              )
+              .onPressed,
+          isNull,
+        );
+        expect(
+          find.byKey(const Key('driver-open-live-trip-actions')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('Driver duty failure exposes only driver_duty_fetch_failed', (
+      tester,
+    ) async {
+      final queue = _MemoryOfferQueue();
+
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async {
+          throw StateError('PRIVATE token header phone database path');
+        },
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+
+      await _pumpDiagnosticOffer(
+        tester,
+        dutyGateway: dutyGateway,
+        factory: _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: queue,
+          offerGateway: _RecordingOfferGateway(),
+        ),
+      );
+
+      final seam = _preparationStatusText(tester);
+
+      expect(seam, 'PREP_FAILED: driver_duty_fetch_failed');
+      expect(seam, matches(RegExp(r'^PREP_FAILED: [a-z_]+$')));
+      expect(find.textContaining('PRIVATE'), findsNothing);
+      expect(_acceptButton(tester).onPressed, isNull);
+    });
+
+    testWidgets('blank Driver reference produces driver_reference_missing', (
+      tester,
+    ) async {
+      final queue = _MemoryOfferQueue();
+
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async =>
+            const DriverDutySummary(driverReference: '   '),
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+
+      await _pumpDiagnosticOffer(
+        tester,
+        dutyGateway: dutyGateway,
+        factory: _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: queue,
+          offerGateway: _RecordingOfferGateway(),
+        ),
+      );
+
+      expect(
+        _preparationStatusText(tester),
+        'PREP_FAILED: driver_reference_missing',
+      );
+      expect(_acceptButton(tester).onPressed, isNull);
+    });
+
+    testWidgets('persistent queue open failure is classified safely', (
+      tester,
+    ) async {
+      final queue = PersistentDriverTripActionQueue(
+        managerFactory: () async {
+          throw StateError('PRIVATE file path and database contents');
+        },
+      );
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async =>
+            const DriverDutySummary(driverReference: 'DRIVER-001'),
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+
+      await _pumpDiagnosticOffer(
+        tester,
+        dutyGateway: dutyGateway,
+        factory: _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: queue,
+          offerGateway: _RecordingOfferGateway(),
+        ),
+      );
+
+      expect(
+        _preparationStatusText(tester),
+        'PREP_FAILED: persistent_queue_open_or_read_failed',
+      );
+      expect(find.textContaining('PRIVATE'), findsNothing);
+      expect(_acceptButton(tester).onPressed, isNull);
+    });
+
+    test(
+      'persistent file-backed queue read failure is classified safely',
+      () async {
+        final harness = await _FileBackedQueueHarness.create(
+          initializeDatabase: (path) =>
+              _createQueueDatabase(path, createTable: false),
+        );
+        addTearDown(harness.close);
+
+        final dutyGateway = _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        );
+
+        final controller = await _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: harness.queue,
+          offerGateway: _RecordingOfferGateway(),
+        )('TRIP-OFFER-001');
+
+        await expectLater(
+          controller.prepareWhenOfferDisplayed(),
+          throwsA(
+            _preparationFailure(
+              DriverOfferPreparationFailureCode.persistentQueueOpenOrReadFailed,
+            ),
+          ),
+        );
+      },
+    );
+    test('conflicting pending record is retained and classified', () async {
+      final harness = await _FileBackedQueueHarness.create();
+      addTearDown(harness.close);
+
+      await harness.queue.enqueue(
+        _preparedDiagnosticEvent(id: 'older-conflicting-record'),
+      );
+
+      final controller = await _diagnosticProductionFactory(
+        dutyGateway: _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        ),
+        queue: harness.queue,
+        offerGateway: _RecordingOfferGateway(),
+      )('TRIP-OFFER-001');
+
+      await expectLater(
+        controller.prepareWhenOfferDisplayed(),
+        throwsA(
+          _preparationFailure(
+            DriverOfferPreparationFailureCode.conflictingOfferRecord,
+          ),
+        ),
+      );
+
+      expect(await harness.queue.pendingEvents(), hasLength(1));
+    });
+
+    test('invalid deterministic record is retained and classified', () async {
+      final harness = await _FileBackedQueueHarness.create();
+      addTearDown(harness.close);
+
+      await harness.queue.enqueue(
+        _preparedDiagnosticEvent(
+          id: 'driver-offer-accept:trip-offer-001',
+          idempotencyKey: 'invalid-key',
+        ),
+      );
+
+      final controller = await _diagnosticProductionFactory(
+        dutyGateway: _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        ),
+        queue: harness.queue,
+        offerGateway: _RecordingOfferGateway(),
+      )('TRIP-OFFER-001');
+
+      await expectLater(
+        controller.prepareWhenOfferDisplayed(),
+        throwsA(
+          _preparationFailure(
+            DriverOfferPreparationFailureCode.invalidOfferRecord,
+          ),
+        ),
+      );
+
+      expect(await harness.queue.pendingEvents(), hasLength(1));
+    });
+
+    test('file-backed enqueue failure produces queue_enqueue_failed', () async {
+      final harness = await _FileBackedQueueHarness.create(
+        initializeDatabase: (path) =>
+            _createQueueDatabase(path, failInserts: true),
+      );
+      addTearDown(harness.close);
+
+      final controller = await _diagnosticProductionFactory(
+        dutyGateway: _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        ),
+        queue: harness.queue,
+        offerGateway: _RecordingOfferGateway(),
+      )('TRIP-OFFER-001');
+
+      await expectLater(
+        controller.prepareWhenOfferDisplayed(),
+        throwsA(
+          _preparationFailure(
+            DriverOfferPreparationFailureCode.queueEnqueueFailed,
+          ),
+        ),
+      );
+    });
+
+    test('prepared record survives close/reopen without duplication', () async {
+      final harness = await _FileBackedQueueHarness.create();
+      addTearDown(harness.close);
+
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async =>
+            const DriverDutySummary(driverReference: 'DRIVER-001'),
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+
+      final firstController = await _diagnosticProductionFactory(
+        dutyGateway: dutyGateway,
+        queue: harness.queue,
+        offerGateway: _RecordingOfferGateway(),
+      )('TRIP-OFFER-001');
+
+      final first = await firstController.prepareWhenOfferDisplayed();
+
+      expect(first.payloadJson.containsKey('device_timestamp'), isFalse);
+
+      await harness.reopen();
+
+      final restoredController = await _diagnosticProductionFactory(
+        dutyGateway: dutyGateway,
+        queue: harness.queue,
+        offerGateway: _RecordingOfferGateway(),
+      )('TRIP-OFFER-001');
+
+      final restored = await restoredController.prepareWhenOfferDisplayed();
+
+      expect(restored.id, first.id);
+      expect(restored.idempotencyKey, first.idempotencyKey);
+      expect(restored.payloadJson.containsKey('device_timestamp'), isFalse);
+      expect(await harness.queue.pendingEvents(), hasLength(1));
+    });
+
+    test(
+      'retained older prepared fixture remains readable after reopen',
+      () async {
+        final prior = _preparedDiagnosticEvent(
+          id: 'driver-offer-accept:trip-offer-001',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-OFFER-001-prior-fixture',
+        );
+
+        final harness = await _FileBackedQueueHarness.create(
+          initializeDatabase: (path) async {
+            await _createQueueDatabase(path);
+            await _insertQueueFixture(path, prior);
+          },
+        );
+        addTearDown(harness.close);
+
+        final dutyGateway = _DiagnosticDutyGateway(
+          onFetchDuty: () async =>
+              const DriverDutySummary(driverReference: 'DRIVER-001'),
+          detail: _trip(status: 'driver_offer_sent'),
+        );
+
+        final firstController = await _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: harness.queue,
+          offerGateway: _RecordingOfferGateway(),
+        )('TRIP-OFFER-001');
+
+        final first = await firstController.prepareWhenOfferDisplayed();
+
+        expect(first.idempotencyKey, prior.idempotencyKey);
+        expect(first.payloadJson.containsKey('device_timestamp'), isFalse);
+
+        await harness.reopen();
+
+        final reopenedController = await _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: harness.queue,
+          offerGateway: _RecordingOfferGateway(),
+        )('TRIP-OFFER-001');
+
+        final reopened = await reopenedController.prepareWhenOfferDisplayed();
+
+        expect(reopened.idempotencyKey, prior.idempotencyKey);
+        expect(await harness.queue.pendingEvents(), hasLength(1));
+      },
+    );
+
+    testWidgets('rapid Retry taps serialize preparation and send no POST', (
+      tester,
+    ) async {
+      final queue = _MemoryOfferQueue();
+
+      final unrelated = QueuedEvent(
+        id: 'unrelated-retained-record',
+        eventType: 'unrelated-event',
+        tripReference: 'TRIP-OTHER',
+        driverId: 'DRIVER-OTHER',
+        payloadJson: const <String, Object?>{'state': 'retained'},
+        idempotencyKey: 'unrelated-retained-key',
+        deviceTimestamp: DateTime.utc(2026, 7, 24, 3),
+      );
+      await queue.enqueue(unrelated);
+
+      var dutyCalls = 0;
+      final retryCompleter = Completer<DriverDutySummary>();
+
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () {
+          dutyCalls += 1;
+          if (dutyCalls == 1) {
+            throw StateError('PRIVATE first failure');
+          }
+          return retryCompleter.future;
+        },
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+      final offerGateway = _RecordingOfferGateway();
+
+      await _pumpDiagnosticOffer(
+        tester,
+        dutyGateway: dutyGateway,
+        factory: _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: queue,
+          offerGateway: offerGateway,
+        ),
+      );
+
+      expect(
+        _preparationStatusText(tester),
+        'PREP_FAILED: driver_duty_fetch_failed',
+      );
+      expect(_acceptButton(tester).onPressed, isNull);
+
+      final retry = find.byKey(const Key('driver-offer-preparation-retry'));
+
+      await tester.tap(retry);
+      await tester.tap(retry, warnIfMissed: false);
+      await tester.pump();
+
+      expect(dutyCalls, 2);
+      expect(tester.widget<TextButton>(retry).onPressed, isNull);
+      expect(_acceptButton(tester).onPressed, isNull);
+      expect(offerGateway.calls, 0);
+
+      retryCompleter.complete(
+        const DriverDutySummary(driverReference: 'DRIVER-001'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(dutyCalls, 2);
+      expect(find.text('PREP_READY'), findsOneWidget);
+      expect(retry, findsNothing);
+      expect(_acceptButton(tester).onPressed, isNotNull);
+      expect(offerGateway.calls, 0);
+
+      final retained = await queue.eventById(unrelated.id);
+      expect(retained?.idempotencyKey, unrelated.idempotencyKey);
+
+      final pending = await queue.pendingEvents();
+      expect(pending, hasLength(2));
+      expect(
+        pending
+            .where((event) => event.id == 'driver-offer-accept:trip-offer-001')
+            .length,
+        1,
+      );
+    });
+
+    testWidgets('failed Retry keeps Accept disabled and creates no record', (
+      tester,
+    ) async {
+      final queue = _MemoryOfferQueue();
+
+      var dutyCalls = 0;
+      final dutyGateway = _DiagnosticDutyGateway(
+        onFetchDuty: () async {
+          dutyCalls += 1;
+          throw StateError('PRIVATE repeat failure');
+        },
+        detail: _trip(status: 'driver_offer_sent'),
+      );
+      final offerGateway = _RecordingOfferGateway();
+
+      await _pumpDiagnosticOffer(
+        tester,
+        dutyGateway: dutyGateway,
+        factory: _diagnosticProductionFactory(
+          dutyGateway: dutyGateway,
+          queue: queue,
+          offerGateway: offerGateway,
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('driver-offer-preparation-retry')));
+      await tester.pumpAndSettle();
+
+      expect(dutyCalls, 2);
+      expect(
+        _preparationStatusText(tester),
+        'PREP_FAILED: driver_duty_fetch_failed',
+      );
+      expect(_acceptButton(tester).onPressed, isNull);
+      expect(offerGateway.calls, 0);
+      expect(await queue.pendingEvents(), isEmpty);
+    });
+  });
 }
 
 Future<MemoryAuthTokenStore> _tokenStore({
@@ -1000,6 +1505,269 @@ final class _SequenceDutyGateway implements DriverDutyGateway {
         : details.length - 1;
     detailCalls += 1;
     return details[index];
+  }
+}
+
+Matcher _preparationFailure(DriverOfferPreparationFailureCode code) {
+  return isA<DriverOfferPreparationException>().having(
+    (error) => error.code,
+    'code',
+    code,
+  );
+}
+
+DriverOfferResponseControllerFactory _diagnosticProductionFactory({
+  required DriverDutyGateway dutyGateway,
+  required DriverTripActionPersistentQueue queue,
+  required DriverOfferResponseGateway offerGateway,
+}) {
+  final factory = driver_main.driverOfferResponseControllerFactoryFor(
+    baseUrl: 'https://diagnostic.invalid',
+    tokenStore: MemoryAuthTokenStore(),
+    dutyGateway: dutyGateway,
+    persistentQueue: queue,
+    offerGateway: offerGateway,
+  );
+
+  expect(factory, isNotNull);
+  return factory!;
+}
+
+Future<void> _pumpDiagnosticOffer(
+  WidgetTester tester, {
+  required DriverDutyGateway dutyGateway,
+  required DriverOfferResponseControllerFactory? factory,
+}) async {
+  tester.view.physicalSize = const Size(430, 1200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AsmThemes.driver,
+      home: DriverTripDetailScreen(
+        gateway: dutyGateway,
+        tripReference: 'TRIP-OFFER-001',
+        offerResponseControllerFactory: factory,
+      ),
+    ),
+  );
+
+  for (var attempt = 0; attempt < 200; attempt += 1) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+
+    final hasPreparationStatus = find
+        .byKey(const Key('driver-offer-preparation-status'))
+        .evaluate()
+        .isNotEmpty;
+
+    if (hasPreparationStatus) {
+      return;
+    }
+  }
+
+  throw StateError('Offer preparation did not reach a typed result.');
+}
+
+FilledButton _acceptButton(WidgetTester tester) {
+  return tester.widget<FilledButton>(
+    find.byKey(const Key('driver-accept-offer')),
+  );
+}
+
+String? _preparationStatusText(WidgetTester tester) {
+  return tester
+      .widget<Text>(find.byKey(const Key('driver-offer-preparation-status')))
+      .data;
+}
+
+QueuedEvent _preparedDiagnosticEvent({
+  required String id,
+  String? idempotencyKey,
+}) {
+  return QueuedEvent(
+    id: id,
+    eventType:
+        '${driverOfferResponsePath('TRIP-OFFER-001')}'
+        '$driverOfferAcceptanceEventIdentity',
+    tripReference: 'TRIP-OFFER-001',
+    driverId: 'DRIVER-001',
+    payloadJson: const <String, Object?>{'response': 'accept'},
+    idempotencyKey:
+        idempotencyKey ??
+        'DRIVER-OFFER-TRIP-OFFER-001-'
+            '11111111-1111-4111-8111-111111111111',
+    deviceTimestamp: DateTime.utc(2026, 7, 24, 3),
+    createdAt: DateTime.utc(2026, 7, 24, 3),
+    updatedAt: DateTime.utc(2026, 7, 24, 3),
+  );
+}
+
+final class _FileBackedQueueHarness {
+  _FileBackedQueueHarness._({
+    required this.directory,
+    required this.databasePath,
+    required this.queue,
+  });
+
+  final Directory directory;
+  final String databasePath;
+  PersistentDriverTripActionQueue queue;
+
+  static Future<_FileBackedQueueHarness> create({
+    Future<void> Function(String path)? initializeDatabase,
+  }) async {
+    final directory = await Directory.systemTemp.createTemp(
+      'driver_offer_diagnostics_',
+    );
+    final databasePath = '${directory.path}/asm_offline_queue.sqlite';
+
+    if (initializeDatabase != null) {
+      await initializeDatabase(databasePath);
+    }
+
+    return _FileBackedQueueHarness._(
+      directory: directory,
+      databasePath: databasePath,
+      queue: _queueFor(databasePath),
+    );
+  }
+
+  static PersistentDriverTripActionQueue _queueFor(String databasePath) {
+    return PersistentDriverTripActionQueue(
+      managerFactory: () => QueueManager.open(databasePath: databasePath),
+    );
+  }
+
+  Future<void> reopen() async {
+    await queue.close();
+    queue = _queueFor(databasePath);
+  }
+
+  Future<void> close() async {
+    try {
+      await queue.close();
+    } on Object {
+      // Deliberately failed opens have no live database.
+    }
+
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  }
+}
+
+Future<void> _createQueueDatabase(
+  String path, {
+  bool createTable = true,
+  bool failInserts = false,
+}) async {
+  final database = await databaseFactoryFfi.openDatabase(
+    path,
+    options: OpenDatabaseOptions(
+      version: 1,
+      onCreate: (database, version) async {
+        if (!createTable) {
+          return;
+        }
+
+        await database.execute('''
+CREATE TABLE queued_events (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  trip_reference TEXT NOT NULL,
+  driver_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  device_timestamp TEXT NOT NULL,
+  sync_status TEXT NOT NULL,
+  retry_count INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''');
+
+        await database.execute(
+          'CREATE INDEX idx_queued_events_created_at '
+          'ON queued_events(created_at)',
+        );
+      },
+    ),
+  );
+
+  if (failInserts) {
+    await database.execute('''
+CREATE TRIGGER fail_queued_event_insert
+BEFORE INSERT ON queued_events
+BEGIN
+  SELECT RAISE(ABORT, 'diagnostic enqueue failure');
+END
+''');
+  }
+
+  await database.close();
+}
+
+Future<void> _insertQueueFixture(String path, QueuedEvent event) async {
+  final database = await databaseFactoryFfi.openDatabase(path);
+
+  await database.rawInsert(
+    '''
+INSERT INTO queued_events (
+  id,
+  event_type,
+  trip_reference,
+  driver_id,
+  payload_json,
+  idempotency_key,
+  device_timestamp,
+  sync_status,
+  retry_count,
+  created_at,
+  updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+''',
+    <Object?>[
+      event.id,
+      event.eventType,
+      event.tripReference,
+      event.driverId,
+      jsonEncode(event.payloadJson),
+      event.idempotencyKey,
+      event.deviceTimestamp.toIso8601String(),
+      event.syncStatus.name,
+      event.retryCount,
+      event.createdAt.toIso8601String(),
+      event.updatedAt.toIso8601String(),
+    ],
+  );
+
+  await database.close();
+}
+
+final class _DiagnosticDutyGateway implements DriverDutyGateway {
+  _DiagnosticDutyGateway({required this.onFetchDuty, required this.detail});
+
+  final Future<DriverDutySummary> Function() onFetchDuty;
+  final DriverAssignedTrip detail;
+  int detailCalls = 0;
+
+  @override
+  Future<DriverDutySummary> fetchDuty() => onFetchDuty();
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() async => <DriverAssignedTrip>[
+    detail,
+  ];
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) async {
+    detailCalls += 1;
+    return detail;
   }
 }
 

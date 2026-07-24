@@ -266,7 +266,7 @@ class DriverApp extends StatelessWidget {
     final offerResponseControllerFactory =
         driverOfferResponseControllerFactory ??
         (shouldCreateDefaultDutyGateway && dutyGateway != null
-            ? _driverOfferResponseControllerFactoryFor(
+            ? driverOfferResponseControllerFactoryFor(
                 baseUrl: apiBaseUrl,
                 tokenStore: tokenStore,
                 dutyGateway: dutyGateway,
@@ -933,38 +933,50 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
   };
 }
 
-DriverOfferResponseControllerFactory? _driverOfferResponseControllerFactoryFor({
+DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
   required String? baseUrl,
   required AuthTokenStore tokenStore,
   required DriverDutyGateway dutyGateway,
   DriverAccessTokenRefresh? refreshAccessToken,
+  DriverTripActionPersistentQueue? persistentQueue,
+  DriverOfferResponseGateway? offerGateway,
 }) {
   if (!AsmApiBaseUrl.isUsable(baseUrl)) {
     return null;
   }
 
-  final liveGateway = ApiDriverOfferResponseGateway(
-    apiGateway: AsmDriverOfferResponseApiGateway(
-      GhanaResilientApiClient(baseUrl: baseUrl!),
-    ),
-    tokenStore: tokenStore,
-    refreshAccessToken: refreshAccessToken,
-  );
-  final persistentQueue = PersistentDriverTripActionQueue();
+  final resolvedGateway =
+      offerGateway ??
+      ApiDriverOfferResponseGateway(
+        apiGateway: AsmDriverOfferResponseApiGateway(
+          GhanaResilientApiClient(baseUrl: baseUrl!),
+        ),
+        tokenStore: tokenStore,
+        refreshAccessToken: refreshAccessToken,
+      );
+  final resolvedQueue = persistentQueue ?? PersistentDriverTripActionQueue();
 
   return (tripReference) async {
-    final duty = await dutyGateway.fetchDuty();
+    DriverDutySummary duty;
+
+    try {
+      duty = await dutyGateway.fetchDuty();
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.driverDutyFetchFailed,
+      );
+    }
+
     final driverReference = duty.driverReference?.trim();
     if (driverReference == null || driverReference.isEmpty) {
-      throw const DriverDutyApiException(
-        DriverDutyApiFailureType.badResponse,
-        'Driver identity could not be confirmed safely.',
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.driverReferenceMissing,
       );
     }
 
     return DriverOfferResponseResilienceController(
-      queue: persistentQueue,
-      gateway: liveGateway,
+      queue: resolvedQueue,
+      gateway: resolvedGateway,
       tripReference: tripReference,
       driverId: driverReference,
       verifyServerState: (receipt) async {
