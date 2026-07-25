@@ -348,11 +348,54 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   bool _signedIn = false;
   bool _isSigningIn = false;
   String? _loginError;
+  DriverOfferResponseControllerFactory?
+  _sessionAwareOfferResponseControllerFactory;
 
   @override
   void initState() {
     super.initState();
+    _configureSessionAwareOfferResponseFactory();
     _restoreStoredSession();
+  }
+
+  @override
+  void didUpdateWidget(covariant DriverLoginShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.driverOfferResponseControllerFactory !=
+        widget.driverOfferResponseControllerFactory) {
+      _configureSessionAwareOfferResponseFactory();
+    }
+  }
+
+  void _configureSessionAwareOfferResponseFactory() {
+    final factory = widget.driverOfferResponseControllerFactory;
+    _sessionAwareOfferResponseControllerFactory = factory == null
+        ? null
+        : (tripReference) async {
+            final controller = await factory(tripReference);
+            controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
+            return controller;
+          };
+  }
+
+  Future<void> _handleOfferSessionExpired(String message) async {
+    try {
+      await widget.authTokenStore.clearTokens();
+    } on Object {
+      // Login transition must remain available after storage failure.
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() {
+      _localDemoOpened = false;
+      _signedIn = false;
+      _isSigningIn = false;
+      _loginError = message;
+    });
   }
 
   Future<void> _restoreStoredSession() async {
@@ -594,7 +637,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverTripActionControllerFactory:
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
-            widget.driverOfferResponseControllerFactory,
+            _sessionAwareOfferResponseControllerFactory,
       );
     }
 

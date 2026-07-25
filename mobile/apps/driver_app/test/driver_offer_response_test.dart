@@ -26,13 +26,8 @@ void main() {
     test(
       'uses exact endpoint, bearer token, stable key, and exact body',
       () async {
-        final store = MemoryAuthTokenStore();
-        await store.saveTokens(
-          AuthTokens(
-            accessToken: 'driver-access',
-            refreshToken: 'driver-refresh',
-          ),
-        );
+        final accessToken = _jwtExpiringAt(DateTime.utc(2100));
+        final store = await _tokenStore(accessToken: accessToken);
         final api = _RecordingOfferApi(
           responses: <ApiResponse<DriverOfferResponseReceipt>>[
             _offerSuccess(statusCode: 201, tripReference: 'TRIP-GHANA/001'),
@@ -55,7 +50,7 @@ void main() {
         expect(api.paths, <String>[
           '/api/driver/trips/TRIP-GHANA%2F001/response/',
         ]);
-        expect(api.headers.single['Authorization'], 'Bearer driver-access');
+        expect(api.headers.single['Authorization'], 'Bearer $accessToken');
         expect(
           api.headers.single['Idempotency-Key'],
           'DRIVER-OFFER-TRIP-GHANA/001-'
@@ -231,7 +226,8 @@ void main() {
     );
 
     test('401 refreshes once and preserves key, timestamp, and body', () async {
-      final store = await _tokenStore(accessToken: 'expired-access');
+      final initialAccessToken = _jwtExpiringAt(DateTime.utc(2100));
+      final store = await _tokenStore(accessToken: initialAccessToken);
       final api = _RecordingOfferApi(
         responses: <ApiResponse<DriverOfferResponseReceipt>>[
           ApiResponse.apiFailure(
@@ -273,7 +269,7 @@ void main() {
         everyElement('DRIVER-OFFER-TRIP-401-stable'),
       );
       expect(api.headers.map((headers) => headers['Authorization']), <String?>[
-        'Bearer expired-access',
+        'Bearer $initialAccessToken',
         'Bearer refreshed-access',
       ]);
       expect(api.bodies[0], api.bodies[1]);
@@ -372,6 +368,306 @@ void main() {
     );
   });
 
+  group('MOBILE-DRIVER-TOKEN-REFRESH-BEFORE-OFFER', () {
+    final now = DateTime.utc(2026, 7, 25, 5);
+
+    test('test_valid_token_proceeds_without_refresh', () async {
+      final store = await _tokenStore(
+        accessToken: _jwtExpiringAt(now.add(const Duration(seconds: 61))),
+      );
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      var refreshCalls = 0;
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async {
+          refreshCalls += 1;
+          return DriverTokenRefreshOutcome.refreshed;
+        },
+      );
+
+      await gateway.accept(
+        tripReference: 'TRIP-TOKEN-VALID',
+        idempotencyKey: 'DRIVER-OFFER-TRIP-TOKEN-VALID-stable',
+        deviceTimestamp: '2026-07-25T05:00:00.000Z',
+        telemetrySink: events.add,
+      );
+
+      expect(refreshCalls, 0);
+      expect(api.paths, hasLength(1));
+      expect(_telemetryTexts(events), <String>[
+        'TOKEN_CHECK: TOKEN_VALID',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS: 2xx',
+      ]);
+    });
+
+    test('test_expired_token_triggers_refresh', () async {
+      final store = await _tokenStore(
+        accessToken: _jwtExpiringAt(now.subtract(const Duration(seconds: 1))),
+      );
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      var refreshCalls = 0;
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async {
+          refreshCalls += 1;
+          await store.saveTokens(
+            AuthTokens(
+              accessToken: _jwtExpiringAt(now.add(const Duration(hours: 1))),
+              refreshToken: 'driver-refresh',
+            ),
+          );
+          return DriverTokenRefreshOutcome.refreshed;
+        },
+      );
+
+      await gateway.accept(
+        tripReference: 'TRIP-TOKEN-EXPIRED',
+        idempotencyKey: 'DRIVER-OFFER-TRIP-TOKEN-EXPIRED-stable',
+        deviceTimestamp: '2026-07-25T05:01:00.000Z',
+        telemetrySink: events.add,
+      );
+
+      expect(refreshCalls, 1);
+      expect(api.paths, hasLength(1));
+      expect(_telemetryTexts(events).first, 'TOKEN_CHECK: TOKEN_REFRESHED');
+    });
+
+    test('test_near_expiry_token_triggers_refresh', () async {
+      final store = await _tokenStore(
+        accessToken: _jwtExpiringAt(now.add(const Duration(seconds: 60))),
+      );
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      var refreshCalls = 0;
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async {
+          refreshCalls += 1;
+          await store.saveTokens(
+            AuthTokens(
+              accessToken: _jwtExpiringAt(now.add(const Duration(hours: 1))),
+              refreshToken: 'driver-refresh',
+            ),
+          );
+          return DriverTokenRefreshOutcome.refreshed;
+        },
+      );
+
+      await gateway.accept(
+        tripReference: 'TRIP-TOKEN-NEAR-EXPIRY',
+        idempotencyKey: 'DRIVER-OFFER-TRIP-TOKEN-NEAR-EXPIRY-stable',
+        deviceTimestamp: '2026-07-25T05:02:00.000Z',
+      );
+
+      expect(refreshCalls, 1);
+      expect(api.paths, hasLength(1));
+    });
+
+    test('test_refresh_failure_blocks_post', () async {
+      final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async =>
+            DriverTokenRefreshOutcome.sessionExpired,
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-REFRESH-FAILURE',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-REFRESH-FAILURE-stable',
+          deviceTimestamp: '2026-07-25T05:03:00.000Z',
+          telemetrySink: events.add,
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>()
+              .having(
+                (error) => error.type,
+                'type',
+                DriverOfferResponseFailureType.signInRequired,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                driverOfferSessionExpiredMessage,
+              ),
+        ),
+      );
+
+      expect(api.paths, isEmpty);
+      expect(_telemetryTexts(events), <String>[
+        'TOKEN_CHECK: TOKEN_REFRESH_FAILED',
+      ]);
+    });
+
+    test('test_refresh_network_failure_blocks_post', () async {
+      final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async {
+          throw const AsmApiException(
+            type: AsmApiExceptionType.network,
+            message: 'Private network detail.',
+          );
+        },
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-REFRESH-NETWORK-FAILURE',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-REFRESH-NETWORK-FAILURE-stable',
+          deviceTimestamp: '2026-07-25T05:04:00.000Z',
+          telemetrySink: events.add,
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>()
+              .having(
+                (error) => error.type,
+                'type',
+                DriverOfferResponseFailureType.signInRequired,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                driverOfferSessionExpiredMessage,
+              ),
+        ),
+      );
+
+      expect(api.paths, isEmpty);
+      expect(_telemetryTexts(events), <String>[
+        'TOKEN_CHECK: TOKEN_REFRESH_FAILED',
+      ]);
+    });
+
+    test('test_persistent_record_preserved_after_refresh_failure', () async {
+      final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final queue = _MemoryOfferQueue();
+      final controller = _controller(
+        queue: queue,
+        gateway: ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+          utcNow: () => now,
+          refreshAccessToken: () async =>
+              DriverTokenRefreshOutcome.sessionExpired,
+        ),
+        utcNow: () => now,
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final sessionMessages = <String>[];
+      controller.attachSubmissionTelemetrySink(events.add);
+      controller.attachSessionExpiredHandler((message) async {
+        sessionMessages.add(message);
+      });
+
+      final result = await controller.accept();
+
+      expect(result.accepted, isFalse);
+      expect(result.permitsManualRetry, isFalse);
+      expect(result.message, driverOfferSessionExpiredMessage);
+      expect(api.paths, isEmpty);
+      expect(queue.events, hasLength(1));
+      expect(queue.events.single.syncStatus, QueueSyncStatus.pending);
+      expect(queue.markSyncedCalls, 0);
+      expect(sessionMessages, <String>[driverOfferSessionExpiredMessage]);
+      expect(_telemetryTexts(events), <String>[
+        'SUBMIT_START',
+        'TOKEN_CHECK: TOKEN_REFRESH_FAILED',
+        'QUEUE_STATE: pending',
+      ]);
+    });
+
+    test(
+      'malformed missing nonnumeric and invalid exp trigger refresh',
+      () async {
+        final invalidTokens = <String>[
+          'not-a-jwt',
+          _jwtWithPayload(const <String, Object?>{}),
+          _jwtWithPayload(const <String, Object?>{'exp': 'later'}),
+          _jwtWithPayload(const <String, Object?>{'exp': null}),
+          _jwtWithPayload(const <String, Object?>{'exp': -1}),
+        ];
+
+        for (final invalidToken in invalidTokens) {
+          final store = await _tokenStore(accessToken: invalidToken);
+          final api = _RecordingOfferApi(
+            responses: <ApiResponse<DriverOfferResponseReceipt>>[
+              _offerSuccess(statusCode: 201),
+            ],
+          );
+          var refreshCalls = 0;
+          final gateway = ApiDriverOfferResponseGateway(
+            apiGateway: api,
+            tokenStore: store,
+            utcNow: () => now,
+            refreshAccessToken: () async {
+              refreshCalls += 1;
+              await store.saveTokens(
+                AuthTokens(
+                  accessToken: _jwtExpiringAt(
+                    now.add(const Duration(hours: 1)),
+                  ),
+                  refreshToken: 'driver-refresh',
+                ),
+              );
+              return DriverTokenRefreshOutcome.refreshed;
+            },
+          );
+
+          await gateway.accept(
+            tripReference: 'TRIP-INVALID-EXP',
+            idempotencyKey: 'DRIVER-OFFER-TRIP-INVALID-EXP-stable',
+            deviceTimestamp: '2026-07-25T05:05:00.000Z',
+          );
+
+          expect(refreshCalls, 1, reason: invalidToken);
+          expect(api.paths, hasLength(1), reason: invalidToken);
+        }
+      },
+    );
+  });
+
   group('Sanitized offer submission telemetry', () {
     test(
       'initialization-only registers all seven hooks with no side effects',
@@ -448,7 +744,7 @@ void main() {
       expect(_telemetryTexts(events), <String>[
         'SUBMIT_START',
         'QUEUE_STATE: queued',
-        'TOKEN_CHECK',
+        'TOKEN_CHECK: TOKEN_VALID',
         'REQUEST_SENT',
         'HTTP_STATUS_CLASS: 2xx',
         'QUEUE_STATE: dequeued',
@@ -486,7 +782,7 @@ void main() {
       expect(_telemetryTexts(events), <String>[
         'SUBMIT_START',
         'QUEUE_STATE: queued',
-        'TOKEN_CHECK',
+        'TOKEN_CHECK: TOKEN_VALID',
         'REQUEST_SENT',
         'HTTP_STATUS_CLASS: 2xx',
         'QUEUE_STATE: dequeued',
@@ -521,7 +817,7 @@ void main() {
       expect(_telemetryTexts(events), <String>[
         'SUBMIT_START',
         'QUEUE_STATE: queued',
-        'TOKEN_CHECK',
+        'TOKEN_CHECK: TOKEN_VALID',
         'REQUEST_SENT',
         'HTTP_STATUS_CLASS: 4xx',
         'QUEUE_STATE: pending',
@@ -571,7 +867,7 @@ void main() {
         expect(_telemetryTexts(events), <String>[
           'SUBMIT_START',
           'QUEUE_STATE: queued',
-          'TOKEN_CHECK',
+          'TOKEN_CHECK: TOKEN_VALID',
           'REQUEST_SENT',
           'HTTP_STATUS_CLASS: 5xx',
           'RETRY_ATTEMPT_N: 1',
@@ -750,7 +1046,9 @@ void main() {
       ];
       final events = <DriverOfferSubmissionTelemetryEvent>[
         const DriverOfferSubmissionTelemetryEvent.submitStart(),
-        const DriverOfferSubmissionTelemetryEvent.tokenCheck(),
+        const DriverOfferSubmissionTelemetryEvent.tokenCheck(
+          DriverOfferSubmissionTokenCheckOutcome.tokenValid,
+        ),
         const DriverOfferSubmissionTelemetryEvent.requestSent(),
         const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
           DriverOfferSubmissionHttpStatusClass.success2xx,
@@ -798,7 +1096,8 @@ void main() {
         everyElement(
           matches(
             RegExp(
-              r'^(SUBMIT_START|TOKEN_CHECK|REQUEST_SENT|'
+              r'^(SUBMIT_START|TOKEN_CHECK: (TOKEN_VALID|'
+              r'TOKEN_REFRESHED|TOKEN_REFRESH_FAILED)|REQUEST_SENT|'
               r'HTTP_STATUS_CLASS: (2xx|4xx|5xx|timeout)|'
               r'RETRY_ATTEMPT_N: [123]|'
               r'QUEUE_STATE: (queued|dequeued|pending|failed)|'
@@ -1857,14 +2156,30 @@ void main() {
   });
 }
 
-Future<MemoryAuthTokenStore> _tokenStore({
-  String accessToken = 'driver-access',
-}) async {
+Future<MemoryAuthTokenStore> _tokenStore({String? accessToken}) async {
   final store = MemoryAuthTokenStore();
   await store.saveTokens(
-    AuthTokens(accessToken: accessToken, refreshToken: 'driver-refresh'),
+    AuthTokens(
+      accessToken: accessToken ?? _jwtExpiringAt(DateTime.utc(2100)),
+      refreshToken: 'driver-refresh',
+    ),
   );
   return store;
+}
+
+String _jwtExpiringAt(DateTime expiry) {
+  return _jwtWithPayload(<String, Object?>{
+    'exp':
+        expiry.toUtc().millisecondsSinceEpoch ~/ Duration.millisecondsPerSecond,
+  });
+}
+
+String _jwtWithPayload(Map<String, Object?> payload) {
+  String encode(Object value) {
+    return base64UrlEncode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
+  }
+
+  return '${encode(const <String, Object?>{'alg': 'none', 'typ': 'JWT'})}.${encode(payload)}.signature';
 }
 
 ApiResponse<DriverOfferResponseReceipt> _offerSuccess({

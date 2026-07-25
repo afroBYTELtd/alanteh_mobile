@@ -22,6 +22,9 @@ typedef DriverOfferServerStateVerifier =
       DriverOfferResponseReceipt receipt,
     );
 
+typedef DriverOfferSessionExpiredHandler =
+    Future<void> Function(String message);
+
 typedef DriverOfferResponseControllerFactory =
     Future<DriverOfferResponseResilienceController> Function(
       String tripReference,
@@ -117,6 +120,7 @@ final class DriverOfferResponseResilienceController {
   final DriverOfferServerStateVerifier verifyServerState;
   final DateTime Function() _utcNow;
   DriverOfferSubmissionTelemetrySink? _telemetrySink;
+  DriverOfferSessionExpiredHandler? _sessionExpiredHandler;
 
   Future<DriverOfferAcceptanceResult>? _inFlight;
   DriverOfferResponseReceipt? _confirmedReceipt;
@@ -155,6 +159,10 @@ final class DriverOfferResponseResilienceController {
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   ) {
     _telemetrySink = telemetrySink;
+  }
+
+  void attachSessionExpiredHandler(DriverOfferSessionExpiredHandler? handler) {
+    _sessionExpiredHandler = handler;
   }
 
   Future<QueuedEvent> prepareWhenOfferDisplayed() async {
@@ -273,7 +281,35 @@ final class DriverOfferResponseResilienceController {
     event = await _persistFirstTapTimestamp(event);
 
     _emit(const DriverOfferSubmissionTelemetryEvent.submitStart());
-    _emitSubmissionQueueState(event, startingSubmission: true);
+
+    var queuedTelemetryEmitted = false;
+    final bufferedGatewayTelemetry = <DriverOfferSubmissionTelemetryEvent>[];
+
+    void forwardGatewayTelemetry(
+      DriverOfferSubmissionTelemetryEvent telemetryEvent,
+    ) {
+      if (!queuedTelemetryEmitted &&
+          telemetryEvent.stage ==
+              DriverOfferSubmissionTelemetryStage.requestSent) {
+        _emitSubmissionQueueState(event, startingSubmission: true);
+        queuedTelemetryEmitted = true;
+
+        for (final bufferedEvent in bufferedGatewayTelemetry) {
+          _emit(bufferedEvent);
+        }
+        bufferedGatewayTelemetry.clear();
+
+        _emit(telemetryEvent);
+        return;
+      }
+
+      if (!queuedTelemetryEmitted) {
+        bufferedGatewayTelemetry.add(telemetryEvent);
+        return;
+      }
+
+      _emit(telemetryEvent);
+    }
 
     try {
       final timestamp = _persistedTimestamp(event);
@@ -281,7 +317,7 @@ final class DriverOfferResponseResilienceController {
         tripReference: event.tripReference,
         idempotencyKey: event.idempotencyKey,
         deviceTimestamp: timestamp,
-        telemetrySink: _telemetrySink,
+        telemetrySink: _telemetrySink == null ? null : forwardGatewayTelemetry,
       );
 
       try {
@@ -301,7 +337,24 @@ final class DriverOfferResponseResilienceController {
 
       return _verifyConfirmedReceipt();
     } on DriverOfferResponseException catch (error) {
+      if (!queuedTelemetryEmitted) {
+        for (final bufferedEvent in bufferedGatewayTelemetry) {
+          _emit(bufferedEvent);
+        }
+        bufferedGatewayTelemetry.clear();
+      }
+
       _emitSubmissionQueueState(event, startingSubmission: false);
+      if (error.type == DriverOfferResponseFailureType.signInRequired) {
+        final handler = _sessionExpiredHandler;
+        if (handler != null) {
+          try {
+            await handler(error.message);
+          } on Object {
+            // The safe result remains available even if UI transition fails.
+          }
+        }
+      }
       return DriverOfferAcceptanceResult(
         disposition: switch (error.type) {
           DriverOfferResponseFailureType.temporarilyUnavailable =>

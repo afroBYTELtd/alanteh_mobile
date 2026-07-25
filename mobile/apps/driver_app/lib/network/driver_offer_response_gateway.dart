@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
@@ -11,6 +13,9 @@ const driverOfferConflictMessage =
     'There was a conflict with this request. Please contact support.';
 const driverOfferSafeClientFailureMessage =
     'Could not accept this offer. Please review the trip and try again.';
+const driverOfferSessionExpiredMessage =
+    'Your session has expired. Please sign in again.';
+const driverOfferTokenRefreshThreshold = Duration(seconds: 60);
 
 enum DriverOfferSubmissionTelemetryStage {
   submitStart,
@@ -72,6 +77,22 @@ extension DriverOfferSubmissionRetryAttemptValue
   }
 }
 
+enum DriverOfferSubmissionTokenCheckOutcome {
+  tokenValid,
+  tokenRefreshed,
+  tokenRefreshFailed,
+}
+
+extension DriverOfferSubmissionTokenCheckOutcomeValue
+    on DriverOfferSubmissionTokenCheckOutcome {
+  String get value => switch (this) {
+    DriverOfferSubmissionTokenCheckOutcome.tokenValid => 'TOKEN_VALID',
+    DriverOfferSubmissionTokenCheckOutcome.tokenRefreshed => 'TOKEN_REFRESHED',
+    DriverOfferSubmissionTokenCheckOutcome.tokenRefreshFailed =>
+      'TOKEN_REFRESH_FAILED',
+  };
+}
+
 enum DriverOfferSubmissionQueueState { queued, dequeued, pending, failed }
 
 extension DriverOfferSubmissionQueueStateValue
@@ -87,11 +108,12 @@ extension DriverOfferSubmissionQueueStateValue
 final class DriverOfferSubmissionTelemetryEvent {
   const DriverOfferSubmissionTelemetryEvent.submitStart()
     : stage = DriverOfferSubmissionTelemetryStage.submitStart,
+      tokenCheckOutcome = null,
       httpStatusClass = null,
       retryAttempt = null,
       queueState = null;
 
-  const DriverOfferSubmissionTelemetryEvent.tokenCheck()
+  const DriverOfferSubmissionTelemetryEvent.tokenCheck(this.tokenCheckOutcome)
     : stage = DriverOfferSubmissionTelemetryStage.tokenCheck,
       httpStatusClass = null,
       retryAttempt = null,
@@ -99,6 +121,7 @@ final class DriverOfferSubmissionTelemetryEvent {
 
   const DriverOfferSubmissionTelemetryEvent.requestSent()
     : stage = DriverOfferSubmissionTelemetryStage.requestSent,
+      tokenCheckOutcome = null,
       httpStatusClass = null,
       retryAttempt = null,
       queueState = null;
@@ -106,33 +129,39 @@ final class DriverOfferSubmissionTelemetryEvent {
   const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
     this.httpStatusClass,
   ) : stage = DriverOfferSubmissionTelemetryStage.httpStatusClass,
+      tokenCheckOutcome = null,
       retryAttempt = null,
       queueState = null;
 
   const DriverOfferSubmissionTelemetryEvent.retryAttempt(this.retryAttempt)
     : stage = DriverOfferSubmissionTelemetryStage.retryAttemptN,
+      tokenCheckOutcome = null,
       httpStatusClass = null,
       queueState = null;
 
   const DriverOfferSubmissionTelemetryEvent.queueState(this.queueState)
     : stage = DriverOfferSubmissionTelemetryStage.queueState,
+      tokenCheckOutcome = null,
       httpStatusClass = null,
       retryAttempt = null;
 
   const DriverOfferSubmissionTelemetryEvent.receiptCheck()
     : stage = DriverOfferSubmissionTelemetryStage.receiptCheck,
+      tokenCheckOutcome = null,
       httpStatusClass = null,
       retryAttempt = null,
       queueState = null;
 
   final DriverOfferSubmissionTelemetryStage stage;
+  final DriverOfferSubmissionTokenCheckOutcome? tokenCheckOutcome;
   final DriverOfferSubmissionHttpStatusClass? httpStatusClass;
   final DriverOfferSubmissionRetryAttempt? retryAttempt;
   final DriverOfferSubmissionQueueState? queueState;
 
   String get qaDisplayText => switch (stage) {
     DriverOfferSubmissionTelemetryStage.submitStart => 'SUBMIT_START',
-    DriverOfferSubmissionTelemetryStage.tokenCheck => 'TOKEN_CHECK',
+    DriverOfferSubmissionTelemetryStage.tokenCheck =>
+      'TOKEN_CHECK: ${tokenCheckOutcome!.value}',
     DriverOfferSubmissionTelemetryStage.requestSent => 'REQUEST_SENT',
     DriverOfferSubmissionTelemetryStage.httpStatusClass =>
       'HTTP_STATUS_CLASS: ${httpStatusClass!.value}',
@@ -367,13 +396,16 @@ final class ApiDriverOfferResponseGateway
     required this.tokenStore,
     this.refreshAccessToken,
     GhanaRetryPolicy? retryPolicy,
+    DateTime Function()? utcNow,
     this.connectionConfigured = true,
-  }) : _retryPolicy = retryPolicy ?? const GhanaRetryPolicy();
+  }) : _retryPolicy = retryPolicy ?? const GhanaRetryPolicy(),
+       _utcNow = utcNow ?? (() => DateTime.now().toUtc());
 
   final DriverOfferResponseApiGateway apiGateway;
   final AuthTokenStore tokenStore;
   final DriverAccessTokenRefresh? refreshAccessToken;
   final GhanaRetryPolicy _retryPolicy;
+  final DateTime Function() _utcNow;
   final bool connectionConfigured;
 
   @override
@@ -405,16 +437,8 @@ final class ApiDriverOfferResponseGateway
       );
     }
 
-    final accessToken = (await tokenStore.readAccessToken())?.trim();
-    if (accessToken == null || accessToken.isEmpty) {
-      throw const DriverOfferResponseException(
-        type: DriverOfferResponseFailureType.signInRequired,
-        message: 'Session expired. Please sign in again to continue.',
-      );
-    }
-    emitDriverOfferSubmissionTelemetry(
-      telemetrySink,
-      const DriverOfferSubmissionTelemetryEvent.tokenCheck(),
+    final accessToken = await _accessTokenForSubmission(
+      telemetrySink: telemetrySink,
     );
 
     final firstResponse = await _postWithBoundedRetry(
@@ -434,61 +458,140 @@ final class ApiDriverOfferResponseGateway
     }
 
     if (firstResponse.statusCode == 401) {
-      final refresh = refreshAccessToken;
-      if (refresh == null) {
-        throw const DriverOfferResponseException(
-          type: DriverOfferResponseFailureType.signInRequired,
-          message: 'Session expired. Please sign in again to continue.',
-        );
+      final refreshedAccessToken = await _refreshAccessTokenForSubmission(
+        telemetrySink: telemetrySink,
+      );
+
+      final retryResponse = await _postWithBoundedRetry(
+        tripReference: normalizedReference,
+        idempotencyKey: normalizedKey,
+        deviceTimestamp: normalizedTimestamp,
+        accessToken: refreshedAccessToken,
+        telemetrySink: telemetrySink,
+      );
+      final retryReceipt = _validatedReceipt(
+        response: retryResponse,
+        tripReference: normalizedReference,
+      );
+      if (retryReceipt != null) {
+        return retryReceipt;
       }
-
-      final outcome = await refresh();
-      switch (outcome) {
-        case DriverTokenRefreshOutcome.refreshed:
-          final refreshedAccessToken = (await tokenStore.readAccessToken())
-              ?.trim();
-          if (refreshedAccessToken == null || refreshedAccessToken.isEmpty) {
-            throw const DriverOfferResponseException(
-              type: DriverOfferResponseFailureType.signInRequired,
-              message: 'Session expired. Please sign in again to continue.',
-            );
-          }
-          emitDriverOfferSubmissionTelemetry(
-            telemetrySink,
-            const DriverOfferSubmissionTelemetryEvent.tokenCheck(),
-          );
-
-          final retryResponse = await _postWithBoundedRetry(
-            tripReference: normalizedReference,
-            idempotencyKey: normalizedKey,
-            deviceTimestamp: normalizedTimestamp,
-            accessToken: refreshedAccessToken,
-            telemetrySink: telemetrySink,
-          );
-          final retryReceipt = _validatedReceipt(
-            response: retryResponse,
-            tripReference: normalizedReference,
-          );
-          if (retryReceipt != null) {
-            return retryReceipt;
-          }
-          throw _exceptionFromResponse(retryResponse);
-
-        case DriverTokenRefreshOutcome.sessionExpired:
-          throw const DriverOfferResponseException(
-            type: DriverOfferResponseFailureType.signInRequired,
-            message: 'Session expired. Please sign in again to continue.',
-          );
-
-        case DriverTokenRefreshOutcome.temporarilyUnavailable:
-          throw const DriverOfferResponseException(
-            type: DriverOfferResponseFailureType.temporarilyUnavailable,
-            message: driverOfferAcceptanceFailureMessage,
-          );
-      }
+      throw _exceptionFromResponse(retryResponse);
     }
 
     throw _exceptionFromResponse(firstResponse);
+  }
+
+  Future<String> _accessTokenForSubmission({
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  }) async {
+    String? storedAccessToken;
+
+    try {
+      storedAccessToken = (await tokenStore.readAccessToken())?.trim();
+    } on Object {
+      storedAccessToken = null;
+    }
+
+    if (storedAccessToken != null &&
+        storedAccessToken.isNotEmpty &&
+        _accessTokenRemainsValid(storedAccessToken)) {
+      emitDriverOfferSubmissionTelemetry(
+        telemetrySink,
+        const DriverOfferSubmissionTelemetryEvent.tokenCheck(
+          DriverOfferSubmissionTokenCheckOutcome.tokenValid,
+        ),
+      );
+      return storedAccessToken;
+    }
+
+    return _refreshAccessTokenForSubmission(telemetrySink: telemetrySink);
+  }
+
+  Future<String> _refreshAccessTokenForSubmission({
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  }) async {
+    final refresh = refreshAccessToken;
+    if (refresh == null) {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
+
+    DriverTokenRefreshOutcome outcome;
+    try {
+      outcome = await refresh();
+    } on Object {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
+
+    if (outcome != DriverTokenRefreshOutcome.refreshed) {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
+
+    String? refreshedAccessToken;
+    try {
+      refreshedAccessToken = (await tokenStore.readAccessToken())?.trim();
+    } on Object {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
+
+    if (refreshedAccessToken == null || refreshedAccessToken.isEmpty) {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
+
+    emitDriverOfferSubmissionTelemetry(
+      telemetrySink,
+      const DriverOfferSubmissionTelemetryEvent.tokenCheck(
+        DriverOfferSubmissionTokenCheckOutcome.tokenRefreshed,
+      ),
+    );
+    return refreshedAccessToken;
+  }
+
+  Never _throwTokenRefreshFailed(
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  ) {
+    emitDriverOfferSubmissionTelemetry(
+      telemetrySink,
+      const DriverOfferSubmissionTelemetryEvent.tokenCheck(
+        DriverOfferSubmissionTokenCheckOutcome.tokenRefreshFailed,
+      ),
+    );
+    throw const DriverOfferResponseException(
+      type: DriverOfferResponseFailureType.signInRequired,
+      message: driverOfferSessionExpiredMessage,
+    );
+  }
+
+  bool _accessTokenRemainsValid(String accessToken) {
+    try {
+      final segments = accessToken.split('.');
+      if (segments.length != 3) {
+        return false;
+      }
+
+      final payloadBytes = base64Url.decode(base64Url.normalize(segments[1]));
+      final payload = jsonDecode(utf8.decode(payloadBytes));
+      if (payload is! Map) {
+        return false;
+      }
+
+      final expiryClaim = payload['exp'];
+      if (expiryClaim is! num || !expiryClaim.isFinite) {
+        return false;
+      }
+
+      final expiry = DateTime.fromMillisecondsSinceEpoch(
+        (expiryClaim * Duration.millisecondsPerSecond).round(),
+        isUtc: true,
+      );
+      final refreshBoundary = _utcNow().toUtc().add(
+        driverOfferTokenRefreshThreshold,
+      );
+
+      return expiry.isAfter(refreshBoundary);
+    } on Object {
+      return false;
+    }
   }
 
   Future<ApiResponse<DriverOfferResponseReceipt>> _postWithBoundedRetry({
@@ -584,7 +687,7 @@ final class ApiDriverOfferResponseGateway
         error?.type == AsmApiExceptionType.authentication) {
       return const DriverOfferResponseException(
         type: DriverOfferResponseFailureType.signInRequired,
-        message: 'Session expired. Please sign in again to continue.',
+        message: driverOfferSessionExpiredMessage,
       );
     }
 
