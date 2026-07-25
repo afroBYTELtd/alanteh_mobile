@@ -22,6 +22,210 @@ void main() {
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
   });
 
+  testWidgets(
+    'QA-enabled compile-time root shows direct telemetry gate with zero '
+    'pre-continue side effects',
+    (tester) async {
+      if (!driverOfferSubmissionTelemetryQaEnabled) {
+        return;
+      }
+
+      _useSurface(tester, const Size(430, 1000));
+      final counters = _TelemetryInitializationGateCounters();
+      final authApi = _RecordingDriverAuthApiGateway();
+      final debugMessages = <String>[];
+      final previousDebugPrint = debugPrint;
+
+      debugPrint = (message, {wrapWidth}) {
+        if (message != null && message.trim().isNotEmpty) {
+          debugMessages.add(message);
+        }
+      };
+      addTearDown(() => debugPrint = previousDebugPrint);
+
+      await tester.pumpWidget(
+        buildDriverRoot(
+          normalAppBuilder: () {
+            counters.normalDriverAppConstructions += 1;
+            counters.storageInitializations += 1;
+
+            final store = _TelemetryGateCountingAuthTokenStore(counters);
+
+            return DriverApp(
+              showLoginShell: true,
+              authService: AuthService(
+                apiGateway: authApi,
+                tokenStore: store,
+                appContext: AuthAppContext.driver,
+              ),
+              authTokenStore: store,
+              driverDutyGateway: _TelemetryGateCountingDriverDutyGateway(
+                counters,
+              ),
+              driverTripActionControllerFactory: (_) async {
+                counters.queueOpens += 1;
+                counters.tripActionControllerFactoryCalls += 1;
+                throw StateError('QA gate invoked trip-action factory early.');
+              },
+              driverOfferResponseControllerFactory: (_) async {
+                counters.queueOpens += 1;
+                counters.offerResponseControllerFactoryCalls += 1;
+                throw StateError(
+                  'QA gate invoked offer-response factory early.',
+                );
+              },
+            );
+          },
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('driver-telemetry-initialization-gate')),
+        findsOneWidget,
+      );
+      expect(find.byType(DriverApp), findsNothing);
+      expect(find.byType(DriverLoginShell), findsNothing);
+      expect(find.text('Driver sign in'), findsNothing);
+
+      expect(find.text('TELEMETRY_INIT_ONLY'), findsOneWidget);
+      expect(find.text('ALL_7_HOOKS_REGISTERED'), findsOneWidget);
+
+      for (final hookCode in const <String>[
+        'SUBMIT_START',
+        'TOKEN_CHECK',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS',
+        'RETRY_ATTEMPT_N',
+        'QUEUE_STATE',
+        'RECEIPT_CHECK',
+      ]) {
+        expect(find.text(hookCode), findsOneWidget);
+      }
+
+      expect(find.text('Registration only — no request sent.'), findsOneWidget);
+      expect(find.text('Continue to Driver app'), findsOneWidget);
+
+      expect(counters.normalDriverAppConstructions, 0);
+      expect(counters.authenticationRestorations, 0);
+      expect(counters.accessTokenReads, 0);
+      expect(counters.refreshTokenReads, 0);
+      expect(counters.storageInitializations, 0);
+      expect(counters.queueOpens, 0);
+      expect(counters.queueReads, 0);
+      expect(counters.queueWrites, 0);
+      expect(counters.driverDutyRequests, 0);
+      expect(counters.fetchTripsCalls, 0);
+      expect(counters.fetchTripDetailCalls, 0);
+      expect(counters.tripActionControllerFactoryCalls, 0);
+      expect(counters.offerResponseControllerFactoryCalls, 0);
+      expect(authApi.paths, isEmpty);
+      expect(authApi.bodies, isEmpty);
+      expect(debugMessages, isEmpty);
+
+      debugPrint = previousDebugPrint;
+
+      await tester.tap(find.byKey(const Key('driver-telemetry-continue')));
+      await tester.pump();
+
+      expect(counters.normalDriverAppConstructions, 1);
+      expect(counters.storageInitializations, 1);
+      expect(find.byType(DriverApp), findsOneWidget);
+      expect(find.byType(DriverLoginShell), findsOneWidget);
+      expect(
+        find.byKey(const Key('driver-telemetry-initialization-gate')),
+        findsNothing,
+      );
+      expect(find.text('Continue to Driver app'), findsNothing);
+
+      await tester.pump();
+      expect(counters.normalDriverAppConstructions, 1);
+    },
+  );
+
+  testWidgets(
+    'production-disabled compile-time root omits telemetry gate and preserves '
+    'existing startup',
+    (tester) async {
+      if (driverOfferSubmissionTelemetryQaEnabled) {
+        return;
+      }
+
+      expect(driverOfferSubmissionTelemetryQaEnabled, isFalse);
+
+      _useSurface(tester, const Size(430, 1000));
+      final store = MemoryAuthTokenStore();
+      final authApi = _RecordingDriverAuthApiGateway();
+      var normalDriverAppConstructions = 0;
+
+      await tester.pumpWidget(
+        buildDriverRoot(
+          showLoginShell: true,
+          normalAppBuilder: () {
+            normalDriverAppConstructions += 1;
+            return DriverApp(
+              showLoginShell: true,
+              authService: AuthService(
+                apiGateway: authApi,
+                tokenStore: store,
+                appContext: AuthAppContext.driver,
+              ),
+              authTokenStore: store,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(normalDriverAppConstructions, 1);
+      expect(find.byType(DriverApp), findsOneWidget);
+      expect(find.byType(DriverTelemetryInitializationRoot), findsNothing);
+      expect(
+        find.byKey(const Key('driver-telemetry-initialization-gate')),
+        findsNothing,
+      );
+      expect(find.text('TELEMETRY_INIT_ONLY'), findsNothing);
+      expect(find.text('ALL_7_HOOKS_REGISTERED'), findsNothing);
+      expect(find.text('Continue to Driver app'), findsNothing);
+      expect(find.text('Registration only — no request sent.'), findsNothing);
+
+      for (final hookCode in const <String>[
+        'SUBMIT_START',
+        'TOKEN_CHECK',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS',
+        'RETRY_ATTEMPT_N',
+        'QUEUE_STATE',
+        'RECEIPT_CHECK',
+      ]) {
+        expect(find.text(hookCode), findsNothing);
+      }
+
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.text('Driver sign in'), findsOneWidget);
+      expect(authApi.paths, isEmpty);
+
+      final mainSource = File('lib/main.dart').readAsStringSync();
+      final manifestSource = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+
+      expect(
+        mainSource,
+        contains('if (!driverOfferSubmissionTelemetryQaEnabled)'),
+      );
+      expect(mainSource, isNot(contains('telemetryQaEnabled =')));
+      expect(mainSource, isNot(contains('this.telemetryQaEnabled')));
+      expect(mainSource, isNot(contains('routes:')));
+      expect(mainSource, isNot(contains('onGenerateRoute:')));
+      expect(manifestSource, isNot(contains('android.intent.action.VIEW')));
+      expect(
+        manifestSource,
+        isNot(contains('android.intent.category.BROWSABLE')),
+      );
+    },
+  );
+
   test('M4D uses only accepted Driver read endpoints', () {
     final source = _readM3aDartSources('lib');
 
@@ -2189,6 +2393,76 @@ void main() {
       expect(find.text('TRIP-001'), findsOneWidget);
     });
   });
+}
+
+final class _TelemetryInitializationGateCounters {
+  int normalDriverAppConstructions = 0;
+  int authenticationRestorations = 0;
+  int accessTokenReads = 0;
+  int refreshTokenReads = 0;
+  int storageInitializations = 0;
+  int queueOpens = 0;
+  int queueReads = 0;
+  int queueWrites = 0;
+  int driverDutyRequests = 0;
+  int fetchTripsCalls = 0;
+  int fetchTripDetailCalls = 0;
+  int tripActionControllerFactoryCalls = 0;
+  int offerResponseControllerFactoryCalls = 0;
+}
+
+final class _TelemetryGateCountingAuthTokenStore implements AuthTokenStore {
+  _TelemetryGateCountingAuthTokenStore(this.counters);
+
+  final _TelemetryInitializationGateCounters counters;
+
+  @override
+  Future<String?> readAccessToken() async {
+    counters.authenticationRestorations += 1;
+    counters.accessTokenReads += 1;
+    return null;
+  }
+
+  @override
+  Future<String?> readRefreshToken() async {
+    counters.refreshTokenReads += 1;
+    return null;
+  }
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    counters.queueWrites += 1;
+  }
+
+  @override
+  Future<void> clearTokens() async {
+    counters.queueWrites += 1;
+  }
+}
+
+final class _TelemetryGateCountingDriverDutyGateway
+    implements DriverDutyGateway {
+  _TelemetryGateCountingDriverDutyGateway(this.counters);
+
+  final _TelemetryInitializationGateCounters counters;
+
+  @override
+  Future<DriverDutySummary> fetchDuty() async {
+    counters.driverDutyRequests += 1;
+    return const DriverDutySummary();
+  }
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() async {
+    counters.fetchTripsCalls += 1;
+    return const <DriverAssignedTrip>[];
+  }
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) async {
+    counters.fetchTripDetailCalls += 1;
+    throw StateError('QA gate invoked Trip detail read early.');
+  }
 }
 
 class _AccessOnlyAuthTokenStore implements AuthTokenStore {

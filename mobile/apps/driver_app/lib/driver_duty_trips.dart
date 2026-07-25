@@ -20,6 +20,7 @@ const driverSessionExpiredMessage =
     'Session expired. Please sign in again to continue.';
 const driverOfferSubmissionTelemetryQaEnabled = bool.fromEnvironment(
   'ASM_DRIVER_OFFER_SUBMISSION_TELEMETRY_QA',
+  defaultValue: false,
 );
 
 enum DriverDutyApiFailureType {

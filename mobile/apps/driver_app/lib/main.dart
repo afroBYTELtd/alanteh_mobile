@@ -18,7 +18,7 @@ export 'driver_shell.dart';
 void main() {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
   runApp(
-    DriverApp(
+    buildDriverRoot(
       configuration: configuration,
       showLoginShell: true,
       showSplash: true,
@@ -195,6 +195,157 @@ final class DriverSessionRefreshController {
         response.statusCode == 502 ||
         response.statusCode == 503 ||
         response.statusCode == 504;
+  }
+}
+
+typedef DriverNormalAppBuilder = Widget Function();
+
+Widget buildDriverRoot({
+  AsmAppConfig configuration = AsmAppConfig.localGhana,
+  bool showLoginShell = false,
+  bool showSplash = false,
+  bool enableNetworkResilience = false,
+  AuthService? authService,
+  AuthTokenStore? authTokenStore,
+  DriverDutyGateway? driverDutyGateway,
+  DriverTripActionControllerFactory? driverTripActionControllerFactory,
+  DriverOfferResponseControllerFactory? driverOfferResponseControllerFactory,
+  DriverNormalAppBuilder? normalAppBuilder,
+}) {
+  Widget buildNormalApp() {
+    final builder = normalAppBuilder;
+    if (builder != null) {
+      return builder();
+    }
+
+    return DriverApp(
+      configuration: configuration,
+      showLoginShell: showLoginShell,
+      showSplash: showSplash,
+      enableNetworkResilience: enableNetworkResilience,
+      authService: authService,
+      authTokenStore: authTokenStore,
+      driverDutyGateway: driverDutyGateway,
+      driverTripActionControllerFactory: driverTripActionControllerFactory,
+      driverOfferResponseControllerFactory:
+          driverOfferResponseControllerFactory,
+    );
+  }
+
+  if (!driverOfferSubmissionTelemetryQaEnabled) {
+    return buildNormalApp();
+  }
+
+  return DriverTelemetryInitializationRoot(normalAppBuilder: buildNormalApp);
+}
+
+class DriverTelemetryInitializationRoot extends StatefulWidget {
+  const DriverTelemetryInitializationRoot({
+    required this.normalAppBuilder,
+    super.key,
+  });
+
+  final DriverNormalAppBuilder normalAppBuilder;
+
+  @override
+  State<DriverTelemetryInitializationRoot> createState() =>
+      _DriverTelemetryInitializationRootState();
+}
+
+class _DriverTelemetryInitializationRootState
+    extends State<DriverTelemetryInitializationRoot> {
+  Widget? _normalApp;
+
+  void _continueToDriverApp() {
+    if (_normalApp != null) {
+      return;
+    }
+
+    setState(() {
+      _normalApp = widget.normalAppBuilder();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final normalApp = _normalApp;
+    if (normalApp != null) {
+      return normalApp;
+    }
+
+    return DriverOfferTelemetryInitializationGate(
+      onContinue: _continueToDriverApp,
+    );
+  }
+}
+
+class DriverOfferTelemetryInitializationGate extends StatelessWidget {
+  const DriverOfferTelemetryInitializationGate({
+    required this.onContinue,
+    super.key,
+  });
+
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final initialization = initializeDriverOfferSubmissionTelemetryHooks();
+    assert(initialization.allHooksRegistered);
+
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'ALANTEH Driver',
+      theme: AsmThemes.driver,
+      home: Scaffold(
+        key: const Key('driver-telemetry-initialization-gate'),
+        backgroundColor: AsmColors.driverVisualSurface,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              22,
+              AsmSpacing.space20,
+              22,
+              AsmSpacing.space24,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TELEMETRY_INIT_ONLY',
+                  key: const Key('driver-telemetry-init-only-title'),
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                Text(
+                  'ALL_7_HOOKS_REGISTERED',
+                  key: const Key('driver-telemetry-all-hooks-registered'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: AsmSpacing.space20),
+                for (final hookCode in initialization.hookCodes) ...[
+                  Text(
+                    hookCode,
+                    key: ValueKey<String>('driver-telemetry-hook-$hookCode'),
+                  ),
+                  const SizedBox(height: AsmSpacing.space8),
+                ],
+                const SizedBox(height: AsmSpacing.space12),
+                const Text(
+                  'Registration only — no request sent.',
+                  key: Key('driver-telemetry-registration-only-message'),
+                ),
+                const SizedBox(height: AsmSpacing.space24),
+                FilledButton(
+                  key: const Key('driver-telemetry-continue'),
+                  onPressed: onContinue,
+                  child: const Text('Continue to Driver app'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
