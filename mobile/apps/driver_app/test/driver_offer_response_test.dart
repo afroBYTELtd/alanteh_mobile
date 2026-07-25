@@ -372,6 +372,444 @@ void main() {
     );
   });
 
+  group('Sanitized offer submission telemetry', () {
+    test(
+      'initialization-only registers all seven hooks with no side effects',
+      () {
+        final tokenStore = _CountingAuthTokenStore();
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _offerSuccess(statusCode: 201),
+          ],
+        );
+        final queue = _MemoryOfferQueue();
+
+        final initialization = initializeDriverOfferSubmissionTelemetryHooks();
+
+        expect(initialization.allHooksRegistered, isTrue);
+        expect(initialization.hookCodes, <String>[
+          'SUBMIT_START',
+          'TOKEN_CHECK',
+          'REQUEST_SENT',
+          'HTTP_STATUS_CLASS',
+          'RETRY_ATTEMPT_N',
+          'QUEUE_STATE',
+          'RECEIPT_CHECK',
+        ]);
+        expect(
+          initialization.qaDisplayText,
+          'TELEMETRY_INIT_ONLY: ALL_7_HOOKS_REGISTERED '
+          '[SUBMIT_START, TOKEN_CHECK, REQUEST_SENT, '
+          'HTTP_STATUS_CLASS, RETRY_ATTEMPT_N, QUEUE_STATE, '
+          'RECEIPT_CHECK]',
+        );
+        expect(tokenStore.accessTokenReads, 0);
+        expect(tokenStore.refreshTokenReads, 0);
+        expect(tokenStore.saveCalls, 0);
+        expect(tokenStore.clearCalls, 0);
+        expect(api.paths, isEmpty);
+        expect(queue.events, isEmpty);
+        expect(queue.enqueueCalls, 0);
+        expect(queue.eventByIdCalls, 0);
+        expect(queue.pendingEventsCalls, 0);
+        expect(queue.markSyncedCalls, 0);
+      },
+    );
+
+    test('ordered 201 telemetry follows persistent synchronization', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final queue = _MemoryOfferQueue();
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+      );
+      final controller = _controller(
+        queue: queue,
+        gateway: gateway,
+        utcNow: () => DateTime.utc(2026, 7, 25, 4),
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+
+      controller.attachSubmissionTelemetrySink((event) {
+        if (event.stage == DriverOfferSubmissionTelemetryStage.receiptCheck) {
+          expect(queue.events.single.syncStatus, QueueSyncStatus.synced);
+        }
+        events.add(event);
+      });
+
+      final result = await controller.accept();
+
+      expect(result.accepted, isTrue);
+      expect(_telemetryTexts(events), <String>[
+        'SUBMIT_START',
+        'QUEUE_STATE: queued',
+        'TOKEN_CHECK',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS: 2xx',
+        'QUEUE_STATE: dequeued',
+        'RECEIPT_CHECK',
+      ]);
+      expect(api.paths, hasLength(1));
+      expect(queue.markSyncedCalls, 1);
+      expect(queue.events.single.syncStatus, QueueSyncStatus.synced);
+    });
+
+    test('ordered valid 200 duplicate telemetry is accepted', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 200, duplicate: true),
+        ],
+      );
+      final queue = _MemoryOfferQueue();
+      final controller = _controller(
+        queue: queue,
+        gateway: ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+        ),
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      controller.attachSubmissionTelemetrySink(events.add);
+
+      final result = await controller.accept();
+
+      expect(
+        result.disposition,
+        DriverOfferAcceptanceDisposition.duplicateRecovered,
+      );
+      expect(_telemetryTexts(events), <String>[
+        'SUBMIT_START',
+        'QUEUE_STATE: queued',
+        'TOKEN_CHECK',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS: 2xx',
+        'QUEUE_STATE: dequeued',
+        'RECEIPT_CHECK',
+      ]);
+      expect(api.paths, hasLength(1));
+      expect(queue.markSyncedCalls, 1);
+    });
+
+    test('4xx emits class once, does not retry, and stays pending', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerFailure(400),
+        ],
+      );
+      final queue = _MemoryOfferQueue();
+      final controller = _controller(
+        queue: queue,
+        gateway: ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+        ),
+        utcNow: () => DateTime.utc(2026, 7, 25, 4, 5),
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      controller.attachSubmissionTelemetrySink(events.add);
+
+      final result = await controller.accept();
+
+      expect(result.accepted, isFalse);
+      expect(_telemetryTexts(events), <String>[
+        'SUBMIT_START',
+        'QUEUE_STATE: queued',
+        'TOKEN_CHECK',
+        'REQUEST_SENT',
+        'HTTP_STATUS_CLASS: 4xx',
+        'QUEUE_STATE: pending',
+      ]);
+      expect(api.paths, hasLength(1));
+      expect(queue.enqueueCalls, 2);
+      expect(queue.markSyncedCalls, 0);
+      expect(queue.events.single.syncStatus, QueueSyncStatus.pending);
+    });
+
+    test(
+      '5xx retries preserve 2s 4s 8s, key, timestamp, and event order',
+      () async {
+        final store = await _tokenStore();
+        final delays = <Duration>[];
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _offerFailure(503),
+            _offerFailure(502),
+            _offerFailure(504),
+            _offerSuccess(statusCode: 201),
+          ],
+        );
+        final queue = _MemoryOfferQueue();
+        final controller = _controller(
+          queue: queue,
+          gateway: ApiDriverOfferResponseGateway(
+            apiGateway: api,
+            tokenStore: store,
+            retryPolicy: GhanaRetryPolicy(
+              delay: (duration) async => delays.add(duration),
+            ),
+          ),
+          utcNow: () => DateTime.utc(2026, 7, 25, 4, 10),
+        );
+        final events = <DriverOfferSubmissionTelemetryEvent>[];
+        controller.attachSubmissionTelemetrySink(events.add);
+
+        final result = await controller.accept();
+
+        expect(result.accepted, isTrue);
+        expect(delays, <Duration>[
+          const Duration(seconds: 2),
+          const Duration(seconds: 4),
+          const Duration(seconds: 8),
+        ]);
+        expect(_telemetryTexts(events), <String>[
+          'SUBMIT_START',
+          'QUEUE_STATE: queued',
+          'TOKEN_CHECK',
+          'REQUEST_SENT',
+          'HTTP_STATUS_CLASS: 5xx',
+          'RETRY_ATTEMPT_N: 1',
+          'REQUEST_SENT',
+          'HTTP_STATUS_CLASS: 5xx',
+          'RETRY_ATTEMPT_N: 2',
+          'REQUEST_SENT',
+          'HTTP_STATUS_CLASS: 5xx',
+          'RETRY_ATTEMPT_N: 3',
+          'REQUEST_SENT',
+          'HTTP_STATUS_CLASS: 2xx',
+          'QUEUE_STATE: dequeued',
+          'RECEIPT_CHECK',
+        ]);
+        expect(api.paths, hasLength(4));
+        expect(
+          api.headers.map((value) => value['Idempotency-Key']).toSet(),
+          hasLength(1),
+        );
+        expect(
+          api.bodies
+              .map(
+                (value) => (value as Map<String, Object?>)['device_timestamp'],
+              )
+              .toSet(),
+          hasLength(1),
+        );
+      },
+    );
+
+    test('proven timeout emits only timeout HTTP classes', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: List<ApiResponse<DriverOfferResponseReceipt>>.generate(
+          4,
+          (_) => _offerClientException(AsmApiExceptionType.timeout),
+        ),
+      );
+      final queue = _MemoryOfferQueue();
+      final controller = _controller(
+        queue: queue,
+        gateway: ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+          retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
+        ),
+      );
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      controller.attachSubmissionTelemetrySink(events.add);
+
+      final result = await controller.accept();
+      final texts = _telemetryTexts(events);
+
+      expect(result.accepted, isFalse);
+      expect(
+        texts.where((value) => value == 'HTTP_STATUS_CLASS: timeout'),
+        hasLength(4),
+      );
+      expect(texts, isNot(contains('HTTP_STATUS_CLASS: 4xx')));
+      expect(texts, isNot(contains('HTTP_STATUS_CLASS: 5xx')));
+      expect(texts.last, 'QUEUE_STATE: pending');
+    });
+
+    test(
+      'non-timeout transport failure fabricates no HTTP status class',
+      () async {
+        final store = await _tokenStore();
+        final api = _RecordingOfferApi(
+          responses: List<ApiResponse<DriverOfferResponseReceipt>>.generate(
+            4,
+            (_) => _offerClientException(AsmApiExceptionType.network),
+          ),
+        );
+        final queue = _MemoryOfferQueue();
+        final controller = _controller(
+          queue: queue,
+          gateway: ApiDriverOfferResponseGateway(
+            apiGateway: api,
+            tokenStore: store,
+            retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
+          ),
+        );
+        final events = <DriverOfferSubmissionTelemetryEvent>[];
+        controller.attachSubmissionTelemetrySink(events.add);
+
+        final result = await controller.accept();
+        final texts = _telemetryTexts(events);
+
+        expect(result.accepted, isFalse);
+        expect(api.paths, hasLength(4));
+        expect(
+          texts.where((value) => value.startsWith('HTTP_STATUS_CLASS')),
+          isEmpty,
+        );
+        expect(texts.where((value) => value == 'REQUEST_SENT'), hasLength(4));
+        expect(texts.last, 'QUEUE_STATE: pending');
+      },
+    );
+
+    test('REQUEST_SENT is present before every transport invocation', () async {
+      final store = await _tokenStore();
+      final events = <DriverOfferSubmissionTelemetryEvent>[];
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerFailure(503),
+          _offerSuccess(statusCode: 201),
+        ],
+        beforePost: (_) {
+          expect(events.last.qaDisplayText, 'REQUEST_SENT');
+        },
+      );
+      final queue = _MemoryOfferQueue();
+      final controller = _controller(
+        queue: queue,
+        gateway: ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+          retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
+        ),
+      );
+      controller.attachSubmissionTelemetrySink(events.add);
+
+      await controller.accept();
+
+      expect(api.paths, hasLength(2));
+      expect(
+        _telemetryTexts(events).where((value) => value == 'REQUEST_SENT'),
+        hasLength(2),
+      );
+    });
+
+    test(
+      'receipt persistence failure emits pending and no receipt check',
+      () async {
+        final store = await _tokenStore();
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _offerSuccess(statusCode: 201),
+          ],
+        );
+        final queue = _MemoryOfferQueue(throwOnMarkSynced: true);
+        final controller = _controller(
+          queue: queue,
+          gateway: ApiDriverOfferResponseGateway(
+            apiGateway: api,
+            tokenStore: store,
+          ),
+        );
+        final events = <DriverOfferSubmissionTelemetryEvent>[];
+        controller.attachSubmissionTelemetrySink(events.add);
+
+        await expectLater(controller.accept(), throwsStateError);
+
+        final texts = _telemetryTexts(events);
+        expect(texts, contains('HTTP_STATUS_CLASS: 2xx'));
+        expect(texts, isNot(contains('QUEUE_STATE: dequeued')));
+        expect(texts, isNot(contains('RECEIPT_CHECK')));
+        expect(texts.last, 'QUEUE_STATE: pending');
+        expect(queue.markSyncedCalls, 1);
+        expect(queue.events.single.syncStatus, QueueSyncStatus.pending);
+      },
+    );
+
+    test('telemetry display values are closed-set and privacy safe', () {
+      const sensitiveMarkers = <String>[
+        'TRIP-PRIVATE-001',
+        'DRIVER-PRIVATE-001',
+        '233000000000',
+        '1234',
+        'private-token',
+        'Authorization',
+        'Idempotency-Key',
+        'device_timestamp',
+        'private-exception',
+        '/private/database/path',
+      ];
+      final events = <DriverOfferSubmissionTelemetryEvent>[
+        const DriverOfferSubmissionTelemetryEvent.submitStart(),
+        const DriverOfferSubmissionTelemetryEvent.tokenCheck(),
+        const DriverOfferSubmissionTelemetryEvent.requestSent(),
+        const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
+          DriverOfferSubmissionHttpStatusClass.success2xx,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
+          DriverOfferSubmissionHttpStatusClass.client4xx,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
+          DriverOfferSubmissionHttpStatusClass.server5xx,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.httpStatusClass(
+          DriverOfferSubmissionHttpStatusClass.timeout,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.retryAttempt(
+          DriverOfferSubmissionRetryAttempt.one,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.retryAttempt(
+          DriverOfferSubmissionRetryAttempt.two,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.retryAttempt(
+          DriverOfferSubmissionRetryAttempt.three,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.queued,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.dequeued,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.pending,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.failed,
+        ),
+        const DriverOfferSubmissionTelemetryEvent.receiptCheck(),
+      ];
+
+      final text = _telemetryTexts(events).join('\n');
+
+      for (final marker in sensitiveMarkers) {
+        expect(text, isNot(contains(marker)));
+      }
+      expect(
+        _telemetryTexts(events),
+        everyElement(
+          matches(
+            RegExp(
+              r'^(SUBMIT_START|TOKEN_CHECK|REQUEST_SENT|'
+              r'HTTP_STATUS_CLASS: (2xx|4xx|5xx|timeout)|'
+              r'RETRY_ATTEMPT_N: [123]|'
+              r'QUEUE_STATE: (queued|dequeued|pending|failed)|'
+              r'RECEIPT_CHECK)$',
+            ),
+          ),
+        ),
+      );
+    });
+  });
+
   group('Driver persistent offer acceptance', () {
     test('first display creates one stable UUID4-prefixed record', () async {
       final queue = _MemoryOfferQueue();
@@ -1456,6 +1894,20 @@ ApiResponse<DriverOfferResponseReceipt> _offerFailure(int statusCode) {
   );
 }
 
+ApiResponse<DriverOfferResponseReceipt> _offerClientException(
+  AsmApiExceptionType type,
+) {
+  return ApiResponse.clientException(
+    AsmApiException(type: type, message: 'Private transport detail.'),
+  );
+}
+
+List<String> _telemetryTexts(
+  Iterable<DriverOfferSubmissionTelemetryEvent> events,
+) {
+  return events.map((event) => event.qaDisplayText).toList(growable: false);
+}
+
 DriverOfferResponseReceipt _receipt({bool duplicate = false}) {
   return DriverOfferResponseReceipt(
     tripReference: 'TRIP-OFFER-001',
@@ -1493,10 +1945,40 @@ DriverOfferResponseResilienceController _controller({
   );
 }
 
+final class _CountingAuthTokenStore implements AuthTokenStore {
+  int accessTokenReads = 0;
+  int refreshTokenReads = 0;
+  int saveCalls = 0;
+  int clearCalls = 0;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    saveCalls += 1;
+  }
+
+  @override
+  Future<String?> readAccessToken() async {
+    accessTokenReads += 1;
+    return null;
+  }
+
+  @override
+  Future<String?> readRefreshToken() async {
+    refreshTokenReads += 1;
+    return null;
+  }
+
+  @override
+  Future<void> clearTokens() async {
+    clearCalls += 1;
+  }
+}
+
 final class _RecordingOfferApi implements DriverOfferResponseApiGateway {
-  _RecordingOfferApi({required this.responses});
+  _RecordingOfferApi({required this.responses, this.beforePost});
 
   final List<ApiResponse<DriverOfferResponseReceipt>> responses;
+  final void Function(int invocation)? beforePost;
   final paths = <String>[];
   final bodies = <Object?>[];
   final headers = <Map<String, String>>[];
@@ -1509,6 +1991,7 @@ final class _RecordingOfferApi implements DriverOfferResponseApiGateway {
     Map<String, String>? headers,
     JsonDecoder<T>? decoder,
   }) async {
+    beforePost?.call(_index + 1);
     paths.add(path);
     bodies.add(data);
     this.headers.add(Map<String, String>.of(headers ?? const {}));
@@ -1521,10 +2004,18 @@ final class _RecordingOfferApi implements DriverOfferResponseApiGateway {
 }
 
 final class _MemoryOfferQueue implements DriverTripActionPersistentQueue {
+  _MemoryOfferQueue({this.throwOnMarkSynced = false});
+
+  final bool throwOnMarkSynced;
   final events = <QueuedEvent>[];
+  int enqueueCalls = 0;
+  int eventByIdCalls = 0;
+  int pendingEventsCalls = 0;
+  int markSyncedCalls = 0;
 
   @override
   Future<QueuedEvent> enqueue(QueuedEvent event) async {
+    enqueueCalls += 1;
     final index = events.indexWhere((candidate) => candidate.id == event.id);
     if (index < 0) {
       events.add(event);
@@ -1536,6 +2027,7 @@ final class _MemoryOfferQueue implements DriverTripActionPersistentQueue {
 
   @override
   Future<QueuedEvent?> eventById(String id) async {
+    eventByIdCalls += 1;
     for (final event in events) {
       if (event.id == id) {
         return event;
@@ -1546,6 +2038,7 @@ final class _MemoryOfferQueue implements DriverTripActionPersistentQueue {
 
   @override
   Future<List<QueuedEvent>> pendingEvents() async {
+    pendingEventsCalls += 1;
     return events
         .where(
           (event) =>
@@ -1563,6 +2056,11 @@ final class _MemoryOfferQueue implements DriverTripActionPersistentQueue {
 
   @override
   Future<void> markSynced(String id) async {
+    markSyncedCalls += 1;
+    if (throwOnMarkSynced) {
+      throw StateError('Sanitized queue synchronization failure.');
+    }
+
     final event = await eventById(id);
     if (event == null) {
       return;
@@ -1594,6 +2092,7 @@ final class _RecordingOfferGateway implements DriverOfferResponseGateway {
     required String tripReference,
     required String idempotencyKey,
     required String deviceTimestamp,
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     calls += 1;
     idempotencyKeys.add(idempotencyKey);

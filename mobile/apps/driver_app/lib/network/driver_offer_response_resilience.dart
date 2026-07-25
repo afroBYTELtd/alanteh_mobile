@@ -116,6 +116,7 @@ final class DriverOfferResponseResilienceController {
   final String driverId;
   final DriverOfferServerStateVerifier verifyServerState;
   final DateTime Function() _utcNow;
+  DriverOfferSubmissionTelemetrySink? _telemetrySink;
 
   Future<DriverOfferAcceptanceResult>? _inFlight;
   DriverOfferResponseReceipt? _confirmedReceipt;
@@ -149,6 +150,12 @@ final class DriverOfferResponseResilienceController {
       'driver-offer-accept:${_normalizedTripReference.toLowerCase()}';
 
   String get _keyPrefix => 'DRIVER-OFFER-$_normalizedTripReference-';
+
+  void attachSubmissionTelemetrySink(
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  ) {
+    _telemetrySink = telemetrySink;
+  }
 
   Future<QueuedEvent> prepareWhenOfferDisplayed() async {
     final normalizedTripReference = _normalizedTripReference;
@@ -239,11 +246,21 @@ final class DriverOfferResponseResilienceController {
         ? _acceptPersistedRequest()
         : _verifyConfirmedReceipt();
     _inFlight = operation;
-    operation.whenComplete(() {
+
+    void clearInFlight() {
       if (identical(_inFlight, operation)) {
         _inFlight = null;
       }
-    });
+    }
+
+    operation.then<void>(
+      (_) {
+        clearInFlight();
+      },
+      onError: (Object _, StackTrace _) {
+        clearInFlight();
+      },
+    );
     return operation;
   }
 
@@ -255,20 +272,36 @@ final class DriverOfferResponseResilienceController {
     var event = await prepareWhenOfferDisplayed();
     event = await _persistFirstTapTimestamp(event);
 
+    _emit(const DriverOfferSubmissionTelemetryEvent.submitStart());
+    _emitSubmissionQueueState(event, startingSubmission: true);
+
     try {
       final timestamp = _persistedTimestamp(event);
       final receipt = await gateway.accept(
         tripReference: event.tripReference,
         idempotencyKey: event.idempotencyKey,
         deviceTimestamp: timestamp,
+        telemetrySink: _telemetrySink,
       );
 
-      await queue.markSynced(event.id);
+      try {
+        await queue.markSynced(event.id);
+      } on Object {
+        _emitSubmissionQueueState(event, startingSubmission: false);
+        rethrow;
+      }
       _confirmedReceipt = receipt;
       _confirmedEvent = event;
+      _emit(
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.dequeued,
+        ),
+      );
+      _emit(const DriverOfferSubmissionTelemetryEvent.receiptCheck());
 
       return _verifyConfirmedReceipt();
     } on DriverOfferResponseException catch (error) {
+      _emitSubmissionQueueState(event, startingSubmission: false);
       return DriverOfferAcceptanceResult(
         disposition: switch (error.type) {
           DriverOfferResponseFailureType.temporarilyUnavailable =>
@@ -283,6 +316,37 @@ final class DriverOfferResponseResilienceController {
         error: error,
       );
     }
+  }
+
+  void _emit(DriverOfferSubmissionTelemetryEvent event) {
+    emitDriverOfferSubmissionTelemetry(_telemetrySink, event);
+  }
+
+  void _emitSubmissionQueueState(
+    QueuedEvent event, {
+    required bool startingSubmission,
+  }) {
+    if (event.syncStatus == QueueSyncStatus.failed ||
+        event.syncStatus == QueueSyncStatus.permanentlyFailed) {
+      _emit(
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.failed,
+        ),
+      );
+      return;
+    }
+
+    if (event.syncStatus != QueueSyncStatus.pending) {
+      return;
+    }
+
+    _emit(
+      DriverOfferSubmissionTelemetryEvent.queueState(
+        startingSubmission
+            ? DriverOfferSubmissionQueueState.queued
+            : DriverOfferSubmissionQueueState.pending,
+      ),
+    );
   }
 
   Future<DriverOfferAcceptanceResult> _verifyConfirmedReceipt() async {

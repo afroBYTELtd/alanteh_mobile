@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
@@ -17,6 +18,9 @@ const driverTripsEmptyMessage =
     'When the Control Center assigns a trip, it will appear here.';
 const driverSessionExpiredMessage =
     'Session expired. Please sign in again to continue.';
+const driverOfferSubmissionTelemetryQaEnabled = bool.fromEnvironment(
+  'ASM_DRIVER_OFFER_SUBMISSION_TELEMETRY_QA',
+);
 
 enum DriverDutyApiFailureType {
   sessionExpired,
@@ -624,12 +628,15 @@ class DriverAssignedTripsScreen extends StatefulWidget {
     required this.gateway,
     this.actionControllerFactory,
     this.offerResponseControllerFactory,
+    this.offerSubmissionTelemetryQaEnabled =
+        driverOfferSubmissionTelemetryQaEnabled,
     super.key,
   });
 
   final DriverDutyGateway? gateway;
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
+  final bool offerSubmissionTelemetryQaEnabled;
 
   @override
   State<DriverAssignedTripsScreen> createState() =>
@@ -764,6 +771,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                                 widget.actionControllerFactory,
                             offerResponseControllerFactory:
                                 widget.offerResponseControllerFactory,
+                            offerSubmissionTelemetryQaEnabled:
+                                widget.offerSubmissionTelemetryQaEnabled,
                             onRefreshTripList: () async {
                               if (mounted) {
                                 _refresh();
@@ -794,6 +803,8 @@ class DriverTripDetailScreen extends StatefulWidget {
     required this.tripReference,
     this.actionControllerFactory,
     this.offerResponseControllerFactory,
+    this.offerSubmissionTelemetryQaEnabled =
+        driverOfferSubmissionTelemetryQaEnabled,
     this.onRefreshTripList,
     super.key,
   });
@@ -802,6 +813,7 @@ class DriverTripDetailScreen extends StatefulWidget {
   final String tripReference;
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
+  final bool offerSubmissionTelemetryQaEnabled;
   final Future<void> Function()? onRefreshTripList;
 
   @override
@@ -816,10 +828,18 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
   DriverOfferResponseResilienceController? _offerResponseController;
   DriverOfferAcceptanceResult? _offerAcceptanceResult;
   String? _offerPreparationStatus;
+  final List<DriverOfferSubmissionTelemetryEvent>
+  _offerSubmissionTelemetryEvents = [];
+  String? _offerSubmissionTelemetryInitializationStatus;
 
   @override
   void initState() {
     super.initState();
+    if (widget.offerSubmissionTelemetryQaEnabled) {
+      final initialization = initializeDriverOfferSubmissionTelemetryHooks();
+      _offerSubmissionTelemetryInitializationStatus =
+          initialization.qaDisplayText;
+    }
     _future = _loadTrip();
   }
 
@@ -829,6 +849,18 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
       await _prepareOfferResponse(trip);
     }
     return trip;
+  }
+
+  void _recordOfferSubmissionTelemetry(
+    DriverOfferSubmissionTelemetryEvent event,
+  ) {
+    if (!widget.offerSubmissionTelemetryQaEnabled || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _offerSubmissionTelemetryEvents.add(event);
+    });
   }
 
   Future<void> _prepareOfferResponse(
@@ -863,6 +895,11 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
 
     try {
       final controller = await factory(trip.reference);
+      controller.attachSubmissionTelemetrySink(
+        widget.offerSubmissionTelemetryQaEnabled
+            ? _recordOfferSubmissionTelemetry
+            : null,
+      );
       await controller.prepareWhenOfferDisplayed();
 
       update(() {
@@ -900,6 +937,9 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
     setState(() {
       _submittingOfferResponse = true;
       _offerAcceptanceResult = null;
+      if (widget.offerSubmissionTelemetryQaEnabled) {
+        _offerSubmissionTelemetryEvents.clear();
+      }
     });
 
     final result = manualRetry
@@ -1057,6 +1097,12 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
               offerPrepared: _offerResponseController != null,
               offerPreparationStatus: _offerPreparationStatus,
               offerAcceptanceResult: _offerAcceptanceResult,
+              offerSubmissionTelemetryInitializationStatus:
+                  _offerSubmissionTelemetryInitializationStatus,
+              offerSubmissionTelemetryEvents:
+                  List<DriverOfferSubmissionTelemetryEvent>.unmodifiable(
+                    _offerSubmissionTelemetryEvents,
+                  ),
               onAcceptOffer: () => _acceptOffer(manualRetry: false),
               onRetryPreparation: () => _retryOfferPreparation(trip),
               onRetryOffer: () => _acceptOffer(manualRetry: true),
@@ -1125,6 +1171,8 @@ class _DriverTripDetailCard extends StatelessWidget {
     required this.offerPrepared,
     required this.offerPreparationStatus,
     required this.offerAcceptanceResult,
+    required this.offerSubmissionTelemetryInitializationStatus,
+    required this.offerSubmissionTelemetryEvents,
     required this.onAcceptOffer,
     required this.onRetryPreparation,
     required this.onRetryOffer,
@@ -1140,6 +1188,9 @@ class _DriverTripDetailCard extends StatelessWidget {
   final bool offerPrepared;
   final String? offerPreparationStatus;
   final DriverOfferAcceptanceResult? offerAcceptanceResult;
+  final String? offerSubmissionTelemetryInitializationStatus;
+  final List<DriverOfferSubmissionTelemetryEvent>
+  offerSubmissionTelemetryEvents;
   final VoidCallback onAcceptOffer;
   final VoidCallback onRetryPreparation;
   final VoidCallback onRetryOffer;
@@ -1245,6 +1296,26 @@ class _DriverTripDetailCard extends StatelessWidget {
                 onPressed: offerPreparing ? null : onRetryPreparation,
                 icon: const Icon(Icons.refresh_outlined),
                 label: const Text('Retry preparation'),
+              ),
+            ],
+            if (offerSubmissionTelemetryInitializationStatus != null) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              Text(
+                offerSubmissionTelemetryInitializationStatus!,
+                key: const Key(
+                  'driver-offer-submission-telemetry-initialization',
+                ),
+              ),
+            ],
+            for (
+              var index = 0;
+              index < offerSubmissionTelemetryEvents.length;
+              index += 1
+            ) ...[
+              const SizedBox(height: AsmSpacing.space8),
+              Text(
+                offerSubmissionTelemetryEvents[index].qaDisplayText,
+                key: Key('driver-offer-submission-telemetry-event-$index'),
               ),
             ],
             if (offerAcceptanceResult?.message != null) ...[
