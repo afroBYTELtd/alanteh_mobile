@@ -22,6 +22,103 @@ void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
 
+  test('test_valid_session_reaches_request_sent', () async {
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'diagnostic-access-token',
+        refreshToken: 'diagnostic-refresh-token',
+      ),
+    );
+    final api = _ArrivedDiagnosticsActionApi(
+      response: ApiResponse.success(
+        const DriverTripActionReceipt(
+          tripReference: 'TRIP-DIAGNOSTICS-VALID',
+          status: 'arrived_at_pickup',
+          message: 'Arrival confirmed.',
+          duplicate: false,
+        ),
+        statusCode: 201,
+      ),
+    );
+    final events = <DriverTripActionTelemetryEvent>[];
+    final gateway = ApiDriverTripActionGateway(
+      apiGateway: api,
+      tokenStore: store,
+    )..attachSubmissionTelemetrySink(events.add);
+
+    final receipt = await gateway.submit(
+      action: DriverTripAction.arrivedPickup,
+      tripReference: 'TRIP-DIAGNOSTICS-VALID',
+      idempotencyKey: 'DIAGNOSTIC-IDEMPOTENCY-KEY',
+    );
+
+    expect(receipt.status, 'arrived_at_pickup');
+    expect(api.calls, 1);
+    expect(api.paths, <String>[
+      '/api/driver/trips/TRIP-DIAGNOSTICS-VALID/'
+          'actions/arrived-pickup/',
+    ]);
+    expect(
+      events.map((event) => event.stage).toList(),
+      <DriverTripActionTelemetryStage>[
+        DriverTripActionTelemetryStage.tokenCheck,
+        DriverTripActionTelemetryStage.requestSent,
+        DriverTripActionTelemetryStage.httpStatusClass,
+      ],
+    );
+    expect(events[0].qaDisplayText, 'TOKEN_CHECK: TOKEN_PRESENT');
+    expect(events[1].qaDisplayText, 'REQUEST_SENT');
+    expect(events[2].qaDisplayText, 'HTTP_STATUS_CLASS: 2xx');
+
+    final display = events.map((event) => event.qaDisplayText).join('|');
+    for (final forbidden in const <String>[
+      'TRIP-DIAGNOSTICS-VALID',
+      'diagnostic-access-token',
+      'diagnostic-refresh-token',
+      'DIAGNOSTIC-IDEMPOTENCY-KEY',
+      'Authorization',
+      'Bearer ',
+      'https://',
+      'http://',
+    ]) {
+      expect(display, isNot(contains(forbidden)));
+    }
+  });
+
+  test('test_in_flight_guard_resets_after_offer_response', () async {
+    final offerQueue = _MemoryOfferQueue();
+    final offerGateway = _RecordingOfferGateway();
+    final offerController = _controller(
+      queue: offerQueue,
+      gateway: offerGateway,
+    );
+
+    final offerResult = await offerController.accept();
+
+    expect(offerResult.accepted, isTrue);
+    expect(offerGateway.calls, 1);
+
+    final actionQueue = _ArrivedDiagnosticsOfferActionQueue();
+    final actionGateway = _ArrivedDiagnosticsOfferActionGateway();
+    final actionController = DriverTripActionResilienceController(
+      queue: actionQueue,
+      gateway: actionGateway,
+      tripReference: 'TRIP-DIAGNOSTICS-AFTER-OFFER',
+      driverId: 'DRIVER-DIAGNOSTICS-AFTER-OFFER',
+    );
+
+    final actionResult = await actionController.recordAction(
+      eventType: 'arrived-pickup',
+      payload: const <String, Object?>{},
+    );
+
+    expect(actionResult.canAdvance, isTrue);
+    expect(actionGateway.calls, 1);
+    expect(actionQueue.events, hasLength(1));
+    expect(actionQueue.events.single.syncStatus, QueueSyncStatus.synced);
+  });
+
   group('Driver offer-response gateway', () {
     test(
       'uses exact endpoint, bearer token, stable key, and exact body',
@@ -2720,4 +2817,97 @@ final class _DiagnosticDutyGateway implements DriverDutyGateway {
 final class _NoopTripActionQueue implements DriverTripActionQueue {
   @override
   Future<QueuedEvent> enqueue(QueuedEvent event) async => event;
+}
+
+final class _ArrivedDiagnosticsActionApi implements DriverTripActionApiGateway {
+  _ArrivedDiagnosticsActionApi({required this.response});
+
+  final ApiResponse<DriverTripActionReceipt> response;
+  final paths = <String>[];
+  int calls = 0;
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) async {
+    calls += 1;
+    paths.add(path);
+    return response as ApiResponse<T>;
+  }
+}
+
+final class _ArrivedDiagnosticsOfferActionQueue
+    implements DriverTripActionPersistentQueue {
+  final events = <QueuedEvent>[];
+
+  @override
+  Future<QueuedEvent> enqueue(QueuedEvent event) async {
+    final index = events.indexWhere((candidate) => candidate.id == event.id);
+    if (index < 0) {
+      events.add(event);
+    } else {
+      events[index] = event;
+    }
+    return event;
+  }
+
+  @override
+  Future<QueuedEvent?> eventById(String id) async {
+    for (final event in events) {
+      if (event.id == id) {
+        return event;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<List<QueuedEvent>> pendingEvents() async {
+    return events
+        .where(
+          (event) =>
+              event.syncStatus == QueueSyncStatus.pending ||
+              event.syncStatus == QueueSyncStatus.failed,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> markFailed(String id) async {}
+
+  @override
+  Future<void> markPermanentlyFailed(String id) async {}
+
+  @override
+  Future<void> markSynced(String id) async {
+    final event = await eventById(id);
+    if (event == null) {
+      return;
+    }
+    await enqueue(event.copyWith(syncStatus: QueueSyncStatus.synced));
+  }
+}
+
+final class _ArrivedDiagnosticsOfferActionGateway
+    implements DriverTripActionGateway {
+  int calls = 0;
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+  }) async {
+    calls += 1;
+    return DriverTripActionReceipt(
+      tripReference: tripReference,
+      status: action.expectedStatus,
+      message: 'Action confirmed.',
+      duplicate: false,
+    );
+  }
 }

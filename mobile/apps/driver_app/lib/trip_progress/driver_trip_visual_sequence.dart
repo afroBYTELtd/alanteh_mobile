@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
 import 'driver_trip_map.dart';
 import 'driver_trip_route.dart';
@@ -13,6 +14,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.actionRecorder,
     this.initialStatus,
     this.onActionRejected,
+    this.tripActionTelemetryQaEnabled = false,
     super.key,
   });
 
@@ -20,6 +22,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final String? initialStatus;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
+  final bool tripActionTelemetryQaEnabled;
 
   @override
   State<DriverTripVisualSequencePage> createState() =>
@@ -30,11 +33,32 @@ class _DriverTripVisualSequencePageState
     extends State<DriverTripVisualSequencePage> {
   late DriverTripVisualState _state;
   bool _isSubmitting = false;
+  final List<DriverTripActionTelemetryEvent> _telemetryEvents = [];
 
   @override
   void initState() {
     super.initState();
     _state = DriverTripVisualState.fromBackendStatus(widget.initialStatus);
+    if (widget.tripActionTelemetryQaEnabled) {
+      widget.actionRecorder?.attachSubmissionTelemetrySink(
+        _recordTripActionTelemetry,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.tripActionTelemetryQaEnabled) {
+      widget.actionRecorder?.attachSubmissionTelemetrySink(null);
+    }
+    super.dispose();
+  }
+
+  void _recordTripActionTelemetry(DriverTripActionTelemetryEvent event) {
+    if (!widget.tripActionTelemetryQaEnabled || !mounted) {
+      return;
+    }
+    setState(() => _telemetryEvents.add(event));
   }
 
   Future<void> _applyResilientAction({
@@ -267,6 +291,61 @@ class _DriverTripVisualSequencePageState
           onBackToHome: _backToHome,
         ),
       },
+      bottomNavigationBar: widget.tripActionTelemetryQaEnabled
+          ? _DriverTripActionTelemetryPanel(
+              events: List<DriverTripActionTelemetryEvent>.unmodifiable(
+                _telemetryEvents,
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+class _DriverTripActionTelemetryPanel extends StatelessWidget {
+  const _DriverTripActionTelemetryPanel({required this.events});
+
+  final List<DriverTripActionTelemetryEvent> events;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        key: const Key('driver-trip-action-telemetry-panel'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(
+          AsmSpacing.space16,
+          AsmSpacing.space8,
+          AsmSpacing.space16,
+          AsmSpacing.space12,
+        ),
+        decoration: const BoxDecoration(
+          color: AsmColors.driverCard,
+          border: Border(top: BorderSide(color: AsmColors.driverLine)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'ARRIVED_SUBMISSION_DIAGNOSTICS',
+              key: Key('driver-trip-action-telemetry-title'),
+            ),
+            if (events.isEmpty)
+              const Text(
+                'No action stages recorded.',
+                key: Key('driver-trip-action-telemetry-empty'),
+              )
+            else
+              for (var index = 0; index < events.length; index++)
+                Text(
+                  events[index].qaDisplayText,
+                  key: ValueKey<String>('driver-trip-action-telemetry-$index'),
+                ),
+          ],
+        ),
+      ),
     );
   }
 }

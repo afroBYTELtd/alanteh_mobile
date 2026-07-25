@@ -10,6 +10,7 @@ import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
+import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,194 @@ void main() {
   test('Driver auth endpoint contract paths remain stable', () {
     expect(AuthService.tokenPath, '/api/auth/token/');
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
+  });
+
+  testWidgets('test_arrived_tap_invokes_controller_exactly_once', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final queue = _ArrivedDiagnosticsQueue();
+    final gateway = _ArrivedDiagnosticsPendingGateway();
+    final controller = DriverTripActionResilienceController(
+      queue: queue,
+      gateway: gateway,
+      tripReference: 'TRIP-DIAGNOSTICS-ONE-TAP',
+      driverId: 'DRIVER-DIAGNOSTICS-ONE-TAP',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.driver,
+        home: DriverTripVisualSequencePage(
+          actionRecorder: controller,
+          initialStatus: 'driver_accepted',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+    await tester.ensureVisible(arrived);
+    await tester.tap(arrived);
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(gateway.calls, 1);
+    expect(queue.events, hasLength(1));
+
+    gateway.completeArrived();
+    await tester.pumpAndSettle();
+
+    expect(gateway.calls, 1);
+    expect(find.byKey(const Key('driver-arrived-at-pickup')), findsOneWidget);
+  });
+
+  testWidgets('test_pre_dispatch_failure_produces_visible_result', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    final api = _ArrivedDiagnosticsRecordingApi();
+    final gateway = ApiDriverTripActionGateway(
+      apiGateway: api,
+      tokenStore: store,
+    );
+    final controller = DriverTripActionResilienceController(
+      queue: _ArrivedDiagnosticsQueue(),
+      gateway: gateway,
+      tripReference: 'TRIP-DIAGNOSTICS-PRE-DISPATCH',
+      driverId: 'DRIVER-DIAGNOSTICS-PRE-DISPATCH',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.driver,
+        home: DriverTripVisualSequencePage(
+          actionRecorder: controller,
+          initialStatus: 'driver_accepted',
+          tripActionTelemetryQaEnabled: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+    await tester.ensureVisible(arrived);
+    await tester.tap(arrived);
+    await tester.pumpAndSettle();
+
+    expect(api.calls, 0);
+    expect(
+      find.text('Session expired. Please sign in again to continue.'),
+      findsOneWidget,
+    );
+    expect(find.text('ACTION_START'), findsOneWidget);
+    expect(find.text('TOKEN_CHECK: TOKEN_MISSING'), findsOneWidget);
+    expect(find.text('RESULT_RECEIVED'), findsOneWidget);
+    expect(find.text('REQUEST_SENT'), findsNothing);
+    expect(find.textContaining('HTTP_STATUS_CLASS'), findsNothing);
+    expect(find.byKey(const Key('driver-navigate-to-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('driver-arrived-at-pickup')), findsNothing);
+
+    for (final forbidden in const <String>[
+      'TRIP-DIAGNOSTICS-PRE-DISPATCH',
+      'DRIVER-DIAGNOSTICS-PRE-DISPATCH',
+      'Authorization',
+      'Bearer ',
+      'Idempotency-Key',
+      'access token',
+      'refresh token',
+    ]) {
+      expect(find.textContaining(forbidden), findsNothing);
+    }
+  });
+
+  testWidgets('test_start_blocked_until_arrived_confirmed', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+    final gateway = _ArrivedDiagnosticsPendingGateway();
+    final controller = DriverTripActionResilienceController(
+      queue: _ArrivedDiagnosticsQueue(),
+      gateway: gateway,
+      tripReference: 'TRIP-DIAGNOSTICS-START-GATE',
+      driverId: 'DRIVER-DIAGNOSTICS-START-GATE',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.driver,
+        home: DriverTripVisualSequencePage(
+          actionRecorder: controller,
+          initialStatus: 'driver_accepted',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Start trip'), findsNothing);
+
+    final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+    await tester.ensureVisible(arrived);
+    await tester.tap(arrived);
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(gateway.calls, 1);
+    expect(find.text('Start trip'), findsNothing);
+    expect(find.byKey(const Key('driver-arrived-at-pickup')), findsNothing);
+
+    gateway.completeArrived();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-arrived-at-pickup')), findsOneWidget);
+    expect(
+      find.byKey(const Key('driver-open-onboard-confirmation')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('QA-disabled production path renders no action telemetry', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final gateway = _ArrivedDiagnosticsPendingGateway();
+    final controller = DriverTripActionResilienceController(
+      queue: _ArrivedDiagnosticsQueue(),
+      gateway: gateway,
+      tripReference: 'TRIP-DIAGNOSTICS-QA-OFF',
+      driverId: 'DRIVER-DIAGNOSTICS-QA-OFF',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.driver,
+        home: DriverTripVisualSequencePage(
+          actionRecorder: controller,
+          initialStatus: 'driver_accepted',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('driver-trip-action-telemetry-panel')),
+      findsNothing,
+    );
+
+    final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+    await tester.ensureVisible(arrived);
+    await tester.tap(arrived);
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(gateway.calls, 1);
+    expect(find.text('ACTION_START'), findsNothing);
+    expect(find.text('TOKEN_CHECK'), findsNothing);
+    expect(find.text('REQUEST_SENT'), findsNothing);
+    expect(find.textContaining('HTTP_STATUS_CLASS'), findsNothing);
+    expect(find.text('RESULT_RECEIVED'), findsNothing);
+
+    gateway.completeArrived();
+    await tester.pumpAndSettle();
   });
 
   testWidgets(
@@ -2393,6 +2582,102 @@ void main() {
       expect(find.text('TRIP-001'), findsOneWidget);
     });
   });
+}
+
+final class _ArrivedDiagnosticsQueue
+    implements DriverTripActionPersistentQueue {
+  final events = <QueuedEvent>[];
+
+  @override
+  Future<QueuedEvent> enqueue(QueuedEvent event) async {
+    final index = events.indexWhere((candidate) => candidate.id == event.id);
+    if (index < 0) {
+      events.add(event);
+    } else {
+      events[index] = event;
+    }
+    return event;
+  }
+
+  @override
+  Future<QueuedEvent?> eventById(String id) async {
+    for (final event in events) {
+      if (event.id == id) {
+        return event;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<List<QueuedEvent>> pendingEvents() async {
+    return events
+        .where(
+          (event) =>
+              event.syncStatus == QueueSyncStatus.pending ||
+              event.syncStatus == QueueSyncStatus.failed,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> markFailed(String id) async {}
+
+  @override
+  Future<void> markPermanentlyFailed(String id) async {}
+
+  @override
+  Future<void> markSynced(String id) async {
+    final event = await eventById(id);
+    if (event == null) {
+      return;
+    }
+    await enqueue(event.copyWith(syncStatus: QueueSyncStatus.synced));
+  }
+}
+
+final class _ArrivedDiagnosticsPendingGateway
+    implements DriverTripActionGateway {
+  final _completer = Completer<DriverTripActionReceipt>();
+  int calls = 0;
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+  }) {
+    calls += 1;
+    return _completer.future;
+  }
+
+  void completeArrived() {
+    _completer.complete(
+      const DriverTripActionReceipt(
+        tripReference: 'TRIP-DIAGNOSTICS-ONE-TAP',
+        status: 'arrived_at_pickup',
+        message: 'Arrival confirmed.',
+        duplicate: false,
+      ),
+    );
+  }
+}
+
+final class _ArrivedDiagnosticsRecordingApi
+    implements DriverTripActionApiGateway {
+  int calls = 0;
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) async {
+    calls += 1;
+    throw StateError('Pre-dispatch test must not reach the API gateway.');
+  }
 }
 
 final class _TelemetryInitializationGateCounters {

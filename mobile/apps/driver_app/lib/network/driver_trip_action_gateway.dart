@@ -1,6 +1,136 @@
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
+enum DriverTripActionTelemetryStage {
+  actionStart,
+  tokenCheck,
+  requestSent,
+  httpStatusClass,
+  resultReceived,
+}
+
+extension DriverTripActionTelemetryStageCode on DriverTripActionTelemetryStage {
+  String get code => switch (this) {
+    DriverTripActionTelemetryStage.actionStart => 'ACTION_START',
+    DriverTripActionTelemetryStage.tokenCheck => 'TOKEN_CHECK',
+    DriverTripActionTelemetryStage.requestSent => 'REQUEST_SENT',
+    DriverTripActionTelemetryStage.httpStatusClass => 'HTTP_STATUS_CLASS',
+    DriverTripActionTelemetryStage.resultReceived => 'RESULT_RECEIVED',
+  };
+}
+
+enum DriverTripActionTokenCheckOutcome {
+  tokenPresent,
+  tokenMissing,
+  tokenReadFailed,
+}
+
+extension DriverTripActionTokenCheckOutcomeValue
+    on DriverTripActionTokenCheckOutcome {
+  String get value => switch (this) {
+    DriverTripActionTokenCheckOutcome.tokenPresent => 'TOKEN_PRESENT',
+    DriverTripActionTokenCheckOutcome.tokenMissing => 'TOKEN_MISSING',
+    DriverTripActionTokenCheckOutcome.tokenReadFailed => 'TOKEN_READ_FAILED',
+  };
+}
+
+enum DriverTripActionHttpStatusClass {
+  success2xx,
+  client4xx,
+  server5xx,
+  timeout,
+}
+
+extension DriverTripActionHttpStatusClassValue
+    on DriverTripActionHttpStatusClass {
+  String get value => switch (this) {
+    DriverTripActionHttpStatusClass.success2xx => '2xx',
+    DriverTripActionHttpStatusClass.client4xx => '4xx',
+    DriverTripActionHttpStatusClass.server5xx => '5xx',
+    DriverTripActionHttpStatusClass.timeout => 'timeout',
+  };
+}
+
+final class DriverTripActionTelemetryEvent {
+  const DriverTripActionTelemetryEvent.actionStart()
+    : stage = DriverTripActionTelemetryStage.actionStart,
+      tokenCheckOutcome = null,
+      httpStatusClass = null;
+
+  const DriverTripActionTelemetryEvent.tokenCheck(this.tokenCheckOutcome)
+    : stage = DriverTripActionTelemetryStage.tokenCheck,
+      httpStatusClass = null;
+
+  const DriverTripActionTelemetryEvent.requestSent()
+    : stage = DriverTripActionTelemetryStage.requestSent,
+      tokenCheckOutcome = null,
+      httpStatusClass = null;
+
+  const DriverTripActionTelemetryEvent.httpStatusClass(this.httpStatusClass)
+    : stage = DriverTripActionTelemetryStage.httpStatusClass,
+      tokenCheckOutcome = null;
+
+  const DriverTripActionTelemetryEvent.resultReceived()
+    : stage = DriverTripActionTelemetryStage.resultReceived,
+      tokenCheckOutcome = null,
+      httpStatusClass = null;
+
+  final DriverTripActionTelemetryStage stage;
+  final DriverTripActionTokenCheckOutcome? tokenCheckOutcome;
+  final DriverTripActionHttpStatusClass? httpStatusClass;
+
+  String get qaDisplayText => switch (stage) {
+    DriverTripActionTelemetryStage.actionStart => 'ACTION_START',
+    DriverTripActionTelemetryStage.tokenCheck =>
+      'TOKEN_CHECK: ${tokenCheckOutcome!.value}',
+    DriverTripActionTelemetryStage.requestSent => 'REQUEST_SENT',
+    DriverTripActionTelemetryStage.httpStatusClass =>
+      'HTTP_STATUS_CLASS: ${httpStatusClass!.value}',
+    DriverTripActionTelemetryStage.resultReceived => 'RESULT_RECEIVED',
+  };
+}
+
+typedef DriverTripActionTelemetrySink =
+    void Function(DriverTripActionTelemetryEvent event);
+
+abstract interface class DriverTripActionTelemetryAttachable {
+  void attachSubmissionTelemetrySink(
+    DriverTripActionTelemetrySink? telemetrySink,
+  );
+}
+
+void emitDriverTripActionTelemetry(
+  DriverTripActionTelemetrySink? sink,
+  DriverTripActionTelemetryEvent event,
+) {
+  sink?.call(event);
+}
+
+void _emitDriverTripActionHttpStatusClass<T>(
+  DriverTripActionTelemetrySink? sink,
+  ApiResponse<T> response,
+) {
+  final statusCode = response.statusCode;
+  DriverTripActionHttpStatusClass? value;
+
+  if (statusCode != null && statusCode >= 200 && statusCode < 300) {
+    value = DriverTripActionHttpStatusClass.success2xx;
+  } else if (statusCode != null && statusCode >= 400 && statusCode < 500) {
+    value = DriverTripActionHttpStatusClass.client4xx;
+  } else if (statusCode != null && statusCode >= 500 && statusCode < 600) {
+    value = DriverTripActionHttpStatusClass.server5xx;
+  } else if (response.error?.type == AsmApiExceptionType.timeout) {
+    value = DriverTripActionHttpStatusClass.timeout;
+  }
+
+  if (value != null) {
+    emitDriverTripActionTelemetry(
+      sink,
+      DriverTripActionTelemetryEvent.httpStatusClass(value),
+    );
+  }
+}
+
 enum DriverTripAction {
   arrivedPickup,
   startTrip,
@@ -190,8 +320,9 @@ abstract interface class DriverTripActionGateway {
   });
 }
 
-final class ApiDriverTripActionGateway implements DriverTripActionGateway {
-  const ApiDriverTripActionGateway({
+final class ApiDriverTripActionGateway
+    implements DriverTripActionGateway, DriverTripActionTelemetryAttachable {
+  ApiDriverTripActionGateway({
     required this.apiGateway,
     required this.tokenStore,
     this.refreshAccessToken,
@@ -202,6 +333,14 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
   final AuthTokenStore tokenStore;
   final DriverAccessTokenRefresh? refreshAccessToken;
   final bool connectionConfigured;
+  DriverTripActionTelemetrySink? _telemetrySink;
+
+  @override
+  void attachSubmissionTelemetrySink(
+    DriverTripActionTelemetrySink? telemetrySink,
+  ) {
+    _telemetrySink = telemetrySink;
+  }
 
   @override
   Future<DriverTripActionReceipt> submit({
@@ -210,6 +349,9 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
   }) async {
+    final telemetrySink = action == DriverTripAction.arrivedPickup
+        ? _telemetrySink
+        : null;
     final normalizedReference = tripReference.trim();
     final normalizedKey = idempotencyKey.trim();
 
@@ -227,13 +369,38 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
       );
     }
 
-    final accessToken = (await tokenStore.readAccessToken())?.trim();
+    String? accessToken;
+    try {
+      accessToken = (await tokenStore.readAccessToken())?.trim();
+    } on Object {
+      emitDriverTripActionTelemetry(
+        telemetrySink,
+        const DriverTripActionTelemetryEvent.tokenCheck(
+          DriverTripActionTokenCheckOutcome.tokenReadFailed,
+        ),
+      );
+      rethrow;
+    }
+
     if (accessToken == null || accessToken.isEmpty) {
+      emitDriverTripActionTelemetry(
+        telemetrySink,
+        const DriverTripActionTelemetryEvent.tokenCheck(
+          DriverTripActionTokenCheckOutcome.tokenMissing,
+        ),
+      );
       throw const DriverTripActionException(
         type: DriverTripActionFailureType.signInRequired,
         message: 'Session expired. Please sign in again to continue.',
       );
     }
+
+    emitDriverTripActionTelemetry(
+      telemetrySink,
+      const DriverTripActionTelemetryEvent.tokenCheck(
+        DriverTripActionTokenCheckOutcome.tokenPresent,
+      ),
+    );
 
     final firstResponse = await _post(
       action: action,
@@ -241,6 +408,7 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
       idempotencyKey: normalizedKey,
       accessToken: accessToken,
       body: const <String, Object?>{},
+      telemetrySink: telemetrySink,
     );
 
     final firstReceipt = _validatedReceipt(
@@ -279,6 +447,7 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
             idempotencyKey: normalizedKey,
             accessToken: refreshedAccessToken,
             body: const <String, Object?>{},
+            telemetrySink: telemetrySink,
           );
           final retryReceipt = _validatedReceipt(
             response: retryResponse,
@@ -312,8 +481,14 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
     required String idempotencyKey,
     required String accessToken,
     required Map<String, Object?> body,
-  }) {
-    return apiGateway.post<DriverTripActionReceipt>(
+    DriverTripActionTelemetrySink? telemetrySink,
+  }) async {
+    emitDriverTripActionTelemetry(
+      telemetrySink,
+      const DriverTripActionTelemetryEvent.requestSent(),
+    );
+
+    final response = await apiGateway.post<DriverTripActionReceipt>(
       action.endpointPath(tripReference),
       data: body,
       headers: <String, String>{
@@ -323,6 +498,9 @@ final class ApiDriverTripActionGateway implements DriverTripActionGateway {
       },
       decoder: DriverTripActionReceipt.fromJson,
     );
+
+    _emitDriverTripActionHttpStatusClass(telemetrySink, response);
+    return response;
   }
 
   DriverTripActionReceipt? _validatedReceipt({

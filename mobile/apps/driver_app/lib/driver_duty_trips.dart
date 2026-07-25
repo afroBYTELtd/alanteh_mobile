@@ -22,6 +22,10 @@ const driverOfferSubmissionTelemetryQaEnabled = bool.fromEnvironment(
   'ASM_DRIVER_OFFER_SUBMISSION_TELEMETRY_QA',
   defaultValue: false,
 );
+const driverTripActionTelemetryQaEnabled = bool.fromEnvironment(
+  'ASM_DRIVER_TRIP_ACTION_TELEMETRY_QA',
+  defaultValue: false,
+);
 
 enum DriverDutyApiFailureType {
   sessionExpired,
@@ -631,6 +635,7 @@ class DriverAssignedTripsScreen extends StatefulWidget {
     this.offerResponseControllerFactory,
     this.offerSubmissionTelemetryQaEnabled =
         driverOfferSubmissionTelemetryQaEnabled,
+    this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
     super.key,
   });
 
@@ -638,6 +643,7 @@ class DriverAssignedTripsScreen extends StatefulWidget {
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
   final bool offerSubmissionTelemetryQaEnabled;
+  final bool tripActionTelemetryQaEnabled;
 
   @override
   State<DriverAssignedTripsScreen> createState() =>
@@ -774,6 +780,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                                 widget.offerResponseControllerFactory,
                             offerSubmissionTelemetryQaEnabled:
                                 widget.offerSubmissionTelemetryQaEnabled,
+                            tripActionTelemetryQaEnabled:
+                                widget.tripActionTelemetryQaEnabled,
                             onRefreshTripList: () async {
                               if (mounted) {
                                 _refresh();
@@ -806,6 +814,7 @@ class DriverTripDetailScreen extends StatefulWidget {
     this.offerResponseControllerFactory,
     this.offerSubmissionTelemetryQaEnabled =
         driverOfferSubmissionTelemetryQaEnabled,
+    this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
     this.onRefreshTripList,
     super.key,
   });
@@ -815,6 +824,7 @@ class DriverTripDetailScreen extends StatefulWidget {
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
   final bool offerSubmissionTelemetryQaEnabled;
+  final bool tripActionTelemetryQaEnabled;
   final Future<void> Function()? onRefreshTripList;
 
   @override
@@ -1007,6 +1017,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           actionRecorder: controller,
           initialStatus: trip.status,
           onActionRejected: _handleRejectedAction,
+          tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
         ),
       ),
     );

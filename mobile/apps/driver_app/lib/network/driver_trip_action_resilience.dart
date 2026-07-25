@@ -130,26 +130,51 @@ final class DriverTripActionResilienceController {
   final DriverTripActionGateway? gateway;
   final DriverTripActionStateVerifier? verifyServerState;
   final Future<bool> Function()? _legacyIsOnline;
+  DriverTripActionTelemetrySink? _telemetrySink;
 
   final Map<String, Future<DriverTripActionRecordResult>> _inFlight =
       <String, Future<DriverTripActionRecordResult>>{};
+
+  void attachSubmissionTelemetrySink(
+    DriverTripActionTelemetrySink? telemetrySink,
+  ) {
+    _telemetrySink = telemetrySink;
+    final liveGateway = gateway;
+    if (liveGateway case final DriverTripActionTelemetryAttachable attachable) {
+      attachable.attachSubmissionTelemetrySink(telemetrySink);
+    }
+  }
+
+  void _emit(DriverTripActionTelemetryEvent event) {
+    emitDriverTripActionTelemetry(_telemetrySink, event);
+  }
 
   Future<DriverTripActionRecordResult> recordAction({
     required String eventType,
     required Map<String, Object?> payload,
   }) {
     final action = DriverTripAction.fromEventIdentity(eventType);
+    final telemetryEnabled = action == DriverTripAction.arrivedPickup;
     final endpointIdentity = action.endpointPath(tripReference);
     final existing = _inFlight[endpointIdentity];
     if (existing != null) {
       return existing;
     }
 
-    final operation = _recordAction(
-      action: action,
-      endpointIdentity: endpointIdentity,
-      payload: payload,
-    );
+    if (telemetryEnabled) {
+      _emit(const DriverTripActionTelemetryEvent.actionStart());
+    }
+    final operation =
+        _recordAction(
+          action: action,
+          endpointIdentity: endpointIdentity,
+          payload: payload,
+        ).then((result) {
+          if (telemetryEnabled) {
+            _emit(const DriverTripActionTelemetryEvent.resultReceived());
+          }
+          return result;
+        });
     _inFlight[endpointIdentity] = operation;
     operation.whenComplete(() {
       if (identical(_inFlight[endpointIdentity], operation)) {
