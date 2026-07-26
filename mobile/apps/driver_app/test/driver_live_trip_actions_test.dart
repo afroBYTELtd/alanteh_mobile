@@ -12,6 +12,63 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Driver live trip-action gateway', () {
+    test('test_display_data_fix_preserves_action_contract', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'driver-access',
+          refreshToken: 'driver-refresh',
+        ),
+      );
+      final api = _RecordingActionApiGateway(
+        responses: <ApiResponse<DriverTripActionReceipt>>[
+          _successReceipt(
+            action: DriverTripAction.arrivedPickup,
+            statusCode: 201,
+          ),
+          _successReceipt(action: DriverTripAction.startTrip, statusCode: 201),
+          _successReceipt(
+            action: DriverTripAction.completeTrip,
+            statusCode: 201,
+          ),
+        ],
+      );
+      final gateway = ApiDriverTripActionGateway(
+        apiGateway: api,
+        tokenStore: store,
+      );
+
+      final actions = <DriverTripAction>[
+        DriverTripAction.arrivedPickup,
+        DriverTripAction.startTrip,
+        DriverTripAction.completeTrip,
+      ];
+
+      for (var index = 0; index < actions.length; index += 1) {
+        final action = actions[index];
+        final receipt = await gateway.submit(
+          action: action,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-STABLE-$index',
+        );
+
+        expect(receipt.tripReference, 'TRIP-GHANA-001');
+        expect(receipt.status, action.expectedStatus);
+        expect(receipt.duplicate, isFalse);
+      }
+
+      expect(api.paths, <String>[
+        '/api/driver/trips/TRIP-GHANA-001/actions/arrived-pickup/',
+        '/api/driver/trips/TRIP-GHANA-001/actions/start-trip/',
+        '/api/driver/trips/TRIP-GHANA-001/actions/complete-trip/',
+      ]);
+      expect(api.bodies, everyElement(equals(const <String, Object?>{})));
+      expect(
+        api.headers.map((headers) => headers['Idempotency-Key']),
+        <String?>['ACTION-STABLE-0', 'ACTION-STABLE-1', 'ACTION-STABLE-2'],
+      );
+    });
+
     test(
       'uses the accepted paths, empty body, and idempotency header',
       () async {

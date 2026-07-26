@@ -23,6 +23,18 @@ void main() {
     expect(AuthService.refreshPath, '/api/auth/token/refresh/');
   });
 
+  test('test_assigned_trip_parser_retains_destination_and_passenger_count', () {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-PARSER-001',
+      'pickup_location': 'Accra Mall',
+      'destination': 'Kotoka International Airport',
+      'passenger_count': 1,
+    });
+
+    expect(trip.destination, 'Kotoka International Airport');
+    expect(trip.passengerCount, 1);
+  });
+
   testWidgets('test_arrived_tap_invokes_controller_exactly_once', (
     tester,
   ) async {
@@ -2395,6 +2407,63 @@ void main() {
       expect(find.text('VEH-009'), findsOneWidget);
       expect(find.text('Meet at the main entrance.'), findsOneWidget);
     });
+
+    testWidgets(
+      'test_live_visual_sequence_receives_authoritative_trip_values',
+      (tester) async {
+        _useSurface(tester, const Size(430, 1200));
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AsmThemes.driver,
+            home: DriverTripDetailScreen(
+              gateway: _FakeDriverDutyGateway(
+                detail: Future.value(
+                  const DriverAssignedTrip(
+                    reference: 'TRIP-PROPAGATION-001',
+                    status: 'driver_accepted',
+                    pickupLocation: 'Accra Mall',
+                    destination: 'Kotoka International Airport',
+                    passengerCount: 1,
+                  ),
+                ),
+              ),
+              tripReference: 'TRIP-PROPAGATION-001',
+              actionControllerFactory: (tripReference) async {
+                expect(tripReference, 'TRIP-PROPAGATION-001');
+                return DriverTripActionResilienceController(
+                  queue: _WidgetDriverTripActionQueue(),
+                  tripReference: tripReference,
+                  driverId: 'DRV-PROPAGATION-001',
+                  isOnline: () async => true,
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const Key('driver-open-live-trip-actions')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('driver-navigate-to-pickup')),
+          findsOneWidget,
+        );
+        expect(find.text('Accra Mall'), findsWidgets);
+        expect(find.text('Kotoka International Airport'), findsOneWidget);
+        expect(find.text('Accra Market'), findsNothing);
+
+        final sequence = tester.widget<DriverTripVisualSequencePage>(
+          find.byType(DriverTripVisualSequencePage),
+        );
+        expect(sequence.pickupLocation, 'Accra Mall');
+        expect(sequence.destination, 'Kotoka International Airport');
+        expect(sequence.passengerCount, 1);
+      },
+    );
 
     testWidgets(
       'Trip detail opens injected live actions from confirmed backend status',

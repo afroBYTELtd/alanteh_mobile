@@ -12,6 +12,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+const _authoritativePickup = 'Accra Mall';
+const _authoritativeDestination = 'Kotoka International Airport';
+const _authoritativePassengerCount = 1;
+
 void main() {
   testWidgets('pickup route renders map, static pin, and details sheet', (
     tester,
@@ -87,7 +91,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Trip in progress'), findsOneWidget);
-    expect(find.text('Heading to Accra Market'), findsOneWidget);
+    expect(
+      find.text('Heading to Kotoka International Airport'),
+      findsOneWidget,
+    );
     expect(find.textContaining('9.5 km'), findsOneWidget);
     expect(find.textContaining('about 23 min'), findsOneWidget);
     expect(find.text('Arrived at destination'), findsOneWidget);
@@ -119,11 +126,14 @@ void main() {
       find.text('Trip completed — awaiting operations review'),
       findsWidgets,
     );
-    expect(find.text('Accra Mall → Accra Market'), findsOneWidget);
+    expect(
+      find.text('Accra Mall → Kotoka International Airport'),
+      findsOneWidget,
+    );
     expect(find.text('9.5 km'), findsOneWidget);
     expect(find.text('23 min'), findsOneWidget);
     expect(find.text('Passengers'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
     expect(
       find.text(
         'Completion is not confirmed until ALANTEH operations reviews the trip.',
@@ -238,6 +248,158 @@ void main() {
     },
   );
 
+  testWidgets('test_active_trip_uses_authoritative_destination', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(tester, initialStatus: 'in_progress');
+
+    expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+    expect(
+      find.text('Heading to Kotoka International Airport'),
+      findsOneWidget,
+    );
+    expect(find.text(_authoritativePickup), findsOneWidget);
+    expect(find.text(_authoritativeDestination), findsOneWidget);
+    expect(find.text('Accra Market'), findsNothing);
+  });
+
+  testWidgets('test_destination_confirmation_uses_authoritative_destination', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(tester, initialStatus: 'in_progress');
+    await _tapVisible(
+      tester,
+      find.byKey(const Key('driver-mark-arrived-destination')),
+    );
+
+    expect(
+      find.text(
+        'Confirm the ride has ended safely at '
+        'Kotoka International Airport.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Accra Market'), findsNothing);
+  });
+
+  testWidgets(
+    'test_completion_summary_uses_authoritative_route_and_passenger_count',
+    (tester) async {
+      _useSurface(tester);
+
+      await _pumpTripSequence(
+        tester,
+        initialStatus: 'completed_pending_review',
+      );
+
+      expect(find.byKey(const Key('driver-trip-completed')), findsOneWidget);
+      expect(
+        find.text('Accra Mall → Kotoka International Airport'),
+        findsOneWidget,
+      );
+      expect(find.text('Passengers'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('Accra Mall → Accra Market'), findsNothing);
+      expect(find.text('2'), findsNothing);
+    },
+  );
+
+  testWidgets('test_resumed_statuses_preserve_authoritative_trip_values', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    for (final status in const <String>[
+      'driver_accepted',
+      'arrived_at_pickup',
+      'passenger_onboard',
+      'in_progress',
+      'completed_pending_review',
+    ]) {
+      await _pumpTripSequence(tester, initialStatus: status);
+
+      final page = tester.widget<DriverTripVisualSequencePage>(
+        find.byType(DriverTripVisualSequencePage),
+      );
+      expect(page.pickupLocation, _authoritativePickup);
+      expect(page.destination, _authoritativeDestination);
+      expect(page.passengerCount, _authoritativePassengerCount);
+
+      switch (status) {
+        case 'driver_accepted':
+          expect(
+            find.byKey(const Key('driver-navigate-to-pickup')),
+            findsOneWidget,
+          );
+          expect(find.text(_authoritativePickup), findsWidgets);
+          expect(find.text(_authoritativeDestination), findsOneWidget);
+        case 'arrived_at_pickup':
+          expect(
+            find.byKey(const Key('driver-arrived-at-pickup')),
+            findsOneWidget,
+          );
+        case 'passenger_onboard':
+          expect(
+            find.byKey(const Key('driver-confirm-passenger-onboard')),
+            findsOneWidget,
+          );
+        case 'in_progress':
+          expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+          expect(find.text(_authoritativeDestination), findsOneWidget);
+        case 'completed_pending_review':
+          expect(
+            find.byKey(const Key('driver-trip-completed')),
+            findsOneWidget,
+          );
+          expect(
+            find.text('$_authoritativePickup → $_authoritativeDestination'),
+            findsOneWidget,
+          );
+          expect(find.text('1'), findsOneWidget);
+      }
+
+      expect(find.text('Accra Market'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
+  testWidgets('test_missing_trip_values_use_neutral_unavailable_wording', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      pickupLocation: '   ',
+      destination: '',
+      passengerCount: null,
+    );
+
+    expect(find.text(driverTripDisplayUnavailable), findsWidgets);
+    expect(find.text('Accra Market'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'completed_pending_review',
+      pickupLocation: null,
+      destination: '   ',
+      passengerCount: null,
+    );
+
+    expect(find.text('Not available → Not available'), findsOneWidget);
+    expect(find.text(driverTripDisplayUnavailable), findsWidgets);
+    expect(find.text('Accra Market'), findsNothing);
+    expect(find.text('2'), findsNothing);
+  });
+
   test('route fallback exposes stable map coordinates', () {
     final pickup = safeDriverPickupRouteFallback();
     final destination = safeDriverDestinationRouteFallback();
@@ -266,11 +428,21 @@ Future<void> _openActiveTrip(WidgetTester tester) async {
 Future<void> _pumpTripSequence(
   WidgetTester tester, {
   DriverTripActionResilienceController? actionRecorder,
+  String? initialStatus,
+  String? pickupLocation = _authoritativePickup,
+  String? destination = _authoritativeDestination,
+  int? passengerCount = _authoritativePassengerCount,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.driver,
-      home: DriverTripVisualSequencePage(actionRecorder: actionRecorder),
+      home: DriverTripVisualSequencePage(
+        actionRecorder: actionRecorder,
+        initialStatus: initialStatus,
+        pickupLocation: pickupLocation,
+        destination: destination,
+        passengerCount: passengerCount,
+      ),
     ),
   );
   await tester.pump();

@@ -92,7 +92,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AsmThemes.driver,
-        home: const DriverTripVisualSequencePage(),
+        home: const DriverTripVisualSequencePage(
+          pickupLocation: 'Accra Mall',
+          destination: 'Kotoka International Airport',
+          passengerCount: 1,
+        ),
       ),
     );
     await tester.pump();
@@ -118,7 +122,10 @@ void main() {
       findsWidgets,
     );
     expect(find.text('Awaiting operations review'), findsOneWidget);
-    expect(find.text('Accra Mall → Accra Market'), findsOneWidget);
+    expect(
+      find.text('Accra Mall → Kotoka International Airport'),
+      findsOneWidget,
+    );
     expect(find.text('9.5 km'), findsOneWidget);
     expect(find.text('23 min'), findsOneWidget);
     expect(

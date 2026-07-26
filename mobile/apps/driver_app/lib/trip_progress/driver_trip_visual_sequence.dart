@@ -9,10 +9,27 @@ import 'driver_trip_map.dart';
 import 'driver_trip_route.dart';
 import 'driver_trip_visual_state.dart';
 
+const driverTripDisplayUnavailable = 'Not available';
+
+String _driverTripDisplayText(String? value) {
+  final normalized = value?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return driverTripDisplayUnavailable;
+  }
+  return normalized;
+}
+
+String _driverTripPassengerDisplay(int? value) {
+  return value?.toString() ?? driverTripDisplayUnavailable;
+}
+
 class DriverTripVisualSequencePage extends StatefulWidget {
   const DriverTripVisualSequencePage({
     this.actionRecorder,
     this.initialStatus,
+    this.pickupLocation,
+    this.destination,
+    this.passengerCount,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
     super.key,
@@ -20,6 +37,9 @@ class DriverTripVisualSequencePage extends StatefulWidget {
 
   final DriverTripActionResilienceController? actionRecorder;
   final String? initialStatus;
+  final String? pickupLocation;
+  final String? destination;
+  final int? passengerCount;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
   final bool tripActionTelemetryQaEnabled;
@@ -197,6 +217,9 @@ class _DriverTripVisualSequencePageState
   @override
   Widget build(BuildContext context) {
     final stage = _state.stage;
+    final pickupLocation = _driverTripDisplayText(widget.pickupLocation);
+    final destination = _driverTripDisplayText(widget.destination);
+    final passengerCount = _driverTripPassengerDisplay(widget.passengerCount);
 
     return Scaffold(
       key: const Key('driver-trip-sequence-page'),
@@ -219,12 +242,12 @@ class _DriverTripVisualSequencePageState
           showPickup: true,
           showDestination: false,
           title: 'Heading to pickup',
-          subtitle: 'Accra Mall',
+          subtitle: pickupLocation,
           routeLabel: 'Pickup route',
           primaryLocationLabel: 'Pickup',
-          primaryLocationValue: 'Accra Mall',
+          primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'Next destination',
-          secondaryLocationValue: 'Accra Market',
+          secondaryLocationValue: destination,
           actionKey: const Key('driver-mark-arrived-pickup'),
           actionLabel: "I've arrived",
           actionIcon: Icons.location_on_outlined,
@@ -265,12 +288,12 @@ class _DriverTripVisualSequencePageState
           showPickup: true,
           showDestination: true,
           title: 'Trip in progress',
-          subtitle: 'Heading to Accra Market',
+          subtitle: 'Heading to $destination',
           routeLabel: 'Destination route',
           primaryLocationLabel: 'From',
-          primaryLocationValue: 'Accra Mall',
+          primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'To',
-          secondaryLocationValue: 'Accra Market',
+          secondaryLocationValue: destination,
           actionKey: const Key('driver-mark-arrived-destination'),
           actionLabel: 'Arrived at destination',
           actionIcon: Icons.flag_outlined,
@@ -280,7 +303,7 @@ class _DriverTripVisualSequencePageState
           key: const Key('driver-arrived-at-destination'),
           icon: Icons.flag_circle_outlined,
           title: 'Arrived at destination',
-          message: 'Confirm the ride has ended safely at Accra Market.',
+          message: 'Confirm the ride has ended safely at $destination.',
           primaryActionKey: const Key('driver-complete-trip'),
           primaryActionLabel: 'Complete trip',
           primaryActionIcon: Icons.check_circle_outline,
@@ -288,6 +311,9 @@ class _DriverTripVisualSequencePageState
           onPrimaryAction: _completeTrip,
         ),
         DriverTripVisualStage.completed => _DriverTripCompletedScreen(
+          pickupLocation: pickupLocation,
+          destination: destination,
+          passengerCount: passengerCount,
           onBackToHome: _backToHome,
         ),
       },
@@ -617,8 +643,16 @@ class _DriverStateScreen extends StatelessWidget {
 }
 
 class _DriverTripCompletedScreen extends StatelessWidget {
-  const _DriverTripCompletedScreen({required this.onBackToHome});
+  const _DriverTripCompletedScreen({
+    required this.pickupLocation,
+    required this.destination,
+    required this.passengerCount,
+    required this.onBackToHome,
+  });
 
+  final String pickupLocation;
+  final String destination;
+  final String passengerCount;
   final VoidCallback onBackToHome;
 
   @override
@@ -660,26 +694,26 @@ class _DriverTripCompletedScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(AsmRadii.radius24),
               border: Border.all(color: AsmColors.driverLine),
             ),
-            child: const Column(
+            child: Column(
               children: [
                 _DriverTripDetailRow(
                   label: 'Route',
-                  value: 'Accra Mall → Accra Market',
+                  value: '$pickupLocation → $destination',
                   icon: Icons.route_outlined,
                 ),
-                _DriverTripDetailRow(
+                const _DriverTripDetailRow(
                   label: 'Distance',
                   value: '9.5 km',
                   icon: Icons.straighten_outlined,
                 ),
-                _DriverTripDetailRow(
+                const _DriverTripDetailRow(
                   label: 'Duration',
                   value: '23 min',
                   icon: Icons.schedule_outlined,
                 ),
                 _DriverTripDetailRow(
                   label: 'Passengers',
-                  value: '2',
+                  value: passengerCount,
                   icon: Icons.people_alt_outlined,
                 ),
               ],

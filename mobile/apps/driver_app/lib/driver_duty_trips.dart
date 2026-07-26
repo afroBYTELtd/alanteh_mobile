@@ -1016,6 +1016,9 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
         builder: (_) => DriverTripVisualSequencePage(
           actionRecorder: controller,
           initialStatus: trip.status,
+          pickupLocation: trip.pickupLocation,
+          destination: trip.destination,
+          passengerCount: trip.passengerCount,
           onActionRejected: _handleRejectedAction,
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
         ),
