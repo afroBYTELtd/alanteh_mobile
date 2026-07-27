@@ -1,4 +1,4 @@
-package com.africasolarmobility.passenger_app
+package io.alanteh.driver
 
 import io.flutter.embedding.android.FlutterActivity
 
