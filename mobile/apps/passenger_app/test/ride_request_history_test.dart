@@ -43,6 +43,48 @@ void main() {
     ]);
   });
 
+  test(
+    'converted request parses trip reference and fetches canonical trip detail',
+    () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(AuthTokens(accessToken: 'a', refreshToken: 'r'));
+
+      final gateway = _FakeHistoryGateway(
+        responses: <String, Object?>{
+          '/api/rides/requests/RR-APP-CONVERTED/': _recordJson(
+            reference: 'RR-APP-CONVERTED',
+            status: 'converted',
+            tripReference: 'TRIP-READ/001',
+          ),
+          '/api/trips/TRIP-READ%2F001/': <String, Object?>{
+            'trip_reference': 'TRIP-READ/001',
+            'trip_status': 'arrived_at_pickup',
+            'control_center_message': 'Your driver has arrived.',
+          },
+        },
+      );
+
+      final repository = ApiPassengerRideRequestHistoryRepository(
+        gateway,
+        tokenStore: store,
+      );
+
+      final request = await repository.fetchRequest('RR-APP-CONVERTED');
+      final trip = await repository.fetchTrip(request.normalizedTripReference!);
+
+      expect(request.status, 'converted');
+      expect(request.normalizedTripReference, 'TRIP-READ/001');
+      expect(trip.tripReference, 'TRIP-READ/001');
+      expect(trip.status, 'arrived_at_pickup');
+      expect(trip.passengerState, PassengerRideState.driverArrived);
+      expect(trip.isTerminal, isFalse);
+      expect(gateway.paths, <String>[
+        '/api/rides/requests/RR-APP-CONVERTED/',
+        '/api/trips/TRIP-READ%2F001/',
+      ]);
+    },
+  );
+
   testWidgets('request history shows loading state', (tester) async {
     final pending = Completer<List<PassengerRideRequestRecord>>();
 
@@ -218,6 +260,38 @@ void main() {
     expect(find.text('Not yet converted into a trip'), findsNothing);
     expect(find.text('Your request is being reviewed.'), findsWidgets);
   });
+
+  testWidgets(
+    'converted active history record delegates to tracking instead of static detail',
+    (tester) async {
+      PassengerRideRequestRecord? openedRecord;
+      final converted = _record(
+        reference: 'RR-APP-ACTIVE-TRIP',
+        status: 'converted',
+        tripCreated: true,
+      );
+
+      await _pumpHistory(
+        tester,
+        _FakeRepository(
+          listLoader: () async => <PassengerRideRequestRecord>[converted],
+          detailLoader: (_) async => converted,
+        ),
+        onOpenActiveTracking: (record) async {
+          openedRecord = record;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('ride-request-RR-APP-ACTIVE-TRIP')),
+      );
+      await tester.pump();
+
+      expect(openedRecord, same(converted));
+      expect(find.byKey(const Key('ride-request-detail-loaded')), findsNothing);
+    },
+  );
 
   testWidgets('history screens do not render sensitive fields', (tester) async {
     final record = _record(
@@ -437,6 +511,7 @@ Future<void> _pumpHistory(
   PassengerRideRequestHistoryRepository repository, {
   VoidCallback? onSignInRequired,
   PassengerPaymentRatingRepository? paymentRatingRepository,
+  Future<void> Function(PassengerRideRequestRecord)? onOpenActiveTracking,
 }) async {
   tester.view.physicalSize = const Size(430, 900);
   tester.view.devicePixelRatio = 1;
@@ -451,6 +526,7 @@ Future<void> _pumpHistory(
         repository: repository,
         paymentRatingRepository: paymentRatingRepository,
         onSignInRequired: onSignInRequired,
+        onOpenActiveTracking: onOpenActiveTracking,
       ),
     ),
   );
@@ -467,6 +543,7 @@ PassengerRideRequestRecord _record({
   String? latestStaffState,
   DateTime? createdAt,
   String? controlCenterMessage,
+  String? tripReference,
   String? fareDisplay,
   bool hasMobileReceipt = true,
 }) {
@@ -483,17 +560,20 @@ PassengerRideRequestRecord _record({
     tripCreated: tripCreated,
     latestStaffState: latestStaffState,
     controlCenterMessage: controlCenterMessage,
+    tripReference: tripReference,
     fareDisplay: fareDisplay,
   );
 }
 
 Map<String, Object?> _recordJson({
   required String reference,
+  String status = 'requested',
   String? controlCenterMessage,
+  String? tripReference,
 }) {
   final result = <String, Object?>{
     'request_reference': reference,
-    'status': 'requested',
+    'status': status,
     'pickup_location': 'Accra Mall',
     'destination': 'Kotoka International Airport',
     'passenger_count': 1,
@@ -507,6 +587,9 @@ Map<String, Object?> _recordJson({
   };
   if (controlCenterMessage != null) {
     result['control_center_message'] = controlCenterMessage;
+  }
+  if (tripReference != null) {
+    result['trip_reference'] = tripReference;
   }
   return result;
 }

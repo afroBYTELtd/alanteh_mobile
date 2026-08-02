@@ -15,6 +15,7 @@ class RideTrackingScreen extends StatefulWidget {
     required this.repository,
     required this.requestReference,
     this.initialRecord,
+    this.tripRepository,
     this.pollInterval = const Duration(seconds: 10),
     this.paymentRatingRepository,
     this.phoneNumber,
@@ -26,6 +27,7 @@ class RideTrackingScreen extends StatefulWidget {
   final PassengerRideRequestHistoryRepository repository;
   final String requestReference;
   final PassengerRideRequestRecord? initialRecord;
+  final PassengerTripLifecycleRepository? tripRepository;
   final Duration pollInterval;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final String? phoneNumber;
@@ -39,6 +41,8 @@ class RideTrackingScreen extends StatefulWidget {
 class _RideTrackingScreenState extends State<RideTrackingScreen> {
   Timer? _timer;
   PassengerRideRequestRecord? _record;
+  String? _tripReference;
+  bool _tripTerminal = false;
   bool _loading = true;
   bool _offline = false;
 
@@ -60,6 +64,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     if (requestChanged) {
       _timer?.cancel();
       _record = widget.initialRecord;
+      _tripReference = null;
+      _tripTerminal = false;
       _loading = true;
       _offline = false;
       _load();
@@ -81,18 +87,82 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     super.dispose();
   }
 
+  PassengerTripLifecycleRepository? get _resolvedTripRepository {
+    final explicitRepository = widget.tripRepository;
+    if (explicitRepository != null) {
+      return explicitRepository;
+    }
+
+    final requestRepository = widget.repository;
+    return requestRepository is PassengerTripLifecycleRepository
+        ? requestRepository as PassengerTripLifecycleRepository
+        : null;
+  }
+
   Future<void> _load() async {
     try {
-      final record = await widget.repository.fetchRequest(
+      final activeTripReference = _tripReference;
+      if (activeTripReference != null) {
+        final tripRepository = _resolvedTripRepository;
+        if (tripRepository == null) {
+          throw const PassengerRideRequestHistoryException.unknown();
+        }
+
+        final trip = await tripRepository.fetchTrip(activeTripReference);
+        if (!mounted) return;
+
+        final requestRecord = _record;
+        if (requestRecord == null) {
+          throw const PassengerRideRequestHistoryException.unknown();
+        }
+
+        final record = requestRecord.withTrip(trip);
+        setState(() {
+          _record = record;
+          _tripTerminal = trip.isTerminal;
+          _loading = false;
+          _offline = false;
+        });
+        _schedule(record);
+        return;
+      }
+
+      final requestRecord = await widget.repository.fetchRequest(
         widget.requestReference,
       );
       if (!mounted) return;
+
+      final tripReference =
+          requestRecord.status.trim().toLowerCase() == 'converted'
+          ? requestRecord.normalizedTripReference
+          : null;
+      final tripRepository = _resolvedTripRepository;
+
+      if (tripReference != null && tripRepository != null) {
+        _record = requestRecord;
+        _tripReference = tripReference;
+        final trip = await tripRepository.fetchTrip(tripReference);
+        if (!mounted) return;
+
+        final record = requestRecord.withTrip(trip);
+        setState(() {
+          _record = record;
+          _tripTerminal = trip.isTerminal;
+          _loading = false;
+          _offline = false;
+        });
+        _schedule(record);
+        return;
+      }
+
       setState(() {
-        _record = record;
+        _record = requestRecord;
+        _tripReference = null;
+        _tripTerminal = false;
         _loading = false;
         _offline = false;
       });
-      _schedule(record);
+      _schedule(requestRecord);
     } on Object {
       if (!mounted) return;
       setState(() {
@@ -104,7 +174,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
   void _schedule(PassengerRideRequestRecord record) {
     _timer?.cancel();
-    if (record.isTerminal) return;
+    final terminal = _tripReference == null ? record.isTerminal : _tripTerminal;
+    if (terminal) return;
     _timer = Timer(widget.pollInterval, _load);
   }
 

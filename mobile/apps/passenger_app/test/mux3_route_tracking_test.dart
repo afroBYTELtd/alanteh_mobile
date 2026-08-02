@@ -149,27 +149,32 @@ void main() {
             title: 'Looking for a driver',
           ),
           (
-            record: _record(latestStaffState: 'driver assigned'),
+            record: _record(status: 'assigned'),
             key: 'driver-assigned-state',
             title: 'Driver assigned',
           ),
           (
-            record: _record(latestStaffState: 'dispatched'),
+            record: _record(status: 'driver_offer_sent'),
+            key: 'looking-for-driver-state',
+            title: 'Looking for a driver',
+          ),
+          (
+            record: _record(status: 'driver_accepted'),
             key: 'vehicle-en-route-state',
             title: 'Your vehicle is on the way',
           ),
           (
-            record: _record(latestStaffState: 'driver arrived'),
+            record: _record(status: 'arrived_at_pickup'),
             key: 'driver-arrived-state',
             title: 'Your driver is outside',
           ),
           (
-            record: _record(status: 'in progress'),
+            record: _record(status: 'in_progress'),
             key: 'trip-in-progress-state',
             title: 'Trip in progress',
           ),
           (
-            record: _record(status: 'completed'),
+            record: _record(status: 'completed_pending_review'),
             key: 'arrived-at-destination-state',
             title: 'You’ve arrived',
           ),
@@ -292,6 +297,116 @@ void main() {
     await _disposeTracking(tester);
   });
 
+  testWidgets(
+    'tracking switches once from converted request polling to trip polling',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'driver_accepted', message: 'Your driver is on the way.'),
+        _trip(status: 'arrived_at_pickup', message: 'Your driver has arrived.'),
+        _trip(status: 'in_progress', message: 'Your trip is in progress.'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(milliseconds: 100),
+      );
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
+      expect(find.byKey(const Key('vehicle-en-route-state')), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump();
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 2);
+      expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump();
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 3);
+      expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'converted request without trip reference keeps request polling',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted'),
+        _record(status: 'converted'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(milliseconds: 100),
+      );
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 0);
+
+      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump();
+
+      expect(requestRepository.detailCalls, 2);
+      expect(tripRepository.tripCalls, 0);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'trip switch failure retries trip without returning to request polling',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-RETRY-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        const PassengerRideRequestHistoryException.network(),
+        _trip(status: 'arrived_at_pickup', message: 'Your driver has arrived.'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
+      expect(find.text('Retry'), findsOneWidget);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 2);
+      expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
   testWidgets('offline tracking retries safely', (tester) async {
     _useSurface(tester);
 
@@ -319,30 +434,40 @@ void main() {
     await _disposeTracking(tester);
   });
 
-  testWidgets('terminal arrival stops tracking polling', (tester) async {
-    _useSurface(tester);
+  testWidgets(
+    'completed pending review stops trip polling and not request polling',
+    (tester) async {
+      _useSurface(tester);
 
-    final repository = _SequenceRepository(<Object>[
-      _record(status: 'completed'),
-    ]);
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-TERMINAL-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'completed_pending_review'),
+      ]);
 
-    await _pumpTracking(
-      tester,
-      repository,
-      pollInterval: const Duration(milliseconds: 10),
-    );
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(milliseconds: 10),
+      );
 
-    expect(
-      find.byKey(const Key('arrived-at-destination-state')),
-      findsOneWidget,
-    );
+      expect(
+        find.byKey(const Key('arrived-at-destination-state')),
+        findsOneWidget,
+      );
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
 
-    await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(repository.detailCalls, 1);
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
 
-    await _disposeTracking(tester);
-  });
+      await _disposeTracking(tester);
+    },
+  );
 
   testWidgets('reassigned and rejected states expose safe actions', (
     tester,
@@ -587,6 +712,7 @@ PassengerRideRequestRecord _record({
   String status = 'requested',
   String? latestStaffState,
   String? controlCenterMessage,
+  String? tripReference,
   String pickup = 'Solar Hotel',
   String destination = 'Accra Airport',
   String? plateNumber,
@@ -604,6 +730,7 @@ PassengerRideRequestRecord _record({
     tripCreated: false,
     latestStaffState: latestStaffState,
     controlCenterMessage: controlCenterMessage,
+    tripReference: tripReference,
     plateNumber: plateNumber,
     vehicleLatitude: vehiclePosition?.latitude,
     vehicleLongitude: vehiclePosition?.longitude,
@@ -622,6 +749,7 @@ Future<void> _pumpTracking(
   WidgetTester tester,
   PassengerRideRequestHistoryRepository repository, {
   required Duration pollInterval,
+  PassengerTripLifecycleRepository? tripRepository,
   PassengerPaymentRatingRepository? paymentRatingRepository,
 }) async {
   await tester.pumpWidget(
@@ -630,6 +758,7 @@ Future<void> _pumpTracking(
       home: RideTrackingScreen(
         repository: repository,
         requestReference: 'RR-APP-MUX3-TEST',
+        tripRepository: tripRepository,
         pollInterval: pollInterval,
         paymentRatingRepository: paymentRatingRepository,
       ),
@@ -707,6 +836,48 @@ class _SequenceRepository implements PassengerRideRequestHistoryRepository {
 
     if (result is PassengerRideRequestRecord) {
       return result;
+    }
+
+    throw result;
+  }
+}
+
+PassengerTripRecord _trip({
+  required String status,
+  String message = 'Passenger-safe trip update.',
+}) {
+  return PassengerTripRecord(
+    tripReference: 'TRIP-SWITCH-001',
+    status: status,
+    controlCenterMessage: message,
+  );
+}
+
+class _TripSequenceRepository implements PassengerTripLifecycleRepository {
+  _TripSequenceRepository(this.results);
+
+  final List<Object> results;
+  int tripCalls = 0;
+
+  @override
+  Future<PassengerTripRecord> fetchTrip(String tripReference) async {
+    if (results.isEmpty) {
+      throw const PassengerRideRequestHistoryException.notFound();
+    }
+
+    final index = tripCalls < results.length ? tripCalls : results.length - 1;
+    final result = results[index];
+    tripCalls += 1;
+
+    if (result is PassengerTripRecord) {
+      return PassengerTripRecord(
+        tripReference: tripReference,
+        status: result.status,
+        controlCenterMessage: result.controlCenterMessage,
+        plateNumber: result.plateNumber,
+        vehicleLatitude: result.vehicleLatitude,
+        vehicleLongitude: result.vehicleLongitude,
+      );
     }
 
     throw result;

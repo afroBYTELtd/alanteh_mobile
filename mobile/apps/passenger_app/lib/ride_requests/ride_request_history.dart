@@ -14,6 +14,10 @@ abstract interface class PassengerRideRequestHistoryRepository {
   Future<PassengerRideRequestRecord> fetchRequest(String requestReference);
 }
 
+abstract interface class PassengerTripLifecycleRepository {
+  Future<PassengerTripRecord> fetchTrip(String tripReference);
+}
+
 abstract interface class PassengerRideRequestHistoryApiGateway {
   Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder});
 }
@@ -44,6 +48,7 @@ class PassengerRideRequestRecord {
     this.requestedPickupTime,
     this.latestStaffState,
     this.controlCenterMessage,
+    this.tripReference,
     this.specialRequest,
     this.fareDisplay,
     this.plateNumber,
@@ -63,6 +68,7 @@ class PassengerRideRequestRecord {
   final bool tripCreated;
   final String? latestStaffState;
   final String? controlCenterMessage;
+  final String? tripReference;
   final String? specialRequest;
   final String? fareDisplay;
   final String? plateNumber;
@@ -77,11 +83,39 @@ class PassengerRideRequestRecord {
         : LatLng(latitude, longitude);
   }
 
+  String? get normalizedTripReference {
+    final value = tripReference?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
   PassengerRideState get passengerState => PassengerRideState.fromStatus(
     status,
     latestStaffState: latestStaffState,
     message: controlCenterMessage,
   );
+
+  PassengerRideRequestRecord withTrip(PassengerTripRecord trip) {
+    return PassengerRideRequestRecord(
+      requestReference: requestReference,
+      status: trip.status,
+      pickupLocation: pickupLocation,
+      destination: destination,
+      passengerCount: passengerCount,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      hasMobileReceipt: hasMobileReceipt,
+      tripCreated: true,
+      requestedPickupTime: requestedPickupTime,
+      latestStaffState: latestStaffState,
+      controlCenterMessage: trip.controlCenterMessage ?? controlCenterMessage,
+      tripReference: trip.tripReference,
+      specialRequest: specialRequest,
+      fareDisplay: fareDisplay,
+      plateNumber: trip.plateNumber ?? plateNumber,
+      vehicleLatitude: trip.vehicleLatitude ?? vehicleLatitude,
+      vehicleLongitude: trip.vehicleLongitude ?? vehicleLongitude,
+    );
+  }
 
   bool get isTerminal =>
       passengerState == PassengerRideState.arrived ||
@@ -119,6 +153,7 @@ class PassengerRideRequestRecord {
       tripCreated: _optionalBool(map, 'trip_created'),
       latestStaffState: _optionalString(map, 'latest_staff_state'),
       controlCenterMessage: _optionalString(map, 'control_center_message'),
+      tripReference: _optionalString(map, 'trip_reference'),
       specialRequest:
           _optionalString(map, 'assistance_note') ??
           _optionalString(map, 'special_request'),
@@ -205,6 +240,91 @@ class PassengerRideRequestRecord {
   }
 }
 
+final class PassengerTripRecord {
+  const PassengerTripRecord({
+    required this.tripReference,
+    required this.status,
+    this.controlCenterMessage,
+    this.plateNumber,
+    this.vehicleLatitude,
+    this.vehicleLongitude,
+  });
+
+  final String tripReference;
+  final String status;
+  final String? controlCenterMessage;
+  final String? plateNumber;
+  final double? vehicleLatitude;
+  final double? vehicleLongitude;
+
+  String get normalizedStatus => status.trim().toLowerCase();
+
+  bool get isTerminal => normalizedStatus == 'completed_pending_review';
+
+  PassengerRideState get passengerState =>
+      PassengerRideState.fromStatus(status, message: controlCenterMessage);
+
+  factory PassengerTripRecord.fromJson(
+    Object? json, {
+    required String expectedTripReference,
+  }) {
+    if (json is! Map) {
+      throw const FormatException(
+        'Trip detail response was not a JSON object.',
+      );
+    }
+
+    final map = json.map((key, value) => MapEntry('$key', value));
+    final expectedReference = expectedTripReference.trim();
+    if (expectedReference.isEmpty) {
+      throw const FormatException('Trip reference is missing.');
+    }
+
+    final returnedReference = _optionalString(map, 'trip_reference');
+    if (returnedReference != null && returnedReference != expectedReference) {
+      throw const FormatException('Trip reference did not match the request.');
+    }
+
+    return PassengerTripRecord(
+      tripReference: returnedReference ?? expectedReference,
+      status: _requiredString(map, 'trip_status'),
+      controlCenterMessage: _optionalString(map, 'control_center_message'),
+      plateNumber:
+          _optionalString(map, 'plate_number') ??
+          _optionalString(map, 'vehicle_plate_number'),
+      vehicleLatitude:
+          _optionalDouble(map, 'vehicle_latitude') ??
+          _optionalDouble(map, 'last_known_vehicle_latitude'),
+      vehicleLongitude:
+          _optionalDouble(map, 'vehicle_longitude') ??
+          _optionalDouble(map, 'last_known_vehicle_longitude'),
+    );
+  }
+
+  static String _requiredString(Map<String, Object?> map, String key) {
+    final value = map[key];
+    if (value is! String || value.trim().isEmpty) {
+      throw FormatException('Trip detail field $key is missing.');
+    }
+    return value.trim();
+  }
+
+  static String? _optionalString(Map<String, Object?> map, String key) {
+    final value = map[key];
+    if (value is! String || value.trim().isEmpty) {
+      return null;
+    }
+    return value.trim();
+  }
+
+  static double? _optionalDouble(Map<String, Object?> map, String key) {
+    final value = map[key];
+    return value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+  }
+}
+
 enum PassengerRideState {
   looking,
   driverAssigned,
@@ -220,6 +340,20 @@ enum PassengerRideState {
     String? latestStaffState,
     String? message,
   }) {
+    final normalizedStatus = status.trim().toLowerCase();
+    final canonicalState = switch (normalizedStatus) {
+      'assigned' => PassengerRideState.driverAssigned,
+      'driver_offer_sent' => PassengerRideState.looking,
+      'driver_accepted' => PassengerRideState.vehicleEnRoute,
+      'arrived_at_pickup' => PassengerRideState.driverArrived,
+      'in_progress' => PassengerRideState.inProgress,
+      'completed_pending_review' => PassengerRideState.arrived,
+      _ => null,
+    };
+    if (canonicalState != null) {
+      return canonicalState;
+    }
+
     final value = '$status ${latestStaffState ?? ''} ${message ?? ''}'
         .toLowerCase();
     if (value.contains('reassign')) return PassengerRideState.reassigned;
@@ -282,7 +416,9 @@ bool _containsInternalWording(String value) {
 }
 
 class ApiPassengerRideRequestHistoryRepository
-    implements PassengerRideRequestHistoryRepository {
+    implements
+        PassengerRideRequestHistoryRepository,
+        PassengerTripLifecycleRepository {
   const ApiPassengerRideRequestHistoryRepository(
     this.apiGateway, {
     required this.tokenStore,
@@ -319,6 +455,7 @@ class ApiPassengerRideRequestHistoryRepository
   }
 
   static const listPath = '/api/rides/requests/';
+  static const tripPath = '/api/trips/';
 
   final PassengerRideRequestHistoryApiGateway apiGateway;
   final AuthTokenStore tokenStore;
@@ -343,6 +480,20 @@ class ApiPassengerRideRequestHistoryRepository
     return _get<PassengerRideRequestRecord>(
       '$listPath${Uri.encodeComponent(normalized)}/',
       PassengerRideRequestRecord.fromJson,
+    );
+  }
+
+  @override
+  Future<PassengerTripRecord> fetchTrip(String tripReference) {
+    final normalized = tripReference.trim();
+    if (normalized.isEmpty) {
+      throw const PassengerRideRequestHistoryException.unknown();
+    }
+
+    return _get<PassengerTripRecord>(
+      '$tripPath${Uri.encodeComponent(normalized)}/',
+      (json) =>
+          PassengerTripRecord.fromJson(json, expectedTripReference: normalized),
     );
   }
 
@@ -530,6 +681,7 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
     this.onSignInRequired,
     this.onBookRide,
     this.onBookAgain,
+    this.onOpenActiveTracking,
     this.paymentRatingRepository,
     super.key,
   });
@@ -538,6 +690,7 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
   final VoidCallback? onSignInRequired;
   final VoidCallback? onBookRide;
   final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
+  final Future<void> Function(PassengerRideRequestRecord)? onOpenActiveTracking;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
 
   @override
@@ -620,6 +773,12 @@ class _PassengerRideRequestHistoryPageState
   }
 
   Future<void> _openDetail(PassengerRideRequestRecord record) {
+    final openActiveTracking = widget.onOpenActiveTracking;
+    if (record.status.trim().toLowerCase() == 'converted' &&
+        openActiveTracking != null) {
+      return openActiveTracking(record);
+    }
+
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PassengerRideRequestDetailPage(

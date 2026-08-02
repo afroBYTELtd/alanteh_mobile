@@ -12,6 +12,7 @@ import 'location/session_location_history.dart';
 import 'passenger_home.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
+import 'tracking/ride_tracking_screen.dart';
 
 class PassengerShell extends StatefulWidget {
   const PassengerShell({
@@ -234,6 +235,29 @@ class _PassengerShellState extends State<PassengerShell> {
     );
   }
 
+  Future<void> _openTrackedRequest(PassengerRideRequestRecord record) {
+    final repository =
+        widget.rideRequestHistoryRepository ??
+        const UnavailablePassengerRideRequestHistoryRepository();
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => RideTrackingScreen(
+          repository: repository,
+          requestReference: record.requestReference,
+          initialRecord: record,
+          tripRepository: repository is PassengerTripLifecycleRepository
+              ? repository as PassengerTripLifecycleRepository
+              : null,
+          paymentRatingRepository: widget.paymentRatingRepository,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: _paymentNetwork,
+          onSignInRequired: widget.onSignInRequired,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openRideRequests() {
     final repository =
         widget.rideRequestHistoryRepository ??
@@ -250,6 +274,7 @@ class _PassengerShellState extends State<PassengerShell> {
             setState(() => _selectedIndex = 0);
           },
           onBookAgain: _openBookAgain,
+          onOpenActiveTracking: _openTrackedRequest,
         ),
       ),
     );
@@ -283,6 +308,7 @@ class _PassengerShellState extends State<PassengerShell> {
         onSignInRequired: widget.onSignInRequired,
         onBookRide: () => setState(() => _selectedIndex = 0),
         onBookAgain: _openBookAgain,
+        onOpenActiveTracking: _openTrackedRequest,
       ),
       _ => PassengerAccountScreen(
         phoneNumber: widget.phoneNumber,

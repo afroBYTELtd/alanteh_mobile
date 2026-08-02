@@ -27,7 +27,8 @@ void main() {
     expect(source, contains('PassengerAccountScreen'));
     expect(source, contains('AsmPassengerMap'));
     expect(source, isNot(contains('/api/mobile/passenger/ride-requests/')));
-    expect(source, isNot(contains('/api/trips')));
+    expect(source, contains("static const tripPath = '/api/trips/';"));
+    expect('/api/trips/'.allMatches(source), hasLength(1));
     expect(source, isNot(contains('/api/rides/status')));
     expect(source, isNot(contains('/api/driver')));
     expect(source, isNot(contains('/api/dispatch')));
