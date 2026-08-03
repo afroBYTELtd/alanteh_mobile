@@ -293,6 +293,52 @@ void main() {
     },
   );
 
+  testWidgets(
+    'enriched active converted history record still delegates to tracking',
+    (tester) async {
+      PassengerRideRequestRecord? openedRecord;
+
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-APP-ENRICHED-ACTIVE',
+            status: 'converted',
+            tripCreated: true,
+            latestStaffState: 'Trip record created.',
+            tripReference: 'TRIP-ENRICHED-ACTIVE',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'in_progress',
+          controlCenterMessage: 'Your trip is in progress.',
+        ),
+      );
+
+      await _pumpHistory(
+        tester,
+        repository,
+        onOpenActiveTracking: (record) async {
+          openedRecord = record;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('ride-request-RR-APP-ENRICHED-ACTIVE'),
+        ),
+      );
+      await tester.pump();
+
+      expect(repository.tripCalls, <String>['TRIP-ENRICHED-ACTIVE']);
+      expect(openedRecord, isNotNull);
+      expect(openedRecord!.status, 'in_progress');
+      expect(openedRecord!.tripReference, 'TRIP-ENRICHED-ACTIVE');
+      expect(find.byKey(const Key('ride-request-detail-loaded')), findsNothing);
+    },
+  );
+
   testWidgets('history screens do not render sensitive fields', (tester) async {
     final record = _record(
       reference: 'RR-APP-SAFE',
@@ -458,6 +504,192 @@ void main() {
     },
   );
 
+  testWidgets('test_converted_record_with_trip_fetches_and_shows_completed', (
+    tester,
+  ) async {
+    final repository = _TripAwareFakeRepository(
+      listLoader: () async => <PassengerRideRequestRecord>[
+        _record(
+          reference: 'RR-APP-COMPLETED',
+          status: 'converted',
+          tripCreated: true,
+          latestStaffState: 'Trip record created.',
+          tripReference: 'TRIP-COMPLETED',
+          fareDisplay: 'GHS 45.00',
+        ),
+      ],
+      tripLoader: (tripReference) async => PassengerTripRecord(
+        tripReference: tripReference,
+        status: 'completed_pending_review',
+        controlCenterMessage: 'Awaiting operations review',
+      ),
+    );
+
+    await _pumpHistory(tester, repository);
+    await tester.pumpAndSettle();
+
+    expect(repository.tripCalls, <String>['TRIP-COMPLETED']);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Thank you for riding with ALANTEH.'), findsOneWidget);
+    expect(find.text('Request update'), findsNothing);
+    expect(find.text('Trip record created.'), findsNothing);
+    expect(find.textContaining('pending review'), findsNothing);
+    expect(find.text('Fare GHS 45.00'), findsOneWidget);
+  });
+
+  testWidgets(
+    'test_converted_record_trip_fetch_failure_shows_fallback_gracefully',
+    (tester) async {
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-APP-FALLBACK',
+            status: 'converted',
+            tripCreated: true,
+            latestStaffState: 'Trip record created.',
+            tripReference: 'TRIP-FAIL',
+          ),
+        ],
+        tripLoader: (_) => Future<PassengerTripRecord>.error(
+          const PassengerRideRequestHistoryException.network(),
+        ),
+      );
+
+      await _pumpHistory(tester, repository);
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>['TRIP-FAIL']);
+      expect(find.text('Request update'), findsOneWidget);
+      expect(find.text('Trip record created.'), findsOneWidget);
+      expect(find.byKey(const Key('ride-request-history-error')), findsNothing);
+      expect(find.byKey(const Key('history-card-fare')), findsNothing);
+    },
+  );
+
+  testWidgets('test_non_converted_records_not_enriched', (tester) async {
+    final repository = _TripAwareFakeRepository(
+      listLoader: () async => <PassengerRideRequestRecord>[
+        _record(
+          reference: 'RR-APP-NOT-CONVERTED',
+          status: 'requested',
+          tripReference: 'TRIP-MUST-NOT-FETCH',
+        ),
+      ],
+      tripLoader: (tripReference) async => PassengerTripRecord(
+        tripReference: tripReference,
+        status: 'completed_pending_review',
+      ),
+    );
+
+    await _pumpHistory(tester, repository);
+    await tester.pumpAndSettle();
+
+    expect(repository.tripCalls, isEmpty);
+    expect(find.text('Received by ALANTEH'), findsOneWidget);
+    expect(find.text('Completed'), findsNothing);
+  });
+
+  testWidgets('test_book_again_preserved_on_completed_card', (tester) async {
+    PassengerRideRequestRecord? selectedRecord;
+
+    final repository = _TripAwareFakeRepository(
+      listLoader: () async => <PassengerRideRequestRecord>[
+        _record(
+          reference: 'RR-APP-REBOOK-COMPLETED',
+          status: 'converted',
+          tripCreated: true,
+          tripReference: 'TRIP-REBOOK-COMPLETED',
+        ),
+      ],
+      tripLoader: (tripReference) async => PassengerTripRecord(
+        tripReference: tripReference,
+        status: 'completed_pending_review',
+      ),
+    );
+
+    await _pumpHistory(
+      tester,
+      repository,
+      onBookAgain: (record) {
+        selectedRecord = record;
+      },
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('Book again'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('history-card-book-again')));
+    await tester.pump();
+
+    expect(selectedRecord, isNotNull);
+    expect(selectedRecord!.requestReference, 'RR-APP-REBOOK-COMPLETED');
+    expect(selectedRecord!.status, 'completed_pending_review');
+    expect(selectedRecord!.tripReference, 'TRIP-REBOOK-COMPLETED');
+  });
+
+  testWidgets('test_history_load_fetches_each_unique_trip_once', (
+    tester,
+  ) async {
+    final repository = _TripAwareFakeRepository(
+      listLoader: () async => <PassengerRideRequestRecord>[
+        _record(
+          reference: 'RR-APP-SHARED-ONE',
+          status: 'converted',
+          tripCreated: true,
+          tripReference: 'TRIP-SHARED',
+        ),
+        _record(
+          reference: 'RR-APP-SHARED-TWO',
+          status: 'converted',
+          tripCreated: true,
+          tripReference: 'TRIP-SHARED',
+        ),
+        _record(
+          reference: 'RR-APP-UNIQUE',
+          status: 'converted',
+          tripCreated: true,
+          tripReference: 'TRIP-UNIQUE',
+        ),
+      ],
+      tripLoader: (tripReference) async => PassengerTripRecord(
+        tripReference: tripReference,
+        status: 'completed_pending_review',
+      ),
+    );
+
+    await _pumpHistory(tester, repository);
+    await tester.pumpAndSettle();
+
+    expect(repository.tripCalls, <String>['TRIP-SHARED', 'TRIP-UNIQUE']);
+    expect(find.text('Completed'), findsNWidgets(3));
+  });
+
+  testWidgets(
+    'test_completed_pending_review_shows_completed_label_not_raw_status',
+    (tester) async {
+      await _pumpHistory(
+        tester,
+        _FakeRepository(
+          listLoader: () async => <PassengerRideRequestRecord>[
+            _record(
+              reference: 'RR-APP-RAW-STATUS',
+              status: 'completed_pending_review',
+              controlCenterMessage: 'Awaiting operations review',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('completed_pending_review'), findsNothing);
+      expect(find.textContaining('pending review'), findsNothing);
+      expect(find.text('Thank you for riding with ALANTEH.'), findsOneWidget);
+      expect(find.byKey(const Key('history-card-fare')), findsNothing);
+    },
+  );
+
   test('Passenger navigation and receipt link to request history', () {
     final homeSource = File('lib/passenger_home.dart').readAsStringSync();
 
@@ -512,6 +744,7 @@ Future<void> _pumpHistory(
   VoidCallback? onSignInRequired,
   PassengerPaymentRatingRepository? paymentRatingRepository,
   Future<void> Function(PassengerRideRequestRecord)? onOpenActiveTracking,
+  ValueChanged<PassengerRideRequestRecord>? onBookAgain,
 }) async {
   tester.view.physicalSize = const Size(430, 900);
   tester.view.devicePixelRatio = 1;
@@ -527,6 +760,7 @@ Future<void> _pumpHistory(
         paymentRatingRepository: paymentRatingRepository,
         onSignInRequired: onSignInRequired,
         onOpenActiveTracking: onOpenActiveTracking,
+        onBookAgain: onBookAgain,
       ),
     ),
   );
@@ -616,6 +850,38 @@ class _FakeRepository implements PassengerRideRequestHistoryRepository {
       );
     }
     return loader(requestReference);
+  }
+}
+
+class _TripAwareFakeRepository
+    implements
+        PassengerRideRequestHistoryRepository,
+        PassengerTripLifecycleRepository {
+  _TripAwareFakeRepository({
+    required this.listLoader,
+    required this.tripLoader,
+  });
+
+  final Future<List<PassengerRideRequestRecord>> Function() listLoader;
+  final Future<PassengerTripRecord> Function(String tripReference) tripLoader;
+  final List<String> tripCalls = <String>[];
+
+  @override
+  Future<List<PassengerRideRequestRecord>> fetchRequests() {
+    return listLoader();
+  }
+
+  @override
+  Future<PassengerRideRequestRecord> fetchRequest(String requestReference) {
+    return Future<PassengerRideRequestRecord>.error(
+      const PassengerRideRequestHistoryException.notFound(),
+    );
+  }
+
+  @override
+  Future<PassengerTripRecord> fetchTrip(String tripReference) {
+    tripCalls.add(tripReference);
+    return tripLoader(tripReference);
   }
 }
 
