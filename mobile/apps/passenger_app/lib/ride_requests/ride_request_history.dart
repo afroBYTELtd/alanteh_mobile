@@ -720,9 +720,10 @@ class _PassengerRideRequestHistoryPageState
     }
 
     try {
-      final records = List<PassengerRideRequestRecord>.of(
+      final loadedRecords = List<PassengerRideRequestRecord>.of(
         await widget.repository.fetchRequests(),
       );
+      final records = await _enrichConvertedRecords(loadedRecords);
       records.sort((left, right) {
         final leftCreatedAt = left.createdAt;
         final rightCreatedAt = right.createdAt;
@@ -772,9 +773,69 @@ class _PassengerRideRequestHistoryPageState
     }
   }
 
+  Future<List<PassengerRideRequestRecord>> _enrichConvertedRecords(
+    List<PassengerRideRequestRecord> records,
+  ) async {
+    final repository = widget.repository;
+    if (repository is! PassengerTripLifecycleRepository) {
+      return records;
+    }
+    final tripRepository = repository as PassengerTripLifecycleRepository;
+
+    final uniqueTripReferences = <String>{};
+
+    for (final record in records) {
+      if (record.status.trim().toLowerCase() != 'converted') {
+        continue;
+      }
+
+      final tripReference = record.normalizedTripReference;
+      if (tripReference != null) {
+        uniqueTripReferences.add(tripReference);
+      }
+    }
+
+    if (uniqueTripReferences.isEmpty) {
+      return records;
+    }
+
+    final tripsByReference = <String, PassengerTripRecord>{};
+
+    for (final tripReference in uniqueTripReferences) {
+      try {
+        tripsByReference[tripReference] = await tripRepository.fetchTrip(
+          tripReference,
+        );
+      } on Object {
+        // History enrichment is deliberately fail-soft. The original
+        // converted Ride Request card remains available to the passenger.
+      }
+    }
+
+    return records
+        .map((record) {
+          if (record.status.trim().toLowerCase() != 'converted') {
+            return record;
+          }
+
+          final tripReference = record.normalizedTripReference;
+          final trip = tripReference == null
+              ? null
+              : tripsByReference[tripReference];
+
+          return trip == null ? record : record.withTrip(trip);
+        })
+        .toList(growable: false);
+  }
+
   Future<void> _openDetail(PassengerRideRequestRecord record) {
     final openActiveTracking = widget.onOpenActiveTracking;
-    if (record.status.trim().toLowerCase() == 'converted' &&
+    final isConvertedRequest =
+        record.status.trim().toLowerCase() == 'converted';
+    final isActiveLinkedTrip =
+        record.normalizedTripReference != null && !record.isTerminal;
+
+    if ((isConvertedRequest || isActiveLinkedTrip) &&
         openActiveTracking != null) {
       return openActiveTracking(record);
     }
@@ -898,10 +959,7 @@ class _RideRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusMessage = _safeStatusMessage(
-      record.status,
-      preferredMessage: record.latestStaffState,
-    );
+    final statusMessage = _historyStatusMessage(record);
 
     return Card(
       key: ValueKey<String>('ride-request-${record.requestReference}'),
@@ -936,6 +994,15 @@ class _RideRequestCard extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (record.passengerState == PassengerRideState.arrived &&
+                  record.fareDisplay?.trim().isNotEmpty == true) ...[
+                const SizedBox(height: AsmSpacing.space8),
+                Text(
+                  'Fare ${record.fareDisplay!.trim()}',
+                  key: const Key('history-card-fare'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
               const SizedBox(height: AsmSpacing.space8),
               Text(
                 'Created ${_formatDateTime(record.createdAt)}',
@@ -1246,6 +1313,17 @@ class _HistoryErrorState extends StatelessWidget {
   }
 }
 
+String _historyStatusMessage(PassengerRideRequestRecord record) {
+  if (record.status.trim().toLowerCase() == 'completed_pending_review') {
+    return PassengerRideState.arrived.defaultMessage;
+  }
+
+  return _safeStatusMessage(
+    record.status,
+    preferredMessage: record.latestStaffState,
+  );
+}
+
 String _safeStatusMessage(String status, {String? preferredMessage}) {
   final safePreferredMessage = preferredMessage?.trim();
   if (safePreferredMessage != null && safePreferredMessage.isNotEmpty) {
@@ -1292,6 +1370,7 @@ String _statusLabel(String status) {
     'rejected' || 'declined' => 'Could not be accepted',
     'cancelled' || 'canceled' => 'Cancelled',
     'trip_created' => 'Trip record created',
+    'completed_pending_review' => 'Completed',
     _ => 'Request update',
   };
 }
