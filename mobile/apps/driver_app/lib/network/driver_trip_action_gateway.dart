@@ -131,6 +131,16 @@ void _emitDriverTripActionHttpStatusClass<T>(
   }
 }
 
+const Set<String> driverTerminalTripStatuses = <String>{
+  'completed_pending_review',
+  'completed_confirmed',
+  'review_overdue',
+};
+
+bool driverIsTerminalTripStatus(String? status) {
+  return driverTerminalTripStatuses.contains(status?.trim());
+}
+
 enum DriverTripAction {
   arrivedPickup,
   startTrip,

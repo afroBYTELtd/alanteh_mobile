@@ -1116,6 +1116,10 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
       gateway: liveGateway,
       tripReference: tripReference,
       driverId: driverReference,
+      readCurrentTripStatus: () async {
+        final currentTrip = await dutyGateway.fetchTripDetail(tripReference);
+        return currentTrip.status;
+      },
       verifyServerState: (action, receipt) async {
         final refreshedTrip = await dutyGateway.fetchTripDetail(
           receipt.tripReference,

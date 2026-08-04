@@ -338,14 +338,9 @@ void main() {
         'completed_pending_review',
       );
       expect(DriverTripAction.startTrip.expectedStatus, 'in_progress');
-      expect(
-        driverStatusLabel('completed_pending_review'),
-        'Trip completed — awaiting operations review',
-      );
-      expect(
-        driverStatusLabel('completed_confirmed'),
-        isNot(contains('confirmed')),
-      );
+      expect(driverStatusLabel('completed_pending_review'), 'Awaiting review');
+      expect(driverStatusLabel('completed_confirmed'), 'Confirmed');
+      expect(driverStatusLabel('review_overdue'), 'Review overdue');
       expect(
         DriverTripAction.completeTrip.expectedStatus,
         isNot('completed_confirmed'),
