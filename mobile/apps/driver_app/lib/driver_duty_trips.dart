@@ -330,13 +330,16 @@ final class DriverAssignedTrip {
                 'released_at',
                 'assignment_released_at',
               ]));
+    final normalizedAssignmentStatus = assignmentStatus?.trim().toLowerCase();
     final assignmentReleased =
         assignmentReleasedExplicit ??
-        (assignmentStatus?.trim().toLowerCase() == 'released'
+        (normalizedAssignmentStatus == 'released'
             ? true
+            : normalizedAssignmentStatus == 'active'
+            ? false
             : assignmentReleasedAt?.trim().isNotEmpty == true
             ? true
-            : null);
+            : false);
 
     return DriverAssignedTrip(
       reference: reference,
