@@ -268,9 +268,11 @@ final class DriverAssignedTrip {
     this.requestedPickupTime,
     this.createdTime,
     this.updatedTime,
+    this.completedTime,
     this.vehicleReference,
     this.passengerCount,
     this.controlCenterMessage,
+    this.assignmentReleased,
   });
 
   final String reference;
@@ -280,9 +282,11 @@ final class DriverAssignedTrip {
   final String? requestedPickupTime;
   final String? createdTime;
   final String? updatedTime;
+  final String? completedTime;
   final String? vehicleReference;
   final int? passengerCount;
   final String? controlCenterMessage;
+  final bool? assignmentReleased;
 
   static DriverAssignedTrip fromJson(Object? json) {
     final map = _decodeMap(json, 'Trip response was not a JSON object.');
@@ -295,6 +299,44 @@ final class DriverAssignedTrip {
     if (reference == null || reference.isEmpty) {
       throw const FormatException('Trip reference is missing.');
     }
+
+    final assignment =
+        _mapOrNull(map['assignment']) ??
+        _mapOrNull(map['trip_assignment']) ??
+        _mapOrNull(map['active_assignment']);
+    final assignmentStatus =
+        _firstString(map, const ['assignment_status']) ??
+        (assignment == null
+            ? null
+            : _firstString(assignment, const ['status', 'assignment_status']));
+    final assignmentReleasedExplicit =
+        _firstBool(map, const [
+          'assignment_released',
+          'assignment_is_released',
+          'is_assignment_released',
+        ]) ??
+        (assignment == null
+            ? null
+            : _firstBool(assignment, const [
+                'released',
+                'assignment_released',
+                'is_released',
+              ]));
+    final assignmentReleasedAt =
+        _firstString(map, const ['assignment_released_at', 'released_at']) ??
+        (assignment == null
+            ? null
+            : _firstString(assignment, const [
+                'released_at',
+                'assignment_released_at',
+              ]));
+    final assignmentReleased =
+        assignmentReleasedExplicit ??
+        (assignmentStatus?.trim().toLowerCase() == 'released'
+            ? true
+            : assignmentReleasedAt?.trim().isNotEmpty == true
+            ? true
+            : null);
 
     return DriverAssignedTrip(
       reference: reference,
@@ -311,6 +353,14 @@ final class DriverAssignedTrip {
       ]),
       createdTime: _firstString(map, const ['created_at', 'created_time']),
       updatedTime: _firstString(map, const ['updated_at', 'updated_time']),
+      completedTime: _firstString(map, const [
+        'completed_at',
+        'completion_at',
+        'completion_time',
+        'completed_time',
+        'completion_date',
+        'completed_on',
+      ]),
       vehicleReference: _firstString(map, const [
         'vehicle_reference',
         'assigned_vehicle_reference',
@@ -322,6 +372,7 @@ final class DriverAssignedTrip {
         'driver_message',
         'message',
       ]),
+      assignmentReleased: assignmentReleased,
     );
   }
 
@@ -370,8 +421,9 @@ String driverStatusLabel(String? status) {
     'arrived_at_pickup' => 'Arrived at pickup',
     'passenger_onboard' => 'Passenger onboard',
     'in_progress' => 'Trip in progress',
-    'completed_pending_review' => 'Trip completed — awaiting operations review',
-    'completed_confirmed' => 'Status unavailable',
+    'completed_pending_review' => 'Awaiting review',
+    'completed_confirmed' => 'Confirmed',
+    'review_overdue' => 'Review overdue',
     'completed' => 'Completed',
     'cancelled' => 'Cancelled',
     final value? when value.isNotEmpty => _sentenceCase(
@@ -379,6 +431,47 @@ String driverStatusLabel(String? status) {
     ),
     _ => driverEmptyValue,
   };
+}
+
+String driverTripRouteLabel(DriverAssignedTrip trip) {
+  return '${_safeText(trip.pickupLocation)} → '
+      '${_safeText(trip.destination)}';
+}
+
+String driverTripRelevantDateLabel(DriverAssignedTrip trip) {
+  return _formatDriverDateTime(
+    trip.completedTime ??
+        trip.updatedTime ??
+        trip.requestedPickupTime ??
+        trip.createdTime,
+  );
+}
+
+String driverTripCompletionDateTimeLabel(DriverAssignedTrip trip) {
+  return _formatDriverDateTime(
+    trip.completedTime ?? trip.updatedTime ?? trip.createdTime,
+  );
+}
+
+String _formatDriverDateTime(String? value) {
+  final normalized = value?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return driverEmptyValue;
+  }
+
+  final parsed = DateTime.tryParse(normalized);
+  if (parsed == null) {
+    return normalized;
+  }
+
+  final utc = parsed.toUtc();
+  String twoDigits(int component) => component.toString().padLeft(2, '0');
+
+  return '${utc.year.toString().padLeft(4, '0')}-'
+      '${twoDigits(utc.month)}-'
+      '${twoDigits(utc.day)} '
+      '${twoDigits(utc.hour)}:'
+      '${twoDigits(utc.minute)} UTC';
 }
 
 String maskDriverPhone(String? phone) {
@@ -417,6 +510,16 @@ String _sentenceCase(String value) {
     return value;
   }
   return value[0].toUpperCase() + value.substring(1);
+}
+
+Map<String, Object?>? _mapOrNull(Object? value) {
+  if (value is Map<String, Object?>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map((key, item) => MapEntry('$key', item));
+  }
+  return null;
 }
 
 Map<String, Object?> _decodeMap(Object? json, String message) {
@@ -1156,16 +1259,41 @@ class _DriverTripCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AsmSpacing.space8),
-              _DriverDetailRow('Status', driverStatusLabel(trip.status)),
-              _DriverDetailRow('Pickup', _safeText(trip.pickupLocation)),
-              _DriverDetailRow('Destination', _safeText(trip.destination)),
-              _DriverDetailRow(
-                'Requested pickup',
-                _safeText(trip.requestedPickupTime),
-              ),
-              _DriverDetailRow('Vehicle', _safeText(trip.vehicleReference)),
-              _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
-              _DriverDetailRow('Message', _safeText(trip.controlCenterMessage)),
+              if (driverIsTerminalTripStatus(trip.status)) ...[
+                Text(
+                  driverTripRouteLabel(trip),
+                  key: ValueKey<String>(
+                    'driver-completed-trip-route-${trip.reference}',
+                  ),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: AsmSpacing.space8),
+                _DriverDetailRow(
+                  'Review status',
+                  driverStatusLabel(trip.status),
+                ),
+                _DriverDetailRow(
+                  'Completed',
+                  driverTripRelevantDateLabel(trip),
+                ),
+              ] else ...[
+                _DriverDetailRow('Status', driverStatusLabel(trip.status)),
+                _DriverDetailRow('Pickup', _safeText(trip.pickupLocation)),
+                _DriverDetailRow('Destination', _safeText(trip.destination)),
+                _DriverDetailRow(
+                  'Requested pickup',
+                  _safeText(trip.requestedPickupTime),
+                ),
+                _DriverDetailRow('Vehicle', _safeText(trip.vehicleReference)),
+                _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
+                _DriverDetailRow(
+                  'Message',
+                  _safeText(trip.controlCenterMessage),
+                ),
+              ],
             ],
           ),
         ),
@@ -1218,24 +1346,39 @@ class _DriverTripDetailCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Assigned trip detail',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            driverIsTerminalTripStatus(trip.status)
+                ? 'Completed trip summary'
+                : 'Assigned trip detail',
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: AsmSpacing.space16),
-          _DriverDetailRow('Trip reference', trip.reference),
-          _DriverDetailRow('Status', driverStatusLabel(trip.status)),
-          _DriverDetailRow('Pickup', _safeText(trip.pickupLocation)),
-          _DriverDetailRow('Destination', _safeText(trip.destination)),
-          _DriverDetailRow(
-            'Requested pickup',
-            _safeText(trip.requestedPickupTime),
-          ),
-          _DriverDetailRow('Created', _safeText(trip.createdTime)),
-          _DriverDetailRow('Updated', _safeText(trip.updatedTime)),
-          _DriverDetailRow('Vehicle', _safeText(trip.vehicleReference)),
-          _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
-          _DriverDetailRow('Message', _safeText(trip.controlCenterMessage)),
+          if (driverIsTerminalTripStatus(trip.status)) ...[
+            _DriverDetailRow('Trip reference', trip.reference),
+            _DriverDetailRow('Route', driverTripRouteLabel(trip)),
+            _DriverDetailRow(
+              'Completed',
+              driverTripCompletionDateTimeLabel(trip),
+            ),
+            _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
+            _DriverDetailRow('Review status', driverStatusLabel(trip.status)),
+            if (trip.assignmentReleased == true)
+              _DriverDetailRow('Assignment', 'Assignment closed'),
+          ] else ...[
+            _DriverDetailRow('Trip reference', trip.reference),
+            _DriverDetailRow('Status', driverStatusLabel(trip.status)),
+            _DriverDetailRow('Pickup', _safeText(trip.pickupLocation)),
+            _DriverDetailRow('Destination', _safeText(trip.destination)),
+            _DriverDetailRow(
+              'Requested pickup',
+              _safeText(trip.requestedPickupTime),
+            ),
+            _DriverDetailRow('Created', _safeText(trip.createdTime)),
+            _DriverDetailRow('Updated', _safeText(trip.updatedTime)),
+            _DriverDetailRow('Vehicle', _safeText(trip.vehicleReference)),
+            _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
+            _DriverDetailRow('Message', _safeText(trip.controlCenterMessage)),
+          ],
           const SizedBox(height: AsmSpacing.space12),
           Align(
             alignment: Alignment.centerLeft,

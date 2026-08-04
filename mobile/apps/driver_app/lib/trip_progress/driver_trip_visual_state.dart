@@ -28,6 +28,8 @@ final class DriverTripVisualState {
       'passenger_onboard' => DriverTripVisualStage.confirmingPassengerOnboard,
       'in_progress' => DriverTripVisualStage.activeTrip,
       'completed_pending_review' => DriverTripVisualStage.completed,
+      'completed_confirmed' => DriverTripVisualStage.completed,
+      'review_overdue' => DriverTripVisualStage.completed,
       _ => DriverTripVisualStage.navigatingToPickup,
     });
   }

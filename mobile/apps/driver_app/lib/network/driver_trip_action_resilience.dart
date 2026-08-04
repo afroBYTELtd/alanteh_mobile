@@ -114,6 +114,8 @@ typedef DriverTripActionStateVerifier =
 typedef DriverTripActionControllerFactory =
     Future<DriverTripActionResilienceController> Function(String tripReference);
 
+typedef DriverTripStatusReader = Future<String?> Function();
+
 final class DriverTripActionResilienceController {
   DriverTripActionResilienceController({
     required this.queue,
@@ -121,6 +123,7 @@ final class DriverTripActionResilienceController {
     required this.driverId,
     this.gateway,
     this.verifyServerState,
+    this.readCurrentTripStatus,
     Future<bool> Function()? isOnline,
   }) : _legacyIsOnline = isOnline;
 
@@ -129,6 +132,7 @@ final class DriverTripActionResilienceController {
   final String driverId;
   final DriverTripActionGateway? gateway;
   final DriverTripActionStateVerifier? verifyServerState;
+  final DriverTripStatusReader? readCurrentTripStatus;
   final Future<bool> Function()? _legacyIsOnline;
   DriverTripActionTelemetrySink? _telemetrySink;
 
@@ -165,7 +169,7 @@ final class DriverTripActionResilienceController {
       _emit(const DriverTripActionTelemetryEvent.actionStart());
     }
     final operation =
-        _recordAction(
+        _recordActionWithTerminalGuard(
           action: action,
           endpointIdentity: endpointIdentity,
           payload: payload,
@@ -184,7 +188,61 @@ final class DriverTripActionResilienceController {
     return operation;
   }
 
+  Future<DriverTripActionRecordResult> _recordActionWithTerminalGuard({
+    required DriverTripAction action,
+    required String endpointIdentity,
+    required Map<String, Object?> payload,
+  }) async {
+    final guardFailure = await _terminalActionGuardFailure();
+    if (guardFailure != null) {
+      return DriverTripActionRecordResult(
+        disposition: DriverTripActionDisposition.rejected,
+        error: guardFailure,
+      );
+    }
+
+    return _recordAction(
+      action: action,
+      endpointIdentity: endpointIdentity,
+      payload: payload,
+    );
+  }
+
+  Future<DriverTripActionException?> _terminalActionGuardFailure() async {
+    final reader = readCurrentTripStatus;
+    if (reader == null) {
+      return null;
+    }
+
+    String? status;
+    try {
+      status = await reader();
+    } on Object {
+      return const DriverTripActionException(
+        type: DriverTripActionFailureType.temporarilyUnavailable,
+        message:
+            'The current trip state could not be confirmed safely. '
+            'Refresh and retry.',
+      );
+    }
+
+    if (!driverIsTerminalTripStatus(status)) {
+      return null;
+    }
+
+    return const DriverTripActionException(
+      type: DriverTripActionFailureType.invalidTransition,
+      message:
+          'This trip is complete. No further Driver actions are available.',
+    );
+  }
+
   Future<List<DriverTripActionReceipt>> recoverPendingActions() async {
+    final guardFailure = await _terminalActionGuardFailure();
+    if (guardFailure != null) {
+      return const <DriverTripActionReceipt>[];
+    }
+
     final persistentQueue = queue;
     final liveGateway = gateway;
     if (persistentQueue is! DriverTripActionPersistentQueue ||
