@@ -276,6 +276,109 @@ void main() {
     }
   });
 
+  test('test_released_assignment_sets_assignment_released_true', () {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-PARSER-RELEASED',
+      'status': 'completed_confirmed',
+      'assignment': <String, Object?>{
+        'status': 'released',
+        'released_at': '2026-08-01T16:00:00Z',
+      },
+    });
+
+    expect(trip.assignmentReleased, isTrue);
+  });
+
+  test('test_active_assignment_sets_assignment_released_false', () {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-PARSER-ACTIVE',
+      'status': 'completed_pending_review',
+      'assignment': <String, Object?>{'status': 'active'},
+    });
+
+    expect(trip.assignmentReleased, isFalse);
+  });
+
+  test('test_null_assignment_sets_assignment_released_false', () {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-PARSER-UNASSIGNED',
+      'status': 'completed_confirmed',
+      'assignment': null,
+    });
+
+    expect(trip.assignmentReleased, isFalse);
+  });
+
+  testWidgets('test_assignment_closed_visible_when_assignment_released', (
+    tester,
+  ) async {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-UI-RELEASED',
+      'status': 'completed_confirmed',
+      'pickup_location': 'Accra Mall',
+      'destination': 'Ghana University',
+      'completed_at': '2026-08-01T15:45:00Z',
+      'passenger_count': 3,
+      'assignment': <String, Object?>{
+        'status': 'released',
+        'released_at': '2026-08-01T16:00:00Z',
+      },
+    });
+
+    await _pumpTripDetail(
+      tester,
+      _ArchivalDriverDutyGateway(trips: <DriverAssignedTrip>[trip]),
+      trip,
+    );
+
+    expect(find.text('Assignment closed'), findsOneWidget);
+    expect(find.text('completed_confirmed'), findsNothing);
+  });
+
+  testWidgets('test_assignment_closed_hidden_when_assignment_active', (
+    tester,
+  ) async {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-UI-ACTIVE',
+      'status': 'completed_pending_review',
+      'pickup_location': 'Accra Mall',
+      'destination': 'Ghana University',
+      'completed_at': '2026-08-01T15:45:00Z',
+      'passenger_count': 3,
+      'assignment': <String, Object?>{'status': 'active'},
+    });
+
+    await _pumpTripDetail(
+      tester,
+      _ArchivalDriverDutyGateway(trips: <DriverAssignedTrip>[trip]),
+      trip,
+    );
+
+    expect(find.text('Assignment closed'), findsNothing);
+    expect(find.text('Assignment'), findsNothing);
+  });
+
+  testWidgets('test_assignment_closed_hidden_when_unassigned', (tester) async {
+    final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
+      'trip_reference': 'TRIP-UI-UNASSIGNED',
+      'status': 'completed_confirmed',
+      'pickup_location': 'Accra Mall',
+      'destination': 'Ghana University',
+      'completed_at': '2026-08-01T15:45:00Z',
+      'passenger_count': 3,
+      'assignment': null,
+    });
+
+    await _pumpTripDetail(
+      tester,
+      _ArchivalDriverDutyGateway(trips: <DriverAssignedTrip>[trip]),
+      trip,
+    );
+
+    expect(find.text('Assignment closed'), findsNothing);
+    expect(find.text('Assignment'), findsNothing);
+  });
+
   test('test_existing_trip_detail_payload_decodes_archival_fields', () {
     final trip = DriverAssignedTrip.fromJson(const <String, Object?>{
       'trip_reference': 'TRIP-DECODED',
