@@ -441,6 +441,7 @@ class DriverApp extends StatelessWidget {
                 baseUrl: apiBaseUrl,
                 tokenStore: tokenStore,
                 persistentQueue: sharedPersistentQueue,
+                refreshAccessToken: sessionRefreshController?.refresh,
               )
             : null);
 
@@ -1220,6 +1221,7 @@ DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({
   required String? baseUrl,
   required AuthTokenStore tokenStore,
   required DriverTripActionPersistentQueue persistentQueue,
+  required DriverAccessTokenRefresh? refreshAccessToken,
 }) {
   if (!AsmApiBaseUrl.isUsable(baseUrl)) {
     return null;
@@ -1230,10 +1232,9 @@ DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({
   return DriverShiftCheckSubmissionController(
     queue: persistentQueue,
     gateway: ApiDriverShiftCheckGateway(
-      GhanaResilientApiClient(
-        baseUrl: baseUrl!,
-        tokenProvider: _StoredAccessTokenProvider(tokenStore),
-      ),
+      client: GhanaResilientApiClient(baseUrl: baseUrl!),
+      tokenStore: tokenStore,
+      refreshAccessToken: refreshAccessToken,
     ),
     isOnline: () => reachability.isOnline,
     connectivitySource: const PluginGhanaConnectivitySource(),
