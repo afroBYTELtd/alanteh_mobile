@@ -1,8 +1,7 @@
-import 'dart:convert';
-
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
+import 'driver_access_token_refresh_guard.dart';
 import 'driver_trip_action_gateway.dart';
 import 'ghana_network_resilience.dart';
 
@@ -15,7 +14,7 @@ const driverOfferSafeClientFailureMessage =
     'Could not accept this offer. Please review the trip and try again.';
 const driverOfferSessionExpiredMessage =
     'Your session has expired. Please sign in again.';
-const driverOfferTokenRefreshThreshold = Duration(seconds: 60);
+const driverOfferTokenRefreshThreshold = driverAccessTokenRefreshThreshold;
 
 enum DriverOfferSubmissionTelemetryStage {
   submitStart,
@@ -399,13 +398,17 @@ final class ApiDriverOfferResponseGateway
     DateTime Function()? utcNow,
     this.connectionConfigured = true,
   }) : _retryPolicy = retryPolicy ?? const GhanaRetryPolicy(),
-       _utcNow = utcNow ?? (() => DateTime.now().toUtc());
+       _tokenGuard = DriverAccessTokenRefreshGuard(
+         tokenStore: tokenStore,
+         refreshAccessToken: refreshAccessToken,
+         utcNow: utcNow,
+       );
 
   final DriverOfferResponseApiGateway apiGateway;
   final AuthTokenStore tokenStore;
   final DriverAccessTokenRefresh? refreshAccessToken;
   final GhanaRetryPolicy _retryPolicy;
-  final DateTime Function() _utcNow;
+  final DriverAccessTokenRefreshGuard _tokenGuard;
   final bool connectionConfigured;
 
   @override
@@ -485,66 +488,41 @@ final class ApiDriverOfferResponseGateway
   Future<String> _accessTokenForSubmission({
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
-    String? storedAccessToken;
-
     try {
-      storedAccessToken = (await tokenStore.readAccessToken())?.trim();
-    } on Object {
-      storedAccessToken = null;
-    }
+      final resolution = await _tokenGuard.resolve();
 
-    if (storedAccessToken != null &&
-        storedAccessToken.isNotEmpty &&
-        _accessTokenRemainsValid(storedAccessToken)) {
       emitDriverOfferSubmissionTelemetry(
         telemetrySink,
-        const DriverOfferSubmissionTelemetryEvent.tokenCheck(
-          DriverOfferSubmissionTokenCheckOutcome.tokenValid,
+        DriverOfferSubmissionTelemetryEvent.tokenCheck(
+          resolution.refreshed
+              ? DriverOfferSubmissionTokenCheckOutcome.tokenRefreshed
+              : DriverOfferSubmissionTokenCheckOutcome.tokenValid,
         ),
       );
-      return storedAccessToken;
-    }
 
-    return _refreshAccessTokenForSubmission(telemetrySink: telemetrySink);
+      return resolution.accessToken;
+    } on DriverAccessTokenRefreshException {
+      _throwTokenRefreshFailed(telemetrySink);
+    }
   }
 
   Future<String> _refreshAccessTokenForSubmission({
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
-    final refresh = refreshAccessToken;
-    if (refresh == null) {
-      _throwTokenRefreshFailed(telemetrySink);
-    }
-
-    DriverTokenRefreshOutcome outcome;
     try {
-      outcome = await refresh();
-    } on Object {
+      final resolution = await _tokenGuard.resolve(forceRefresh: true);
+
+      emitDriverOfferSubmissionTelemetry(
+        telemetrySink,
+        const DriverOfferSubmissionTelemetryEvent.tokenCheck(
+          DriverOfferSubmissionTokenCheckOutcome.tokenRefreshed,
+        ),
+      );
+
+      return resolution.accessToken;
+    } on DriverAccessTokenRefreshException {
       _throwTokenRefreshFailed(telemetrySink);
     }
-
-    if (outcome != DriverTokenRefreshOutcome.refreshed) {
-      _throwTokenRefreshFailed(telemetrySink);
-    }
-
-    String? refreshedAccessToken;
-    try {
-      refreshedAccessToken = (await tokenStore.readAccessToken())?.trim();
-    } on Object {
-      _throwTokenRefreshFailed(telemetrySink);
-    }
-
-    if (refreshedAccessToken == null || refreshedAccessToken.isEmpty) {
-      _throwTokenRefreshFailed(telemetrySink);
-    }
-
-    emitDriverOfferSubmissionTelemetry(
-      telemetrySink,
-      const DriverOfferSubmissionTelemetryEvent.tokenCheck(
-        DriverOfferSubmissionTokenCheckOutcome.tokenRefreshed,
-      ),
-    );
-    return refreshedAccessToken;
   }
 
   Never _throwTokenRefreshFailed(
@@ -556,42 +534,11 @@ final class ApiDriverOfferResponseGateway
         DriverOfferSubmissionTokenCheckOutcome.tokenRefreshFailed,
       ),
     );
+
     throw const DriverOfferResponseException(
       type: DriverOfferResponseFailureType.signInRequired,
       message: driverOfferSessionExpiredMessage,
     );
-  }
-
-  bool _accessTokenRemainsValid(String accessToken) {
-    try {
-      final segments = accessToken.split('.');
-      if (segments.length != 3) {
-        return false;
-      }
-
-      final payloadBytes = base64Url.decode(base64Url.normalize(segments[1]));
-      final payload = jsonDecode(utf8.decode(payloadBytes));
-      if (payload is! Map) {
-        return false;
-      }
-
-      final expiryClaim = payload['exp'];
-      if (expiryClaim is! num || !expiryClaim.isFinite) {
-        return false;
-      }
-
-      final expiry = DateTime.fromMillisecondsSinceEpoch(
-        (expiryClaim * Duration.millisecondsPerSecond).round(),
-        isUtc: true,
-      );
-      final refreshBoundary = _utcNow().toUtc().add(
-        driverOfferTokenRefreshThreshold,
-      );
-
-      return expiry.isAfter(refreshBoundary);
-    } on Object {
-      return false;
-    }
   }
 
   Future<ApiResponse<DriverOfferResponseReceipt>> _postWithBoundedRetry({

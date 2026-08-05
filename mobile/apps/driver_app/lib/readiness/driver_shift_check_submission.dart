@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import '../network/driver_access_token_refresh_guard.dart';
+import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
 import '../network/ghana_network_resilience.dart';
 import 'driver_readiness_check.dart';
@@ -90,24 +93,53 @@ abstract interface class DriverShiftCheckGateway {
 }
 
 final class ApiDriverShiftCheckGateway implements DriverShiftCheckGateway {
-  const ApiDriverShiftCheckGateway(this.client);
+  ApiDriverShiftCheckGateway({
+    required this.client,
+    required AuthTokenStore tokenStore,
+    required DriverAccessTokenRefresh? refreshAccessToken,
+    DateTime Function()? utcNow,
+  }) : _tokenGuard = DriverAccessTokenRefreshGuard(
+         tokenStore: tokenStore,
+         refreshAccessToken: refreshAccessToken,
+         utcNow: utcNow,
+       );
 
   final AsmApiClient client;
+  final DriverAccessTokenRefreshGuard _tokenGuard;
+
+  bool _forceRefreshBeforeNextPost = false;
 
   @override
   Future<ApiResponse<Object?>> submit({
     required Map<String, Object?> body,
     required String idempotencyKey,
-  }) {
-    return client.post<Object?>(
+  }) async {
+    final resolution = await _tokenGuard.resolve(
+      forceRefresh: _forceRefreshBeforeNextPost,
+    );
+
+    _forceRefreshBeforeNextPost = false;
+
+    final response = await client.post<Object?>(
       driverShiftCheckPath,
       data: body,
-      headers: <String, String>{'Idempotency-Key': idempotencyKey},
+      headers: <String, String>{
+        'Authorization': 'Bearer ${resolution.accessToken}',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      },
     );
+
+    if (response.statusCode == 401) {
+      _forceRefreshBeforeNextPost = true;
+    }
+
+    return response;
   }
 }
 
 typedef DriverShiftCheckOnlineCheck = Future<bool> Function();
+typedef DriverShiftCheckRetryDelay = Future<void> Function(Duration delay);
 
 final class DriverShiftCheckSubmissionController {
   DriverShiftCheckSubmissionController({
@@ -115,16 +147,19 @@ final class DriverShiftCheckSubmissionController {
     required this.gateway,
     required this.isOnline,
     this.connectivitySource,
-  });
+    DriverShiftCheckRetryDelay? retryDelay,
+  }) : _retryDelay = retryDelay ?? ((delay) => Future<void>.delayed(delay));
 
   final DriverTripActionPersistentQueue queue;
   final DriverShiftCheckGateway gateway;
   final DriverShiftCheckOnlineCheck isOnline;
   final GhanaConnectivitySource? connectivitySource;
+  final DriverShiftCheckRetryDelay _retryDelay;
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Future<DriverShiftCheckSubmissionResult>? _submissionInFlight;
   Future<void>? _syncInFlight;
+  Future<void>? _retryChainInFlight;
 
   Future<DriverShiftCheckSubmissionResult> submit(
     DriverShiftCheckSubmission submission,
@@ -186,10 +221,12 @@ final class DriverShiftCheckSubmissionController {
         );
       }
 
-      await queue.markFailed(event.id);
+      await _markInitialFailureExactlyOnce(event.id);
     } on Object {
-      await queue.markFailed(event.id);
+      await _markInitialFailureExactlyOnce(event.id);
     }
+
+    _scheduleFailedDeliveryRetries();
 
     return DriverShiftCheckSubmissionResult(
       disposition: DriverShiftCheckSubmissionDisposition.queued,
@@ -256,14 +293,18 @@ final class DriverShiftCheckSubmissionController {
     }
 
     final events = await queue.pendingEvents();
-    final shiftCheckEvents = events.where(
-      (event) =>
-          event.eventType == driverShiftCheckPath &&
-          event.tripReference == driverShiftCheckQueueReference &&
-          event.driverId == driverShiftCheckQueueDriverIdentity,
-    );
+    final shiftCheckEvents = events.where(_isShiftCheckEvent);
+    var failedDelivery = false;
 
     for (final event in shiftCheckEvents) {
+      final storedEvent = await queue.eventById(event.id);
+
+      if (storedEvent == null ||
+          storedEvent.syncStatus == QueueSyncStatus.synced ||
+          storedEvent.syncStatus == QueueSyncStatus.permanentlyFailed) {
+        continue;
+      }
+
       try {
         final response = await gateway.submit(
           body: event.payloadJson,
@@ -271,13 +312,84 @@ final class DriverShiftCheckSubmissionController {
         );
 
         if (response.isSuccess) {
-          await queue.markSynced(event.id);
+          await _markSyncedExactlyOnce(event.id);
         } else {
-          await queue.markFailed(event.id);
+          await _markInitialFailureExactlyOnce(event.id);
+          failedDelivery = true;
         }
       } on Object {
-        await queue.markFailed(event.id);
+        await _markInitialFailureExactlyOnce(event.id);
+        failedDelivery = true;
       }
     }
+
+    if (failedDelivery) {
+      _scheduleFailedDeliveryRetries();
+    }
+  }
+
+  bool _isShiftCheckEvent(QueuedEvent event) {
+    return event.eventType == driverShiftCheckPath &&
+        event.tripReference == driverShiftCheckQueueReference &&
+        event.driverId == driverShiftCheckQueueDriverIdentity;
+  }
+
+  Future<void> _markInitialFailureExactlyOnce(String eventId) async {
+    final storedEvent = await queue.eventById(eventId);
+
+    if (storedEvent?.syncStatus == QueueSyncStatus.pending) {
+      await queue.markFailed(eventId);
+    }
+  }
+
+  Future<void> _markSyncedExactlyOnce(String eventId) async {
+    final storedEvent = await queue.eventById(eventId);
+
+    if (storedEvent == null ||
+        storedEvent.syncStatus == QueueSyncStatus.synced) {
+      return;
+    }
+
+    await queue.markSynced(eventId);
+  }
+
+  void _scheduleFailedDeliveryRetries() {
+    if (_retryChainInFlight != null) {
+      return;
+    }
+
+    final operation = _runFailedDeliveryRetryChain();
+    _retryChainInFlight = operation;
+
+    unawaited(
+      operation
+          .whenComplete(() {
+            if (identical(_retryChainInFlight, operation)) {
+              _retryChainInFlight = null;
+            }
+          })
+          .catchError((Object _) {}),
+    );
+  }
+
+  Future<void> _runFailedDeliveryRetryChain() async {
+    for (final delay in GhanaRequestPolicy.retryBackoffs) {
+      await _retryDelay(delay);
+
+      if (!await _hasQueuedShiftCheck()) {
+        return;
+      }
+
+      await syncQueuedSubmissions();
+
+      if (!await _hasQueuedShiftCheck()) {
+        return;
+      }
+    }
+  }
+
+  Future<bool> _hasQueuedShiftCheck() async {
+    final events = await queue.pendingEvents();
+    return events.any(_isShiftCheckEvent);
   }
 }
