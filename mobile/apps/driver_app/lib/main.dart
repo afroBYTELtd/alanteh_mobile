@@ -12,6 +12,7 @@ import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
+import 'readiness/driver_shift_check_submission.dart';
 
 export 'driver_shell.dart';
 
@@ -210,6 +211,7 @@ Widget buildDriverRoot({
   DriverDutyGateway? driverDutyGateway,
   DriverTripActionControllerFactory? driverTripActionControllerFactory,
   DriverOfferResponseControllerFactory? driverOfferResponseControllerFactory,
+  DriverShiftCheckSubmissionController? driverShiftCheckController,
   DriverNormalAppBuilder? normalAppBuilder,
 }) {
   Widget buildNormalApp() {
@@ -229,6 +231,7 @@ Widget buildDriverRoot({
       driverTripActionControllerFactory: driverTripActionControllerFactory,
       driverOfferResponseControllerFactory:
           driverOfferResponseControllerFactory,
+      driverShiftCheckController: driverShiftCheckController,
     );
   }
 
@@ -360,6 +363,7 @@ class DriverApp extends StatelessWidget {
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
+    this.driverShiftCheckController,
     super.key,
   });
 
@@ -373,6 +377,7 @@ class DriverApp extends StatelessWidget {
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
+  final DriverShiftCheckSubmissionController? driverShiftCheckController;
 
   @override
   Widget build(BuildContext context) {
@@ -395,6 +400,9 @@ class DriverApp extends StatelessWidget {
         : null;
     final shouldCreateDefaultDutyGateway =
         showLoginShell && authService == null && authTokenStore == null;
+    final sharedPersistentQueue = shouldCreateDefaultDutyGateway
+        ? PersistentDriverTripActionQueue()
+        : null;
     final dutyGateway =
         driverDutyGateway ??
         (shouldCreateDefaultDutyGateway
@@ -412,6 +420,7 @@ class DriverApp extends StatelessWidget {
                 tokenStore: tokenStore,
                 dutyGateway: dutyGateway,
                 refreshAccessToken: sessionRefreshController?.refresh,
+                persistentQueue: sharedPersistentQueue,
               )
             : null);
     final offerResponseControllerFactory =
@@ -422,6 +431,16 @@ class DriverApp extends StatelessWidget {
                 tokenStore: tokenStore,
                 dutyGateway: dutyGateway,
                 refreshAccessToken: sessionRefreshController?.refresh,
+                persistentQueue: sharedPersistentQueue,
+              )
+            : null);
+    final shiftCheckController =
+        driverShiftCheckController ??
+        (shouldCreateDefaultDutyGateway && sharedPersistentQueue != null
+            ? _driverShiftCheckControllerFor(
+                baseUrl: apiBaseUrl,
+                tokenStore: tokenStore,
+                persistentQueue: sharedPersistentQueue,
               )
             : null);
 
@@ -435,6 +454,7 @@ class DriverApp extends StatelessWidget {
             driverTripActionControllerFactory: actionControllerFactory,
             driverOfferResponseControllerFactory:
                 offerResponseControllerFactory,
+            driverShiftCheckController: shiftCheckController,
             accessTokenRefresh: sessionRefreshController?.refresh,
           )
         : DriverShell(
@@ -444,6 +464,7 @@ class DriverApp extends StatelessWidget {
             driverTripActionControllerFactory: actionControllerFactory,
             driverOfferResponseControllerFactory:
                 offerResponseControllerFactory,
+            driverShiftCheckController: shiftCheckController,
           );
 
     return MaterialApp(
@@ -472,6 +493,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
+    this.driverShiftCheckController,
     this.accessTokenRefresh,
     super.key,
   });
@@ -484,6 +506,7 @@ class DriverLoginShell extends StatefulWidget {
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
+  final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverAccessTokenRefresh? accessTokenRefresh;
 
   @override
@@ -789,6 +812,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        driverShiftCheckController: widget.driverShiftCheckController,
       );
     }
 
@@ -1087,6 +1111,7 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
   required AuthTokenStore tokenStore,
   required DriverDutyGateway dutyGateway,
   DriverAccessTokenRefresh? refreshAccessToken,
+  DriverTripActionPersistentQueue? persistentQueue,
 }) {
   if (!AsmApiBaseUrl.isUsable(baseUrl)) {
     return null;
@@ -1099,7 +1124,7 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
     tokenStore: tokenStore,
     refreshAccessToken: refreshAccessToken,
   );
-  final persistentQueue = PersistentDriverTripActionQueue();
+  final resolvedQueue = persistentQueue ?? PersistentDriverTripActionQueue();
 
   return (tripReference) async {
     final duty = await dutyGateway.fetchDuty();
@@ -1112,7 +1137,7 @@ DriverTripActionControllerFactory? _driverTripActionControllerFactoryFor({
     }
 
     return DriverTripActionResilienceController(
-      queue: persistentQueue,
+      queue: resolvedQueue,
       gateway: liveGateway,
       tripReference: tripReference,
       driverId: driverReference,
@@ -1189,6 +1214,30 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       },
     );
   };
+}
+
+DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  required DriverTripActionPersistentQueue persistentQueue,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  final reachability = GhanaApiReachability(baseUrl: baseUrl);
+
+  return DriverShiftCheckSubmissionController(
+    queue: persistentQueue,
+    gateway: ApiDriverShiftCheckGateway(
+      GhanaResilientApiClient(
+        baseUrl: baseUrl!,
+        tokenProvider: _StoredAccessTokenProvider(tokenStore),
+      ),
+    ),
+    isOnline: () => reachability.isOnline,
+    connectivitySource: const PluginGhanaConnectivitySource(),
+  );
 }
 
 final class _StoredAccessTokenProvider implements TokenProvider {

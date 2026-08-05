@@ -4,6 +4,13 @@ import 'package:flutter/material.dart';
 
 import 'driver_readiness_check.dart';
 
+enum DriverReadinessSubmissionState {
+  idle,
+  submitting,
+  submitted,
+  queued,
+}
+
 class DriverReadinessContent extends StatelessWidget {
   const DriverReadinessContent({
     required this.market,
@@ -12,6 +19,7 @@ class DriverReadinessContent extends StatelessWidget {
     required this.onReset,
     required this.onReady,
     required this.onOpenConcern,
+    this.submissionState = DriverReadinessSubmissionState.idle,
     this.batteryNeedsAttention = false,
     this.onBatteryNeedsAttention,
     this.onRecheckBattery,
@@ -24,14 +32,21 @@ class DriverReadinessContent extends StatelessWidget {
   final VoidCallback onReset;
   final VoidCallback onReady;
   final VoidCallback onOpenConcern;
+  final DriverReadinessSubmissionState submissionState;
   final bool batteryNeedsAttention;
   final VoidCallback? onBatteryNeedsAttention;
   final VoidCallback? onRecheckBattery;
 
   @override
   Widget build(BuildContext context) {
+    if (submissionState != DriverReadinessSubmissionState.idle) {
+      return _DriverShiftCheckSubmissionState(
+        state: submissionState,
+      );
+    }
+
     final totalCount = DriverReadinessItem.values.length;
-    final canCompleteLocally = check.isComplete && !batteryNeedsAttention;
+    final canSubmit = check.isComplete && !batteryNeedsAttention;
 
     return SafeArea(
       child: ListView(
@@ -53,56 +68,13 @@ class DriverReadinessContent extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AsmSpacing.space16),
-          Container(
-            key: const Key('readiness-local-only'),
-            width: double.infinity,
-            padding: const EdgeInsets.all(AsmSpacing.space16),
-            decoration: BoxDecoration(
-              color: AsmColors.driverCardElevated,
-              borderRadius: BorderRadius.circular(AsmRadii.radius16),
-              border: Border.all(color: AsmColors.driverMintAction),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'LOCAL ONLY',
-                  style: TextStyle(
-                    color: AsmColors.driverMintAction,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                SizedBox(height: AsmSpacing.space8),
-                Text(
-                  'Completing this checklist updates this device only. '
-                  'It is not submitted to the Control Center.',
-                  style: TextStyle(
-                    color: AsmColors.driverTextSecondary,
-                    height: 1.4,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AsmSpacing.space16),
           const Text(
             'Shift check',
             style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: AsmSpacing.space8),
           const Text(
-            'Local pre-shift checklist',
-            style: TextStyle(
-              color: AsmColors.driverMintAction,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: AsmSpacing.space8),
-          const Text(
-            'Use these checks as a local device reminder before driving.',
+            'Complete all four checks before starting your shift.',
             style: TextStyle(
               color: AsmColors.driverTextSecondary,
               height: 1.4,
@@ -132,12 +104,18 @@ class DriverReadinessContent extends StatelessWidget {
                 const SizedBox(height: AsmSpacing.space12),
                 for (final item in DriverReadinessItem.values) ...[
                   Card(
-                    margin: const EdgeInsets.only(bottom: AsmSpacing.space8),
+                    margin: const EdgeInsets.only(
+                      bottom: AsmSpacing.space8,
+                    ),
                     color: AsmColors.driverCard,
                     surfaceTintColor: Colors.transparent,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AsmRadii.radius16),
-                      side: const BorderSide(color: AsmColors.driverLine),
+                      borderRadius: BorderRadius.circular(
+                        AsmRadii.radius16,
+                      ),
+                      side: const BorderSide(
+                        color: AsmColors.driverLine,
+                      ),
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: CheckboxListTile(
@@ -146,10 +124,13 @@ class DriverReadinessContent extends StatelessWidget {
                       onChanged: (_) => onToggle(item),
                       title: Text(
                         item.label,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                       subtitle: Text(item.description),
-                      controlAffinity: ListTileControlAffinity.leading,
+                      controlAffinity:
+                          ListTileControlAffinity.leading,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: AsmSpacing.space12,
                         vertical: AsmSpacing.space4,
@@ -162,10 +143,16 @@ class DriverReadinessContent extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
-                        key: const Key('readiness-battery-needs-attention'),
+                        key: const Key(
+                          'readiness-battery-needs-attention',
+                        ),
                         onPressed: onBatteryNeedsAttention,
-                        icon: const Icon(Icons.battery_alert_outlined),
-                        label: const Text('Battery needs attention'),
+                        icon: const Icon(
+                          Icons.battery_alert_outlined,
+                        ),
+                        label: const Text(
+                          'Battery needs attention',
+                        ),
                       ),
                     ),
                 ],
@@ -179,8 +166,12 @@ class DriverReadinessContent extends StatelessWidget {
               padding: const EdgeInsets.all(AsmSpacing.space16),
               decoration: BoxDecoration(
                 color: AsmColors.driverCard,
-                borderRadius: BorderRadius.circular(AsmRadii.radius16),
-                border: Border.all(color: AsmColors.driverWarningSurface),
+                borderRadius: BorderRadius.circular(
+                  AsmRadii.radius16,
+                ),
+                border: Border.all(
+                  color: AsmColors.driverWarningSurface,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,8 +196,9 @@ class DriverReadinessContent extends StatelessWidget {
                   ),
                   const SizedBox(height: AsmSpacing.space8),
                   const Text(
-                    'Battery must be above 30% to complete this local checklist. '
-                    'Please charge before starting your shift.',
+                    'Battery must be above 30% to complete this '
+                    'checklist. Please charge before starting your '
+                    'shift.',
                     style: TextStyle(height: 1.4),
                   ),
                   const SizedBox(height: AsmSpacing.space12),
@@ -220,15 +212,19 @@ class DriverReadinessContent extends StatelessWidget {
               ),
             ),
           ],
-          if (canCompleteLocally) ...[
+          if (canSubmit) ...[
             const SizedBox(height: AsmSpacing.space16),
             Container(
               key: const Key('readiness-complete'),
               padding: const EdgeInsets.all(AsmSpacing.space20),
               decoration: BoxDecoration(
                 color: AsmColors.driverCardElevated,
-                borderRadius: BorderRadius.circular(AsmRadii.radius20),
-                border: Border.all(color: AsmColors.driverMintAction),
+                borderRadius: BorderRadius.circular(
+                  AsmRadii.radius20,
+                ),
+                border: Border.all(
+                  color: AsmColors.driverMintAction,
+                ),
               ),
               child: const Column(
                 children: [
@@ -240,13 +236,16 @@ class DriverReadinessContent extends StatelessWidget {
                   ),
                   SizedBox(height: AsmSpacing.space12),
                   Text(
-                    'Local checklist complete',
+                    'Shift check complete',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   SizedBox(height: AsmSpacing.space8),
                   Text(
-                    'These checks remain on this device and do not place you online.',
+                    'Your checks are ready to submit.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AsmColors.driverTextSecondary,
@@ -265,9 +264,9 @@ class DriverReadinessContent extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space12),
           FilledButton.icon(
             key: const Key('readiness-ready'),
-            onPressed: canCompleteLocally ? onReady : null,
+            onPressed: canSubmit ? onReady : null,
             icon: const Icon(Icons.check_circle_outline),
-            label: const Text('Complete local checklist'),
+            label: const Text('I am ready'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(54),
             ),
@@ -292,6 +291,105 @@ class DriverReadinessContent extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DriverShiftCheckSubmissionState extends StatelessWidget {
+  const _DriverShiftCheckSubmissionState({
+    required this.state,
+  });
+
+  final DriverReadinessSubmissionState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final (heading, message, icon) = switch (state) {
+      DriverReadinessSubmissionState.submitting => (
+        'Submitting shift check...',
+        null,
+        Icons.sync,
+      ),
+      DriverReadinessSubmissionState.submitted => (
+        'Shift check submitted',
+        'Your pre-shift check has been sent. '
+            'You are ready to drive.',
+        Icons.check_circle_outline,
+      ),
+      DriverReadinessSubmissionState.queued => (
+        'Shift check saved',
+        'Check saved on device. It will be submitted '
+            'automatically when you are connected.',
+        Icons.cloud_done_outlined,
+      ),
+      DriverReadinessSubmissionState.idle => (
+        'Shift check',
+        null,
+        Icons.fact_check_outlined,
+      ),
+    };
+
+    return SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AsmSpacing.space24),
+          child: Container(
+            key: Key(
+              'readiness-submission-${state.name}',
+            ),
+            width: double.infinity,
+            padding: const EdgeInsets.all(AsmSpacing.space24),
+            decoration: BoxDecoration(
+              color: AsmColors.driverCardElevated,
+              borderRadius: BorderRadius.circular(
+                AsmRadii.radius24,
+              ),
+              border: Border.all(
+                color: AsmColors.driverMintAction,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (state ==
+                    DriverReadinessSubmissionState.submitting)
+                  const SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: CircularProgressIndicator(),
+                  )
+                else
+                  Icon(
+                    icon,
+                    size: 52,
+                    color: AsmColors.driverMintAction,
+                  ),
+                const SizedBox(height: AsmSpacing.space16),
+                Text(
+                  heading,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (message != null) ...[
+                  const SizedBox(height: AsmSpacing.space8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AsmColors.driverTextSecondary,
+                      height: 1.4,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

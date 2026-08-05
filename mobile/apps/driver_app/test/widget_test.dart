@@ -1295,7 +1295,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('open-readiness')));
       await tester.pumpAndSettle();
-      expect(find.text('Shift check'), findsOneWidget);
+      expect(find.text('Shift check'), findsWidgets);
       await tester.pageBack();
       await tester.pumpAndSettle();
 
@@ -1326,18 +1326,12 @@ void main() {
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Shift check'), findsOneWidget);
-    expect(find.text('LOCAL ONLY'), findsOneWidget);
-    expect(
-      find.text(
-        'Completing this checklist updates this device only. '
-        'It is not submitted to the Control Center.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Shift check'), findsWidgets);
+    expect(find.text('LOCAL ONLY'), findsNothing);
+    expect(find.text('Local pre-shift checklist'), findsNothing);
     expect(find.text('Ghana'), findsOneWidget);
     expect(
-      find.text('Use these checks as a local device reminder before driving.'),
+      find.text('Complete all four checks before starting your shift.'),
       findsOneWidget,
     );
     for (final item in DriverReadinessItem.values) {
@@ -1366,7 +1360,7 @@ void main() {
     await tester.tap(find.byKey(const Key('readiness-batteryStatus')));
     await tester.pumpAndSettle();
     expect(find.text('4 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsOneWidget);
+    expect(find.text('Shift check complete'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.byKey(const Key('readiness-ready')),
       200,
@@ -1389,7 +1383,7 @@ void main() {
     await tester.tap(find.byKey(const Key('reset-readiness')));
     await tester.pumpAndSettle();
     expect(find.text('0 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsNothing);
+    expect(find.text('Shift check complete'), findsNothing);
 
     await tester.tap(find.byKey(const Key('readiness-approvedShiftDetails')));
     await tester.pumpAndSettle();
@@ -1414,7 +1408,7 @@ void main() {
   });
 
   testWidgets(
-    'local checklist completion returns home without claiming online state',
+    'shift check submission returns home without claiming online state',
     (tester) async {
       _useSurface(tester, const Size(430, 1000));
       await tester.pumpWidget(
@@ -1472,6 +1466,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pump();
+
+      expect(find.text('Shift check saved'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.text('Driver app ready'), findsOneWidget);
@@ -1576,15 +1575,16 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).last,
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('readiness-open-concern')));
     await tester.pumpAndSettle();
     await _completeConcernForm(tester, description: 'Battery warning noted');
     await tester.tap(find.byKey(const Key('close-concern')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Shift check · LOCAL ONLY'), findsOneWidget);
+    expect(find.text('Shift check'), findsWidgets);
     expect(find.text('1 of 4 checks complete'), findsOneWidget);
-    expect(find.text('Local checklist complete'), findsNothing);
+    expect(find.text('Shift check complete'), findsNothing);
     expect(find.text('Report an issue'), findsOneWidget);
   });
 
@@ -1811,7 +1811,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('open-readiness')));
     await tester.pumpAndSettle();
-    expect(find.text('Shift check · LOCAL ONLY'), findsOneWidget);
+    expect(find.text('Shift check'), findsWidgets);
     await tester.scrollUntilVisible(
       find.byKey(const Key('readiness-batteryStatus')),
       200,
@@ -2059,6 +2059,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pump();
+
+      expect(find.text('Shift check saved'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.text('Local QA: On shift'), findsNothing);

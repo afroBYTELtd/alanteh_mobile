@@ -66,7 +66,7 @@ void main() {
   });
 
   testWidgets(
-    'Driver readiness remains local-only and never claims operational online state',
+    'Driver readiness submits a shift check without claiming operational online state',
     (tester) async {
       _useSurface(tester, const Size(430, 1300));
 
@@ -84,16 +84,13 @@ void main() {
         find.byKey(const Key('driver-shift-readiness-screen')),
         findsOneWidget,
       );
-      expect(find.text('Shift check'), findsOneWidget);
-      expect(find.text('LOCAL ONLY'), findsOneWidget);
+      expect(find.text('Shift check'), findsWidgets);
+      expect(find.text('LOCAL ONLY'), findsNothing);
+      expect(find.text('Local pre-shift checklist'), findsNothing);
       expect(
-        find.text(
-          'Completing this checklist updates this device only. '
-          'It is not submitted to the Control Center.',
-        ),
+        find.text('Complete all four checks before starting your shift.'),
         findsOneWidget,
       );
-      expect(find.text('Local pre-shift checklist'), findsOneWidget);
       expect(
         find.byKey(const Key('driver-pre-shift-vehicle-check')),
         findsOneWidget,
@@ -130,7 +127,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('readiness-complete')), findsOneWidget);
-      expect(find.text('Local checklist complete'), findsOneWidget);
+      expect(find.text('Shift check complete'), findsOneWidget);
 
       await tester.scrollUntilVisible(
         find.byKey(const Key('readiness-ready')),
@@ -139,6 +136,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pump();
+
+      expect(find.text('Shift check saved'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       expect(find.text('You’re offline'), findsOneWidget);

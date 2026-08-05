@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,7 @@ import 'driver_home.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
+import 'readiness/driver_shift_check_submission.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
 import 'shift/driver_shift_history.dart';
 
@@ -19,6 +22,7 @@ class DriverShell extends StatefulWidget {
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
+    this.driverShiftCheckController,
     super.key,
   });
 
@@ -29,6 +33,8 @@ class DriverShell extends StatefulWidget {
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
+  final DriverShiftCheckSubmissionController?
+  driverShiftCheckController;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -37,6 +43,43 @@ class DriverShell extends StatefulWidget {
 class _DriverShellState extends State<DriverShell> {
   int _selectedIndex = 0;
   bool _localChecklistComplete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final controller = widget.driverShiftCheckController;
+    if (controller != null) {
+      unawaited(controller.startAutomaticSync());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DriverShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.driverShiftCheckController ==
+        widget.driverShiftCheckController) {
+      return;
+    }
+
+    final previous = oldWidget.driverShiftCheckController;
+    if (previous != null) {
+      unawaited(previous.stopAutomaticSync());
+    }
+
+    final current = widget.driverShiftCheckController;
+    if (current != null) {
+      unawaited(current.startAutomaticSync());
+    }
+  }
+
+  @override
+  void dispose() {
+    final controller = widget.driverShiftCheckController;
+    if (controller != null) {
+      unawaited(controller.stopAutomaticSync());
+    }
+    super.dispose();
+  }
 
   void _openAssignedTrips() {
     setState(() => _selectedIndex = 1);
@@ -47,10 +90,10 @@ class _DriverShellState extends State<DriverShell> {
       id: 'current',
       dateLabel: 'Today',
       dutyLabel: _localChecklistComplete
-          ? 'Local checklist complete'
-          : 'Local checklist not completed',
+          ? 'Shift check submitted'
+          : 'Shift check not submitted',
       status: DriverShiftStatus.notStarted,
-      onlineDurationLabel: 'LOCAL ONLY',
+      onlineDurationLabel: 'Pre-shift',
       completedTrips: 0,
       vehicleLabel: driverEmptyValue,
       serviceAreaLabel: widget.configuration.market.countryName,
@@ -76,8 +119,11 @@ class _DriverShellState extends State<DriverShell> {
   Future<void> _openReadiness() async {
     final completed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) =>
-            DriverReadinessPage(market: widget.configuration.market),
+        builder: (_) => DriverReadinessPage(
+          market: widget.configuration.market,
+          submissionController:
+              widget.driverShiftCheckController,
+        ),
       ),
     );
 
