@@ -54,14 +54,12 @@ class _DriverShellState extends State<DriverShell> {
   DriverDutySummary? _dutySummary;
   Object? _dutyError;
 
-  DateTime get _now => widget.deviceNow?.call() ?? DateTime.now();
-
   bool get _shiftCheckCompletedToday {
     if (widget.driverDutyGateway == null) {
       return _localChecklistComplete;
     }
 
-    return _dutySummary?.shiftCheckCompletedOnCalendarDay(_now) ?? false;
+    return _dutySummary?.shiftCheckToday == true;
   }
 
   bool get _isOnline =>
