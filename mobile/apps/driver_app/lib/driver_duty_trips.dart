@@ -1,16 +1,20 @@
 import 'dart:async';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'network/driver_access_token_refresh_guard.dart';
 import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
+import 'network/ghana_network_resilience.dart';
 import 'trip_progress/driver_trip_visual_sequence.dart';
 
 const driverDutyPath = '/api/driver/me/';
+const driverDutyStatusPath = '/api/driver/duty/';
 const driverTripsPath = '/api/driver/trips/';
 const driverEmptyValue = 'Not assigned yet';
 const driverTripsEmptyTitle = 'No assigned trips yet.';
@@ -46,6 +50,47 @@ final class DriverDutyApiException implements Exception {
   String toString() => 'DriverDutyApiException(type=$type)';
 }
 
+enum DriverOperationalDutyStatus {
+  online,
+  offline;
+
+  String get wireValue => name;
+}
+
+final class DriverDutyTransition {
+  const DriverDutyTransition({required this.dutyStatus, required this.since});
+
+  final String dutyStatus;
+  final DateTime since;
+
+  static DriverDutyTransition fromJson(Object? json) {
+    final map = _decodeMap(
+      json,
+      'Driver duty transition response was not a JSON object.',
+    );
+
+    final status = _firstString(map, const ['duty_status']);
+    final sinceText = _firstString(map, const ['since']);
+    final since = sinceText == null ? null : DateTime.tryParse(sinceText);
+
+    if (status == null ||
+        (status != 'online' && status != 'offline') ||
+        since == null) {
+      throw const FormatException(
+        'Driver duty transition response was incomplete.',
+      );
+    }
+
+    return DriverDutyTransition(dutyStatus: status, since: since);
+  }
+}
+
+abstract interface class DriverDutyStatusGateway {
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  );
+}
+
 abstract interface class DriverDutyGateway {
   Future<DriverDutySummary> fetchDuty();
   Future<List<DriverAssignedTrip>> fetchTrips();
@@ -56,7 +101,17 @@ abstract interface class DriverDutyApiClient {
   Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder});
 }
 
-final class AsmDriverDutyApiClient implements DriverDutyApiClient {
+abstract interface class DriverDutyPostApiClient {
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  });
+}
+
+final class AsmDriverDutyApiClient
+    implements DriverDutyApiClient, DriverDutyPostApiClient {
   const AsmDriverDutyApiClient(this.client);
 
   final AsmApiClient client;
@@ -65,19 +120,51 @@ final class AsmDriverDutyApiClient implements DriverDutyApiClient {
   Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder}) {
     return client.get<T>(path, decoder: decoder);
   }
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) {
+    return client.post<T>(path, data: data, headers: headers, decoder: decoder);
+  }
 }
 
-final class AsmDriverDutyGateway implements DriverDutyGateway {
-  AsmDriverDutyGateway(AsmApiClient client, {this.refreshAccessToken})
-    : apiClient = AsmDriverDutyApiClient(client);
+final class AsmDriverDutyGateway
+    implements DriverDutyGateway, DriverDutyStatusGateway {
+  AsmDriverDutyGateway(
+    AsmApiClient client, {
+    AuthTokenStore? tokenStore,
+    this.refreshAccessToken,
+    Future<void> Function(Duration duration)? dutyRetryDelay,
+  }) : apiClient = AsmDriverDutyApiClient(client),
+       _tokenGuard = tokenStore == null
+           ? null
+           : DriverAccessTokenRefreshGuard(
+               tokenStore: tokenStore,
+               refreshAccessToken: refreshAccessToken,
+             ),
+       _dutyRetryDelay = dutyRetryDelay ?? Future<void>.delayed;
 
   AsmDriverDutyGateway.withApiClient({
     required this.apiClient,
+    AuthTokenStore? tokenStore,
     this.refreshAccessToken,
-  });
+    Future<void> Function(Duration duration)? dutyRetryDelay,
+  }) : _tokenGuard = tokenStore == null
+           ? null
+           : DriverAccessTokenRefreshGuard(
+               tokenStore: tokenStore,
+               refreshAccessToken: refreshAccessToken,
+             ),
+       _dutyRetryDelay = dutyRetryDelay ?? Future<void>.delayed;
 
   final DriverDutyApiClient apiClient;
   final DriverAccessTokenRefresh? refreshAccessToken;
+  final DriverAccessTokenRefreshGuard? _tokenGuard;
+  final Future<void> Function(Duration duration) _dutyRetryDelay;
 
   @override
   Future<DriverDutySummary> fetchDuty() async {
@@ -86,6 +173,120 @@ final class AsmDriverDutyGateway implements DriverDutyGateway {
       decoder: DriverDutySummary.fromJson,
     );
     return _successOrThrow(response);
+  }
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    final postClient = apiClient is DriverDutyPostApiClient
+        ? apiClient as DriverDutyPostApiClient
+        : null;
+    final tokenGuard = _tokenGuard;
+
+    if (postClient == null || tokenGuard == null) {
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.badResponse,
+        'Driver duty action is not configured.',
+      );
+    }
+
+    ApiResponse<DriverDutyTransition>? response;
+
+    for (
+      var attemptIndex = 0;
+      attemptIndex < GhanaRequestPolicy.maxAttempts;
+      attemptIndex += 1
+    ) {
+      response = await _postDutyStatus(
+        postClient: postClient,
+        tokenGuard: tokenGuard,
+        status: status,
+      );
+
+      if (response.statusCode == 401) {
+        response = await _postDutyStatus(
+          postClient: postClient,
+          tokenGuard: tokenGuard,
+          status: status,
+          forceRefresh: true,
+        );
+      }
+
+      final data = response.data;
+      if (response.isSuccess && response.statusCode == 200 && data != null) {
+        return data;
+      }
+
+      final retriesExhausted =
+          attemptIndex >= GhanaRequestPolicy.retryBackoffs.length;
+
+      if (retriesExhausted || !GhanaRequestPolicy.shouldRetry(response)) {
+        throw _dutyExceptionFromResponse(response);
+      }
+
+      await _dutyRetryDelay(GhanaRequestPolicy.retryBackoffs[attemptIndex]);
+    }
+
+    throw const DriverDutyApiException(
+      DriverDutyApiFailureType.unavailable,
+      'Driver information is temporarily unavailable.',
+    );
+  }
+
+  Future<ApiResponse<DriverDutyTransition>> _postDutyStatus({
+    required DriverDutyPostApiClient postClient,
+    required DriverAccessTokenRefreshGuard tokenGuard,
+    required DriverOperationalDutyStatus status,
+    bool forceRefresh = false,
+  }) async {
+    DriverAccessTokenResolution resolution;
+
+    try {
+      resolution = await tokenGuard.resolve(forceRefresh: forceRefresh);
+    } on DriverAccessTokenRefreshException {
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.unavailable,
+        'Driver information is temporarily unavailable.',
+      );
+    }
+
+    return postClient.post<DriverDutyTransition>(
+      driverDutyStatusPath,
+      data: <String, Object?>{'status': status.wireValue},
+      headers: <String, String>{
+        'Authorization': 'Bearer ${resolution.accessToken}',
+        'Content-Type': 'application/json',
+      },
+      decoder: DriverDutyTransition.fromJson,
+    );
+  }
+
+  DriverDutyApiException _dutyExceptionFromResponse(
+    ApiResponse<DriverDutyTransition> response,
+  ) {
+    if (response.statusCode == 401 ||
+        response.error?.type == AsmApiExceptionType.authentication) {
+      return const DriverDutyApiException(
+        DriverDutyApiFailureType.sessionExpired,
+        driverSessionExpiredMessage,
+      );
+    }
+
+    if (response.error?.type == AsmApiExceptionType.network ||
+        response.error?.type == AsmApiExceptionType.timeout ||
+        response.error?.type == AsmApiExceptionType.server ||
+        const <int>{502, 503, 504}.contains(response.statusCode)) {
+      return const DriverDutyApiException(
+        DriverDutyApiFailureType.unavailable,
+        'Driver information is temporarily unavailable.',
+      );
+    }
+
+    return const DriverDutyApiException(
+      DriverDutyApiFailureType.badResponse,
+      'Driver duty action could not be completed.',
+    );
   }
 
   @override
@@ -201,6 +402,8 @@ final class DriverDutySummary {
     this.canReceiveAssignments,
     this.activeTripCount,
     this.assignedTripCount,
+    this.dutyStatus,
+    this.dutySince,
   });
 
   factory DriverDutySummary.empty() => const DriverDutySummary();
@@ -213,6 +416,42 @@ final class DriverDutySummary {
   final bool? canReceiveAssignments;
   final int? activeTripCount;
   final int? assignedTripCount;
+  final String? dutyStatus;
+  final DateTime? dutySince;
+
+  bool get hasOperationalDutyStatus =>
+      dutyStatus == 'online' || dutyStatus == 'offline';
+
+  bool get isOnline => dutyStatus == 'online';
+
+  bool shiftCheckCompletedOnCalendarDay(DateTime deviceNow) {
+    final since = dutySince;
+    if (since == null) {
+      return false;
+    }
+
+    final localSince = since.toLocal();
+    final localNow = deviceNow.toLocal();
+
+    return localSince.year == localNow.year &&
+        localSince.month == localNow.month &&
+        localSince.day == localNow.day;
+  }
+
+  DriverDutySummary withDutyTransition(DriverDutyTransition transition) {
+    return DriverDutySummary(
+      displayName: displayName,
+      driverReference: driverReference,
+      phone: phone,
+      status: status,
+      assignedVehicleReference: assignedVehicleReference,
+      canReceiveAssignments: canReceiveAssignments,
+      activeTripCount: activeTripCount,
+      assignedTripCount: assignedTripCount,
+      dutyStatus: transition.dutyStatus,
+      dutySince: transition.since,
+    );
+  }
 
   static DriverDutySummary fromJson(Object? json) {
     final map = _decodeMap(json, 'Driver duty response was not a JSON object.');
@@ -255,6 +494,11 @@ final class DriverDutySummary {
       ]),
       activeTripCount: _firstInt(duty, const ['active_trip_count']),
       assignedTripCount: _firstInt(duty, const ['assigned_trip_count']),
+      dutyStatus: _firstString(map, const ['duty_status']),
+      dutySince: () {
+        final value = _firstString(map, const ['duty_since']);
+        return value == null ? null : DateTime.tryParse(value);
+      }(),
     );
   }
 }

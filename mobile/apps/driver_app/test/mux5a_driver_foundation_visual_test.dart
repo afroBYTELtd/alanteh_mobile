@@ -74,7 +74,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Good morning, Driver'), findsOneWidget);
-      expect(find.text('You’re offline'), findsOneWidget);
+      expect(find.text("You're offline"), findsOneWidget);
       expect(find.byKey(const Key('driver-start-readiness')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('driver-start-readiness')));
@@ -88,7 +88,9 @@ void main() {
       expect(find.text('LOCAL ONLY'), findsNothing);
       expect(find.text('Local pre-shift checklist'), findsNothing);
       expect(
-        find.text('Complete all four checks before starting your shift.'),
+        find.text(
+          'Complete these checks once before your first trip of the day.',
+        ),
         findsOneWidget,
       );
       expect(
@@ -143,8 +145,8 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      expect(find.text('You’re offline'), findsOneWidget);
-      expect(find.text('You’re online'), findsNothing);
+      expect(find.text("You're offline"), findsOneWidget);
+      expect(find.text("You're online"), findsNothing);
       expect(find.byKey(const Key('driver-waiting-for-offer')), findsNothing);
       expect(find.byKey(const Key('driver-duty-toggle')), findsNothing);
       expect(find.text('Waiting for offers'), findsNothing);

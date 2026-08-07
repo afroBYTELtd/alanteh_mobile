@@ -9,28 +9,34 @@ class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
     required this.isOnShift,
+    required this.shiftCheckCompletedToday,
+    required this.dutyActionInFlight,
     required this.onOpenReadiness,
+    required this.onGoOnline,
+    required this.onGoOffline,
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
     required this.localQaEnabled,
     required this.dutyGateway,
     required this.onOpenAssignedTrips,
     required this.onOpenShiftSummary,
-    this.onDutyChanged,
     this.onSignOut,
     super.key,
   });
 
   final MarketConfig market;
   final bool isOnShift;
+  final bool shiftCheckCompletedToday;
+  final bool dutyActionInFlight;
   final VoidCallback onOpenReadiness;
+  final VoidCallback? onGoOnline;
+  final VoidCallback? onGoOffline;
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
   final bool localQaEnabled;
   final DriverDutyGateway? dutyGateway;
   final VoidCallback onOpenAssignedTrips;
   final VoidCallback onOpenShiftSummary;
-  final ValueChanged<bool>? onDutyChanged;
   final VoidCallback? onSignOut;
 
   @override
@@ -71,8 +77,10 @@ class DriverHome extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space8),
           Text(
             isOnShift
-                ? 'Today’s shift · online now'
-                : 'Today’s shift · not yet started',
+                ? "Today's shift · online now"
+                : shiftCheckCompletedToday
+                ? "Today's shift · offline"
+                : "Today's shift · not yet started",
             key: const Key('driver-shift-summary'),
             style: const TextStyle(
               color: AsmColors.driverTextSecondary,
@@ -82,9 +90,12 @@ class DriverHome extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space16),
           _DriverDutyStatusCard(
             isOnline: isOnShift,
+            shiftCheckCompletedToday: shiftCheckCompletedToday,
+            dutyActionInFlight: dutyActionInFlight,
             localQaEnabled: localQaEnabled,
             onOpenReadiness: onOpenReadiness,
-            onDutyChanged: onDutyChanged,
+            onGoOnline: onGoOnline,
+            onGoOffline: onGoOffline,
           ),
           if (isOnShift) ...[
             const SizedBox(height: AsmSpacing.space16),
@@ -161,26 +172,37 @@ class DriverHome extends StatelessWidget {
 class _DriverDutyStatusCard extends StatelessWidget {
   const _DriverDutyStatusCard({
     required this.isOnline,
+    required this.shiftCheckCompletedToday,
+    required this.dutyActionInFlight,
     required this.localQaEnabled,
     required this.onOpenReadiness,
-    required this.onDutyChanged,
+    required this.onGoOnline,
+    required this.onGoOffline,
   });
 
   final bool isOnline;
+  final bool shiftCheckCompletedToday;
+  final bool dutyActionInFlight;
   final bool localQaEnabled;
   final VoidCallback onOpenReadiness;
-  final ValueChanged<bool>? onDutyChanged;
+  final VoidCallback? onGoOnline;
+  final VoidCallback? onGoOffline;
 
   @override
   Widget build(BuildContext context) {
-    final readinessButton = AsmPrimaryActionButton(
-      key: const Key('driver-start-readiness'),
-      onPressed: onOpenReadiness,
-      icon: Icons.fact_check_outlined,
-      label: localQaEnabled
-          ? 'Local QA readiness preview'
-          : 'Complete readiness check',
-    );
+    final actionLabel = isOnline
+        ? 'GO OFFLINE'
+        : shiftCheckCompletedToday
+        ? 'GO ONLINE'
+        : localQaEnabled
+        ? 'Local QA readiness preview'
+        : 'START SHIFT CHECK';
+
+    final action = isOnline
+        ? onGoOffline
+        : shiftCheckCompletedToday
+        ? onGoOnline
+        : onOpenReadiness;
 
     return Container(
       key: const Key('driver-duty-status-panel'),
@@ -216,7 +238,7 @@ class _DriverDutyStatusCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isOnline ? 'You’re online' : 'You’re offline',
+                      isOnline ? "You're online" : "You're offline",
                       key: Key(
                         isOnline
                             ? 'driver-online-status'
@@ -227,37 +249,45 @@ class _DriverDutyStatusCard extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: AsmSpacing.space4),
-                    Text(
-                      isOnline
-                          ? 'Ready to receive nearby ride offers.'
-                          : 'Complete readiness before starting your shift.',
-                      style: const TextStyle(
-                        color: AsmColors.driverTextSecondary,
-                        height: 1.35,
+                    if (isOnline || !shiftCheckCompletedToday) ...[
+                      const SizedBox(height: AsmSpacing.space4),
+                      Text(
+                        isOnline
+                            ? 'Ready to receive nearby ride offers.'
+                            : 'Complete your pre-shift check to go online.',
+                        style: const TextStyle(
+                          color: AsmColors.driverTextSecondary,
+                          height: 1.35,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
-              if (isOnline)
-                Switch(
-                  key: const Key('driver-duty-toggle'),
-                  value: true,
-                  onChanged: onDutyChanged,
-                ),
             ],
           ),
-          if (!isOnline) ...[
-            const SizedBox(height: AsmSpacing.space20),
-            if (localQaEnabled)
-              KeyedSubtree(
-                key: const Key('open-readiness'),
-                child: readinessButton,
-              )
-            else
-              readinessButton,
-          ],
+          const SizedBox(height: AsmSpacing.space20),
+          KeyedSubtree(
+            key: localQaEnabled && !isOnline && !shiftCheckCompletedToday
+                ? const Key('open-readiness')
+                : null,
+            child: AsmPrimaryActionButton(
+              key: Key(
+                isOnline
+                    ? 'driver-go-offline'
+                    : shiftCheckCompletedToday
+                    ? 'driver-go-online'
+                    : 'driver-start-readiness',
+              ),
+              onPressed: dutyActionInFlight ? null : action,
+              icon: isOnline
+                  ? Icons.power_settings_new
+                  : shiftCheckCompletedToday
+                  ? Icons.online_prediction
+                  : Icons.fact_check_outlined,
+              label: actionLabel,
+            ),
+          ),
         ],
       ),
     );
