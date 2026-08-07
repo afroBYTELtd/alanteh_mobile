@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -37,6 +39,156 @@ void main() {
     expect(summary.shiftCheckToday, isFalse);
     expect(summary.shiftCheckTodayReference, isNull);
   });
+
+  testWidgets(
+    'test_offline_no_check_does_not_render_home_before_shift_check_route',
+    (tester) async {
+      final firstDuty = Completer<DriverDutySummary>();
+      final summary = DriverDutySummary(
+        dutyStatus: 'offline',
+        dutySince: now.subtract(const Duration(days: 1)),
+        shiftCheckToday: false,
+      );
+      final gateway = _MutableDutyGateway(
+        summary,
+        firstDutyCompleter: firstDuty,
+      );
+
+      await tester.pumpWidget(
+        _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+      );
+
+      expect(
+        find.byKey(const Key('driver-duty-startup-loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsNothing,
+      );
+
+      firstDuty.complete(summary);
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('driver-duty-startup-loading')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsNothing,
+        reason:
+            'DriverHome must not render in the frame before required '
+            'startup shift-check navigation.',
+      );
+      expect(find.text('START SHIFT CHECK'), findsNothing);
+      expect(gateway.dutyCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'test_offline_no_check_shift_check_is_first_duty_flow_destination',
+    (tester) async {
+      final firstDuty = Completer<DriverDutySummary>();
+      final summary = DriverDutySummary(
+        dutyStatus: 'offline',
+        dutySince: now.subtract(const Duration(days: 1)),
+        shiftCheckToday: false,
+      );
+      final gateway = _MutableDutyGateway(
+        summary,
+        firstDutyCompleter: firstDuty,
+      );
+
+      await tester.pumpWidget(
+        _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+      );
+
+      firstDuty.complete(summary);
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsNothing,
+      );
+
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('driver-shift-readiness-screen')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Complete these checks once before your first trip of the day.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'test_offline_check_done_preserves_existing_offline_home_startup',
+    (tester) async {
+      final gateway = _MutableDutyGateway(
+        DriverDutySummary(
+          dutyStatus: 'offline',
+          dutySince: now.subtract(const Duration(hours: 1)),
+          shiftCheckToday: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('driver-shift-readiness-screen')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsOneWidget,
+      );
+      expect(find.text("Today's shift · offline"), findsOneWidget);
+      expect(find.text('GO ONLINE'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'test_online_startup_preserves_existing_online_home_without_shift_check',
+    (tester) async {
+      final gateway = _MutableDutyGateway(
+        DriverDutySummary(
+          dutyStatus: 'online',
+          dutySince: now.subtract(const Duration(minutes: 5)),
+          shiftCheckToday: true,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('driver-shift-readiness-screen')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('driver-home-assigned-trips-card')),
+        findsOneWidget,
+      );
+      expect(find.text("You're online"), findsOneWidget);
+      expect(find.text('GO OFFLINE'), findsOneWidget);
+    },
+  );
 
   testWidgets('test_first_shift_check_today_transitions_to_online_directly', (
     tester,
@@ -98,9 +250,8 @@ void main() {
 
     expect(shiftGateway.calls, 1);
 
-    await tester.pump();
-    expect(dutyGateway.dutyCalls, greaterThanOrEqualTo(2));
     await tester.pump(const Duration(milliseconds: 350));
+    expect(dutyGateway.dutyCalls, greaterThanOrEqualTo(2));
 
     expect(find.byKey(const Key('driver-online-transition')), findsOneWidget);
     expect(find.text('Shift check submitted.'), findsOneWidget);
@@ -462,11 +613,15 @@ Future<void> _completeReadiness(WidgetTester tester) async {
 
 final class _MutableDutyGateway
     implements DriverDutyGateway, DriverDutyStatusGateway {
-  _MutableDutyGateway(this.current, {DateTime? transitionNow})
-    : transitionNow = transitionNow ?? DateTime(2026, 8, 7, 8);
+  _MutableDutyGateway(
+    this.current, {
+    DateTime? transitionNow,
+    this._firstDutyCompleter,
+  }) : transitionNow = transitionNow ?? DateTime(2026, 8, 7, 8);
 
   DriverDutySummary current;
   final DateTime transitionNow;
+  final Completer<DriverDutySummary>? _firstDutyCompleter;
 
   int dutyCalls = 0;
   final List<DriverOperationalDutyStatus> transitionStatuses =
@@ -475,6 +630,9 @@ final class _MutableDutyGateway
   @override
   Future<DriverDutySummary> fetchDuty() async {
     dutyCalls += 1;
+    if (dutyCalls == 1 && _firstDutyCompleter != null) {
+      return _firstDutyCompleter.future;
+    }
     return current;
   }
 

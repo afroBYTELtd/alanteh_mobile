@@ -51,6 +51,7 @@ class _DriverShellState extends State<DriverShell> {
   bool _dutyActionInFlight = false;
   bool _showOnlineTransition = false;
   bool _startupShiftCheckConsidered = false;
+  bool _startupShiftCheckNavigationPending = false;
   DriverDutySummary? _dutySummary;
   Object? _dutyError;
 
@@ -98,6 +99,7 @@ class _DriverShellState extends State<DriverShell> {
 
     if (oldWidget.driverDutyGateway != widget.driverDutyGateway) {
       _startupShiftCheckConsidered = false;
+      _startupShiftCheckNavigationPending = false;
 
       if (widget.driverDutyGateway == null) {
         setState(() {
@@ -138,10 +140,16 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      final startupShiftCheckRequired =
+          !_startupShiftCheckConsidered &&
+          duty.dutyStatus == 'offline' &&
+          duty.shiftCheckToday != true;
+
       setState(() {
         _dutySummary = duty;
         _dutyLoading = false;
         _dutyError = null;
+        _startupShiftCheckNavigationPending = startupShiftCheckRequired;
       });
 
       _openStartupShiftCheckIfRequired();
@@ -168,11 +176,27 @@ class _DriverShellState extends State<DriverShell> {
 
     if (_dutySummary!.dutyStatus == 'offline' && !_shiftCheckCompletedToday) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _selectedIndex != 0 || _shiftCheckCompletedToday) {
+        if (!mounted) {
           return;
         }
 
-        unawaited(_openReadiness());
+        if (_selectedIndex != 0 || _shiftCheckCompletedToday) {
+          setState(() {
+            _startupShiftCheckNavigationPending = false;
+          });
+          return;
+        }
+
+        unawaited(
+          _openReadiness().whenComplete(() {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              _startupShiftCheckNavigationPending = false;
+            });
+          }),
+        );
       });
     }
   }
@@ -411,7 +435,8 @@ class _DriverShellState extends State<DriverShell> {
       return DriverOfflineState(onRetry: _loadDuty);
     }
 
-    if (_dutyLoading && _dutySummary == null) {
+    if (_startupShiftCheckNavigationPending ||
+        (_dutyLoading && _dutySummary == null)) {
       return const Center(
         key: Key('driver-duty-startup-loading'),
         child: CircularProgressIndicator(),
