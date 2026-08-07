@@ -1331,7 +1331,9 @@ void main() {
     expect(find.text('Local pre-shift checklist'), findsNothing);
     expect(find.text('Ghana'), findsOneWidget);
     expect(
-      find.text('Complete all four checks before starting your shift.'),
+      find.text(
+        'Complete these checks once before your first trip of the day.',
+      ),
       findsOneWidget,
     );
     for (final item in DriverReadinessItem.values) {

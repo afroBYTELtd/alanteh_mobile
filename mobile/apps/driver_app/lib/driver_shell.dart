@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'concern/driver_concern_page.dart';
 import 'driver_duty_trips.dart';
 import 'driver_home.dart';
+import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
@@ -23,6 +24,8 @@ class DriverShell extends StatefulWidget {
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
+    this.deviceNow,
+    this.onlineTransitionDuration = const Duration(seconds: 2),
     super.key,
   });
 
@@ -33,8 +36,9 @@ class DriverShell extends StatefulWidget {
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
-  final DriverShiftCheckSubmissionController?
-  driverShiftCheckController;
+  final DriverShiftCheckSubmissionController? driverShiftCheckController;
+  final DateTime Function()? deviceNow;
+  final Duration onlineTransitionDuration;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -43,32 +47,69 @@ class DriverShell extends StatefulWidget {
 class _DriverShellState extends State<DriverShell> {
   int _selectedIndex = 0;
   bool _localChecklistComplete = false;
+  bool _dutyLoading = false;
+  bool _dutyActionInFlight = false;
+  bool _showOnlineTransition = false;
+  bool _startupShiftCheckConsidered = false;
+  DriverDutySummary? _dutySummary;
+  Object? _dutyError;
+
+  DateTime get _now => widget.deviceNow?.call() ?? DateTime.now();
+
+  bool get _shiftCheckCompletedToday {
+    if (widget.driverDutyGateway == null) {
+      return _localChecklistComplete;
+    }
+
+    return _dutySummary?.shiftCheckCompletedOnCalendarDay(_now) ?? false;
+  }
+
+  bool get _isOnline =>
+      _shiftCheckCompletedToday && (_dutySummary?.isOnline ?? false);
 
   @override
   void initState() {
     super.initState();
+
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
       unawaited(controller.startAutomaticSync());
+    }
+
+    if (widget.driverDutyGateway != null) {
+      unawaited(_loadDuty());
     }
   }
 
   @override
   void didUpdateWidget(covariant DriverShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.driverShiftCheckController ==
+
+    if (oldWidget.driverShiftCheckController !=
         widget.driverShiftCheckController) {
-      return;
+      final previous = oldWidget.driverShiftCheckController;
+      if (previous != null) {
+        unawaited(previous.stopAutomaticSync());
+      }
+
+      final current = widget.driverShiftCheckController;
+      if (current != null) {
+        unawaited(current.startAutomaticSync());
+      }
     }
 
-    final previous = oldWidget.driverShiftCheckController;
-    if (previous != null) {
-      unawaited(previous.stopAutomaticSync());
-    }
+    if (oldWidget.driverDutyGateway != widget.driverDutyGateway) {
+      _startupShiftCheckConsidered = false;
 
-    final current = widget.driverShiftCheckController;
-    if (current != null) {
-      unawaited(current.startAutomaticSync());
+      if (widget.driverDutyGateway == null) {
+        setState(() {
+          _dutySummary = null;
+          _dutyError = null;
+          _dutyLoading = false;
+        });
+      } else {
+        unawaited(_loadDuty());
+      }
     }
   }
 
@@ -81,6 +122,63 @@ class _DriverShellState extends State<DriverShell> {
     super.dispose();
   }
 
+  Future<void> _loadDuty() async {
+    final gateway = widget.driverDutyGateway;
+    if (gateway == null || _dutyLoading) {
+      return;
+    }
+
+    setState(() {
+      _dutyLoading = true;
+      _dutyError = null;
+    });
+
+    try {
+      final duty = await gateway.fetchDuty();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _dutySummary = duty;
+        _dutyLoading = false;
+        _dutyError = null;
+      });
+
+      _openStartupShiftCheckIfRequired();
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _dutyLoading = false;
+        _dutyError = error;
+      });
+    }
+  }
+
+  void _openStartupShiftCheckIfRequired() {
+    if (_startupShiftCheckConsidered ||
+        widget.driverDutyGateway == null ||
+        _dutySummary == null) {
+      return;
+    }
+
+    _startupShiftCheckConsidered = true;
+
+    if (_dutySummary!.dutyStatus == 'offline' && !_shiftCheckCompletedToday) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _selectedIndex != 0 || _shiftCheckCompletedToday) {
+          return;
+        }
+
+        unawaited(_openReadiness());
+      });
+    }
+  }
+
   void _openAssignedTrips() {
     setState(() => _selectedIndex = 1);
   }
@@ -89,11 +187,15 @@ class _DriverShellState extends State<DriverShell> {
     return DriverShiftRecord(
       id: 'current',
       dateLabel: 'Today',
-      dutyLabel: _localChecklistComplete
-          ? 'Shift check submitted'
-          : 'Shift check not submitted',
-      status: DriverShiftStatus.notStarted,
-      onlineDurationLabel: 'Pre-shift',
+      dutyLabel: !_shiftCheckCompletedToday
+          ? 'Shift check not submitted'
+          : _isOnline
+          ? 'Online'
+          : 'Offline',
+      status: _isOnline
+          ? DriverShiftStatus.inProgress
+          : DriverShiftStatus.notStarted,
+      onlineDurationLabel: _isOnline ? 'In progress' : 'Pre-shift',
       completedTrips: 0,
       vehicleLabel: driverEmptyValue,
       serviceAreaLabel: widget.configuration.market.countryName,
@@ -117,24 +219,154 @@ class _DriverShellState extends State<DriverShell> {
   }
 
   Future<void> _openReadiness() async {
-    final completed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => DriverReadinessPage(
-          market: widget.configuration.market,
-          submissionController:
-              widget.driverShiftCheckController,
-        ),
-      ),
-    );
+    if (_shiftCheckCompletedToday) {
+      return;
+    }
 
-    if (!mounted || completed != true) {
+    final disposition = await Navigator.of(context)
+        .push<DriverShiftCheckSubmissionDisposition>(
+          MaterialPageRoute<DriverShiftCheckSubmissionDisposition>(
+            builder: (_) => DriverReadinessPage(
+              market: widget.configuration.market,
+              submissionController: widget.driverShiftCheckController,
+              deviceNow: widget.deviceNow,
+              navigationDelay: widget.driverDutyGateway == null
+                  ? const Duration(seconds: 2)
+                  : Duration.zero,
+            ),
+          ),
+        );
+
+    if (!mounted || disposition == null) {
+      return;
+    }
+
+    if (widget.driverDutyGateway == null) {
+      setState(() {
+        _localChecklistComplete = true;
+        _selectedIndex = 0;
+      });
+      return;
+    }
+
+    if (disposition != DriverShiftCheckSubmissionDisposition.submitted) {
+      setState(() {
+        _selectedIndex = 0;
+      });
+      return;
+    }
+
+    await _confirmOnlineAfterShiftCheck();
+  }
+
+  Future<void> _confirmOnlineAfterShiftCheck() async {
+    final gateway = widget.driverDutyGateway;
+    if (gateway == null) {
       return;
     }
 
     setState(() {
-      _localChecklistComplete = true;
+      _dutyLoading = true;
+      _dutyError = null;
       _selectedIndex = 0;
     });
+
+    try {
+      final refreshed = await gateway.fetchDuty();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (!refreshed.isOnline) {
+        setState(() {
+          _dutyLoading = false;
+          _dutyError = const DriverDutyApiException(
+            DriverDutyApiFailureType.badResponse,
+            'Driver online status could not be confirmed.',
+          );
+        });
+        return;
+      }
+
+      setState(() {
+        _dutySummary = refreshed;
+        _dutyLoading = false;
+        _dutyError = null;
+        _showOnlineTransition = true;
+      });
+
+      await Future<void>.delayed(widget.onlineTransitionDuration);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _showOnlineTransition = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _dutyLoading = false;
+        _dutyError = error;
+      });
+    }
+  }
+
+  Future<void> _changeDuty(DriverOperationalDutyStatus status) async {
+    if (_dutyActionInFlight) {
+      return;
+    }
+
+    final gateway = widget.driverDutyGateway;
+    final DriverDutyStatusGateway? statusGateway =
+        gateway is DriverDutyStatusGateway
+        ? gateway as DriverDutyStatusGateway
+        : null;
+
+    if (statusGateway == null) {
+      setState(() {
+        _dutyError = const DriverDutyApiException(
+          DriverDutyApiFailureType.badResponse,
+          'Driver duty action is not configured.',
+        );
+      });
+      return;
+    }
+
+    setState(() {
+      _dutyActionInFlight = true;
+      _dutyError = null;
+    });
+
+    try {
+      final transition = await statusGateway.updateDutyStatus(status);
+
+      if (!mounted) {
+        return;
+      }
+
+      final current = _dutySummary ?? DriverDutySummary.empty();
+
+      setState(() {
+        _dutySummary = current.withDutyTransition(transition);
+        _dutyActionInFlight = false;
+        _dutyError = null;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _dutyActionInFlight = false;
+        _dutyError = error;
+      });
+    }
   }
 
   Future<void> _openConcern() async {
@@ -161,26 +393,58 @@ class _DriverShellState extends State<DriverShell> {
   Future<void> _signOut() async {
     setState(() {
       _localChecklistComplete = false;
+      _dutySummary = null;
+      _dutyError = null;
+      _dutyLoading = false;
+      _dutyActionInFlight = false;
+      _showOnlineTransition = false;
+      _startupShiftCheckConsidered = false;
       _selectedIndex = 0;
     });
     await widget.onSignOut?.call();
   }
 
+  Widget get _workPage {
+    if (_showOnlineTransition) {
+      return const _DriverOnlineTransitionState();
+    }
+
+    if (_dutyError != null && widget.driverDutyGateway != null) {
+      return DriverOfflineState(onRetry: _loadDuty);
+    }
+
+    if (_dutyLoading && _dutySummary == null) {
+      return const Center(
+        key: Key('driver-duty-startup-loading'),
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return DriverHome(
+      market: widget.configuration.market,
+      isOnShift: _isOnline,
+      shiftCheckCompletedToday: _shiftCheckCompletedToday,
+      dutyActionInFlight: _dutyActionInFlight,
+      onOpenReadiness: _openReadiness,
+      onGoOnline: _shiftCheckCompletedToday && !_isOnline
+          ? () => unawaited(_changeDuty(DriverOperationalDutyStatus.online))
+          : null,
+      onGoOffline: _isOnline
+          ? () => unawaited(_changeDuty(DriverOperationalDutyStatus.offline))
+          : null,
+      onRecordConcern: _openConcern,
+      onPreviewIncomingRequest: _openRideOfferPreview,
+      localQaEnabled: widget.localQaEnabled,
+      dutyGateway: widget.driverDutyGateway,
+      onOpenAssignedTrips: _openAssignedTrips,
+      onOpenShiftSummary: _openShiftSummary,
+      onSignOut: widget.onSignOut == null ? null : _signOut,
+    );
+  }
+
   Widget get _selectedPage {
     return switch (_selectedIndex) {
-      0 => DriverHome(
-        market: widget.configuration.market,
-        isOnShift: false,
-        onOpenReadiness: _openReadiness,
-        onRecordConcern: _openConcern,
-        onPreviewIncomingRequest: _openRideOfferPreview,
-        localQaEnabled: widget.localQaEnabled,
-        dutyGateway: widget.driverDutyGateway,
-        onOpenAssignedTrips: _openAssignedTrips,
-        onOpenShiftSummary: _openShiftSummary,
-        onDutyChanged: null,
-        onSignOut: widget.onSignOut == null ? null : _signOut,
-      ),
+      0 => _workPage,
       1 => DriverAssignedTripsScreen(
         gateway: widget.driverDutyGateway,
         actionControllerFactory: widget.driverTripActionControllerFactory,
@@ -221,6 +485,45 @@ class _DriverShellState extends State<DriverShell> {
             label: 'Account',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DriverOnlineTransitionState extends StatelessWidget {
+  const _DriverOnlineTransitionState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AsmScreenSurface(
+      key: Key('driver-online-transition'),
+      expandToViewport: true,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              size: 56,
+              color: AsmColors.driverMintAction,
+            ),
+            SizedBox(height: AsmSpacing.space16),
+            Text(
+              'Shift check submitted.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: AsmSpacing.space8),
+            Text(
+              'You are now online.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AsmColors.driverTextSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

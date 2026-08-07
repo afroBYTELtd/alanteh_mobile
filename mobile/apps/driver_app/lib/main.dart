@@ -1103,6 +1103,7 @@ DriverDutyGateway? _driverDutyGatewayFor({
       baseUrl: baseUrl!,
       tokenProvider: _StoredAccessTokenProvider(tokenStore),
     ),
+    tokenStore: tokenStore,
     refreshAccessToken: refreshAccessToken,
   );
 }

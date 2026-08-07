@@ -74,7 +74,7 @@ class DriverReadinessContent extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space8),
           const Text(
-            'Complete all four checks before starting your shift.',
+            'Complete these checks once before your first trip of the day.',
             style: TextStyle(
               color: AsmColors.driverTextSecondary,
               height: 1.4,

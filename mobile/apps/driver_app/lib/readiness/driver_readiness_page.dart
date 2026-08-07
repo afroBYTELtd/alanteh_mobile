@@ -150,7 +150,7 @@ class _DriverReadinessPageState
       return;
     }
 
-    Navigator.of(context).pop(true);
+    Navigator.of(context).pop(disposition);
   }
 
   Future<void> _openConcern() async {
