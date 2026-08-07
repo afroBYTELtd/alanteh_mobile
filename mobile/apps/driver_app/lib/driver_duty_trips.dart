@@ -404,6 +404,8 @@ final class DriverDutySummary {
     this.assignedTripCount,
     this.dutyStatus,
     this.dutySince,
+    this.shiftCheckToday = false,
+    this.shiftCheckTodayReference,
   });
 
   factory DriverDutySummary.empty() => const DriverDutySummary();
@@ -418,25 +420,13 @@ final class DriverDutySummary {
   final int? assignedTripCount;
   final String? dutyStatus;
   final DateTime? dutySince;
+  final bool shiftCheckToday;
+  final String? shiftCheckTodayReference;
 
   bool get hasOperationalDutyStatus =>
       dutyStatus == 'online' || dutyStatus == 'offline';
 
   bool get isOnline => dutyStatus == 'online';
-
-  bool shiftCheckCompletedOnCalendarDay(DateTime deviceNow) {
-    final since = dutySince;
-    if (since == null) {
-      return false;
-    }
-
-    final localSince = since.toLocal();
-    final localNow = deviceNow.toLocal();
-
-    return localSince.year == localNow.year &&
-        localSince.month == localNow.month &&
-        localSince.day == localNow.day;
-  }
 
   DriverDutySummary withDutyTransition(DriverDutyTransition transition) {
     return DriverDutySummary(
@@ -450,6 +440,8 @@ final class DriverDutySummary {
       assignedTripCount: assignedTripCount,
       dutyStatus: transition.dutyStatus,
       dutySince: transition.since,
+      shiftCheckToday: shiftCheckToday,
+      shiftCheckTodayReference: shiftCheckTodayReference,
     );
   }
 
@@ -499,6 +491,10 @@ final class DriverDutySummary {
         final value = _firstString(map, const ['duty_since']);
         return value == null ? null : DateTime.tryParse(value);
       }(),
+      shiftCheckToday: _firstBool(map, const ['shift_check_today']) ?? false,
+      shiftCheckTodayReference: _firstString(map, const [
+        'shift_check_today_reference',
+      ]),
     );
   }
 }

@@ -16,6 +16,28 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final now = DateTime(2026, 8, 7, 8);
 
+  test('test_shift_check_today_reference_parsed_correctly', () {
+    final summary = DriverDutySummary.fromJson(const <String, Object?>{
+      'duty_status': 'offline',
+      'shift_check_today': true,
+      'shift_check_today_reference': 'SC-QA-DRV-001-20260807',
+    });
+
+    expect(summary.shiftCheckToday, isTrue);
+    expect(summary.shiftCheckTodayReference, 'SC-QA-DRV-001-20260807');
+  });
+
+  test('test_shift_check_today_null_treated_as_false', () {
+    final summary = DriverDutySummary.fromJson(const <String, Object?>{
+      'duty_status': 'offline',
+      'shift_check_today': null,
+      'shift_check_today_reference': null,
+    });
+
+    expect(summary.shiftCheckToday, isFalse);
+    expect(summary.shiftCheckTodayReference, isNull);
+  });
+
   testWidgets('test_first_shift_check_today_transitions_to_online_directly', (
     tester,
   ) async {
@@ -24,6 +46,7 @@ void main() {
         driverReference: 'DRV-001',
         dutyStatus: 'offline',
         dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
       ),
     );
     final queue = _MemoryQueue();
@@ -33,6 +56,8 @@ void main() {
           driverReference: 'DRV-001',
           dutyStatus: 'online',
           dutySince: now,
+          shiftCheckToday: true,
+          shiftCheckTodayReference: 'SC-QA-DRV-001-20260807',
         );
       },
     );
@@ -92,13 +117,14 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
-  testWidgets('test_returning_online_same_day_skips_shift_check_screen', (
+  testWidgets('test_shift_check_today_true_skips_shift_check_screen', (
     tester,
   ) async {
     final gateway = _MutableDutyGateway(
       DriverDutySummary(
         dutyStatus: 'offline',
         dutySince: now.subtract(const Duration(hours: 1)),
+        shiftCheckToday: true,
       ),
     );
 
@@ -115,6 +141,52 @@ void main() {
     expect(find.text('START SHIFT CHECK'), findsNothing);
   });
 
+  testWidgets('test_shift_check_today_false_shows_shift_check_screen', (
+    tester,
+  ) async {
+    final gateway = _MutableDutyGateway(
+      DriverDutySummary(
+        dutyStatus: 'offline',
+        dutySince: now.subtract(const Duration(days: 1)),
+        shiftCheckToday: false,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('driver-shift-readiness-screen')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_duty_since_not_used_for_shift_check_inference', (
+    tester,
+  ) async {
+    final gateway = _MutableDutyGateway(
+      DriverDutySummary(
+        dutyStatus: 'offline',
+        dutySince: now,
+        shiftCheckToday: false,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _testApp(DriverShell(driverDutyGateway: gateway, deviceNow: () => now)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('driver-shift-readiness-screen')),
+      findsOneWidget,
+      reason:
+          "Today's duty_since must not imply that today's shift check exists.",
+    );
+  });
+
   testWidgets('test_go_offline_calls_duty_endpoint_with_offline', (
     tester,
   ) async {
@@ -122,6 +194,7 @@ void main() {
       DriverDutySummary(
         dutyStatus: 'online',
         dutySince: now.subtract(const Duration(minutes: 30)),
+        shiftCheckToday: true,
       ),
       transitionNow: now,
     );
@@ -146,6 +219,7 @@ void main() {
       DriverDutySummary(
         dutyStatus: 'offline',
         dutySince: now.subtract(const Duration(minutes: 30)),
+        shiftCheckToday: true,
       ),
       transitionNow: now,
     );
@@ -172,6 +246,7 @@ void main() {
         DriverDutySummary(
           dutyStatus: 'offline',
           dutySince: now.subtract(const Duration(hours: 2)),
+          shiftCheckToday: true,
         ),
       );
 
@@ -193,6 +268,7 @@ void main() {
       DriverDutySummary(
         dutyStatus: 'offline',
         dutySince: now.subtract(const Duration(minutes: 10)),
+        shiftCheckToday: true,
       ),
     );
 
@@ -213,6 +289,7 @@ void main() {
       DriverDutySummary(
         dutyStatus: 'online',
         dutySince: now.subtract(const Duration(minutes: 5)),
+        shiftCheckToday: true,
       ),
     );
 
@@ -241,6 +318,7 @@ void main() {
       DriverDutySummary(
         dutyStatus: 'offline',
         dutySince: now.subtract(const Duration(hours: 3)),
+        shiftCheckToday: true,
       ),
     );
 
