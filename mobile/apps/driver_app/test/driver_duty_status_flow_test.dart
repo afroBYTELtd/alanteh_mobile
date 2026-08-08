@@ -18,26 +18,60 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final now = DateTime(2026, 8, 7, 8);
 
-  test('test_shift_check_today_reference_parsed_correctly', () {
+  test('test_nested_offline_no_check_decodes_correctly', () {
     final summary = DriverDutySummary.fromJson(const <String, Object?>{
-      'duty_status': 'offline',
-      'shift_check_today': true,
-      'shift_check_today_reference': 'SC-QA-DRV-001-20260807',
+      'duty': <String, Object?>{
+        'duty_status': 'offline',
+        'shift_check_today': false,
+      },
     });
 
+    expect(summary.dutyStatus, 'offline');
+    expect(summary.shiftCheckToday, isFalse);
+  });
+
+  test('test_nested_online_with_check_decodes_correctly', () {
+    final summary = DriverDutySummary.fromJson(const <String, Object?>{
+      'duty': <String, Object?>{
+        'duty_status': 'online',
+        'shift_check_today': true,
+        'shift_check_today_reference': 'SC-QA-DRV-001-20260807',
+      },
+    });
+
+    expect(summary.dutyStatus, 'online');
     expect(summary.shiftCheckToday, isTrue);
     expect(summary.shiftCheckTodayReference, 'SC-QA-DRV-001-20260807');
   });
 
-  test('test_shift_check_today_null_treated_as_false', () {
+  test('test_nested_duty_since_decodes_correctly', () {
     final summary = DriverDutySummary.fromJson(const <String, Object?>{
-      'duty_status': 'offline',
-      'shift_check_today': null,
-      'shift_check_today_reference': null,
+      'duty': <String, Object?>{
+        'duty_since': '2026-08-07T23:35:37Z',
+      },
     });
 
+    expect(summary.dutySince, DateTime.parse('2026-08-07T23:35:37Z'));
+  });
+
+  test('test_top_level_duty_status_not_used', () {
+    final summary = DriverDutySummary.fromJson(const <String, Object?>{
+      'duty_status': 'online',
+      'duty': <String, Object?>{
+        'duty_status': 'offline',
+      },
+    });
+
+    expect(summary.dutyStatus, 'offline');
+  });
+
+  test('test_null_duty_object_produces_safe_defaults', () {
+    final summary = DriverDutySummary.fromJson(const <String, Object?>{
+      'duty': null,
+    });
+
+    expect(summary.dutyStatus, isNull);
     expect(summary.shiftCheckToday, isFalse);
-    expect(summary.shiftCheckTodayReference, isNull);
   });
 
   testWidgets(
