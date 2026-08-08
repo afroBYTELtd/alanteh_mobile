@@ -486,13 +486,13 @@ final class DriverDutySummary {
       ]),
       activeTripCount: _firstInt(duty, const ['active_trip_count']),
       assignedTripCount: _firstInt(duty, const ['assigned_trip_count']),
-      dutyStatus: _firstString(map, const ['duty_status']),
+      dutyStatus: _firstString(duty, const ['duty_status']),
       dutySince: () {
-        final value = _firstString(map, const ['duty_since']);
+        final value = _firstString(duty, const ['duty_since']);
         return value == null ? null : DateTime.tryParse(value);
       }(),
-      shiftCheckToday: _firstBool(map, const ['shift_check_today']) ?? false,
-      shiftCheckTodayReference: _firstString(map, const [
+      shiftCheckToday: _firstBool(duty, const ['shift_check_today']) ?? false,
+      shiftCheckTodayReference: _firstString(duty, const [
         'shift_check_today_reference',
       ]),
     );
