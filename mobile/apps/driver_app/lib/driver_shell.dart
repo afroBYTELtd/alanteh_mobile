@@ -15,6 +15,47 @@ import 'readiness/driver_shift_check_submission.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
 import 'shift/driver_shift_history.dart';
 
+void _startupGateDiag(String message) {
+  debugPrint('STARTUP_GATE_DIAG $message');
+}
+
+void _startupGateDiagBoolTransition({
+  required String field,
+  required bool oldValue,
+  required bool newValue,
+  required String reason,
+}) {
+  _startupGateDiag(
+    'transition field=$field old=$oldValue new=$newValue reason=$reason',
+  );
+}
+
+void _startupGateDiagIndexTransition({
+  required int oldValue,
+  required int newValue,
+  required String reason,
+}) {
+  _startupGateDiag(
+    'transition field=selected_index '
+    'old=$oldValue new=$newValue reason=$reason',
+  );
+}
+
+void _startupGateDiagDutySummary(
+  DriverDutySummary? summary, {
+  required String reason,
+}) {
+  _startupGateDiag(
+    'duty_summary_assignment reason=$reason '
+    'duty_status=${summary?.dutyStatus ?? 'null'} '
+    'shift_check_today=${summary?.shiftCheckToday ?? 'null'}',
+  );
+}
+
+String _startupGateDiagSanitizedErrorMessage(Object error) {
+  return 'sanitized_exception_details_redacted';
+}
+
 class DriverShell extends StatefulWidget {
   const DriverShell({
     this.configuration = AsmAppConfig.localGhana,
@@ -70,6 +111,14 @@ class _DriverShellState extends State<DriverShell> {
   void initState() {
     super.initState();
 
+    _startupGateDiag(
+      'shell_init '
+      'pending=$_startupShiftCheckNavigationPending '
+      'considered=$_startupShiftCheckConsidered '
+      'duty_loading=$_dutyLoading '
+      'selected_index=$_selectedIndex',
+    );
+
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
       unawaited(controller.startAutomaticSync());
@@ -84,6 +133,16 @@ class _DriverShellState extends State<DriverShell> {
   void didUpdateWidget(covariant DriverShell oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    final gatewayIdentityChanged =
+        oldWidget.driverDutyGateway != widget.driverDutyGateway;
+    _startupGateDiag(
+      'did_update_widget invocation '
+      'gateway_identity_changed=$gatewayIdentityChanged '
+      'pending=$_startupShiftCheckNavigationPending '
+      'considered=$_startupShiftCheckConsidered '
+      'duty_loading=$_dutyLoading',
+    );
+
     if (oldWidget.driverShiftCheckController !=
         widget.driverShiftCheckController) {
       final previous = oldWidget.driverShiftCheckController;
@@ -97,20 +156,53 @@ class _DriverShellState extends State<DriverShell> {
       }
     }
 
-    if (oldWidget.driverDutyGateway != widget.driverDutyGateway) {
+    if (gatewayIdentityChanged) {
+      final oldConsidered = _startupShiftCheckConsidered;
+      final oldPending = _startupShiftCheckNavigationPending;
       _startupShiftCheckConsidered = false;
       _startupShiftCheckNavigationPending = false;
+      _startupGateDiagBoolTransition(
+        field: 'startup_shift_check_considered',
+        oldValue: oldConsidered,
+        newValue: _startupShiftCheckConsidered,
+        reason: 'did_update_widget_gateway_identity_change',
+      );
+      _startupGateDiagBoolTransition(
+        field: 'startup_shift_check_navigation_pending',
+        oldValue: oldPending,
+        newValue: _startupShiftCheckNavigationPending,
+        reason: 'did_update_widget_gateway_identity_change',
+      );
 
       if (widget.driverDutyGateway == null) {
+        final oldDutyLoading = _dutyLoading;
         setState(() {
           _dutySummary = null;
+          _startupGateDiagDutySummary(
+            _dutySummary,
+            reason: 'did_update_widget_gateway_removed',
+          );
           _dutyError = null;
           _dutyLoading = false;
+          _startupGateDiagBoolTransition(
+            field: 'duty_loading',
+            oldValue: oldDutyLoading,
+            newValue: _dutyLoading,
+            reason: 'did_update_widget_gateway_removed',
+          );
         });
       } else {
         unawaited(_loadDuty());
       }
     }
+
+    _startupGateDiag(
+      'did_update_widget after '
+      'gateway_identity_changed=$gatewayIdentityChanged '
+      'pending=$_startupShiftCheckNavigationPending '
+      'considered=$_startupShiftCheckConsidered '
+      'duty_loading=$_dutyLoading',
+    );
   }
 
   @override
@@ -125,18 +217,35 @@ class _DriverShellState extends State<DriverShell> {
   Future<void> _loadDuty() async {
     final gateway = widget.driverDutyGateway;
     if (gateway == null || _dutyLoading) {
+      _startupGateDiag(
+        'load_duty skipped '
+        'gateway_null=${gateway == null} duty_loading=$_dutyLoading',
+      );
       return;
     }
 
+    final oldDutyLoading = _dutyLoading;
     setState(() {
       _dutyLoading = true;
+      _startupGateDiagBoolTransition(
+        field: 'duty_loading',
+        oldValue: oldDutyLoading,
+        newValue: _dutyLoading,
+        reason: 'load_duty_start',
+      );
       _dutyError = null;
     });
 
     try {
       final duty = await gateway.fetchDuty();
+      _startupGateDiag(
+        'shell_me_decoded_result '
+        'duty_status=${duty.dutyStatus} '
+        'shift_check_today=${duty.shiftCheckToday}',
+      );
 
       if (!mounted) {
+        _startupGateDiag('load_duty success_but_unmounted=true');
         return;
       }
 
@@ -144,65 +253,231 @@ class _DriverShellState extends State<DriverShell> {
           !_startupShiftCheckConsidered &&
           duty.dutyStatus == 'offline' &&
           duty.shiftCheckToday != true;
+      _startupGateDiag(
+        'startup_gate_initial_duty_decision '
+        'required=$startupShiftCheckRequired '
+        'considered=$_startupShiftCheckConsidered '
+        'duty_status=${duty.dutyStatus} '
+        'shift_check_today=${duty.shiftCheckToday}',
+      );
 
+      final previousDutyLoading = _dutyLoading;
+      final previousPending = _startupShiftCheckNavigationPending;
       setState(() {
         _dutySummary = duty;
+        _startupGateDiagDutySummary(
+          _dutySummary,
+          reason: 'shell_load_duty_success',
+        );
         _dutyLoading = false;
+        _startupGateDiagBoolTransition(
+          field: 'duty_loading',
+          oldValue: previousDutyLoading,
+          newValue: _dutyLoading,
+          reason: 'load_duty_success',
+        );
         _dutyError = null;
         _startupShiftCheckNavigationPending = startupShiftCheckRequired;
+        _startupGateDiagBoolTransition(
+          field: 'startup_shift_check_navigation_pending',
+          oldValue: previousPending,
+          newValue: _startupShiftCheckNavigationPending,
+          reason: 'initial_duty_result_decision',
+        );
       });
 
       _openStartupShiftCheckIfRequired();
     } on Object catch (error) {
+      _startupGateDiag(
+        'load_duty failure '
+        'type=${error.runtimeType} '
+        'message=${_startupGateDiagSanitizedErrorMessage(error)}',
+      );
       if (!mounted) {
         return;
       }
 
+      final previousDutyLoading = _dutyLoading;
       setState(() {
         _dutyLoading = false;
+        _startupGateDiagBoolTransition(
+          field: 'duty_loading',
+          oldValue: previousDutyLoading,
+          newValue: _dutyLoading,
+          reason: 'load_duty_failure',
+        );
         _dutyError = error;
       });
     }
   }
 
   void _openStartupShiftCheckIfRequired() {
+    final gatewayNull = widget.driverDutyGateway == null;
+    final summaryNull = _dutySummary == null;
+    final alreadyConsidered = _startupShiftCheckConsidered;
+
+    _startupGateDiag(
+      'open_startup entry '
+      'already_considered=$alreadyConsidered '
+      'gateway_null=$gatewayNull '
+      'summary_null=$summaryNull '
+      'pending=$_startupShiftCheckNavigationPending '
+      'duty_loading=$_dutyLoading '
+      'selected_index=$_selectedIndex '
+      'duty_status=${_dutySummary?.dutyStatus ?? 'null'} '
+      'shift_check_today=${_dutySummary?.shiftCheckToday ?? 'null'}',
+    );
+    _startupGateDiag(
+      'open_startup guard_already_considered result=$alreadyConsidered',
+    );
+    _startupGateDiag(
+      'open_startup guard_gateway_null result=$gatewayNull',
+    );
+    _startupGateDiag(
+      'open_startup guard_summary_null result=$summaryNull',
+    );
+
     if (_startupShiftCheckConsidered ||
         widget.driverDutyGateway == null ||
         _dutySummary == null) {
+      final skipReason = alreadyConsidered
+          ? 'already_considered'
+          : gatewayNull
+          ? 'driver_duty_gateway_null'
+          : 'duty_summary_null';
+      _startupGateDiag(
+        'open_startup navigation_required=NO '
+        'schedule_readiness=NO skip_reason=$skipReason',
+      );
       return;
     }
 
+    final oldConsidered = _startupShiftCheckConsidered;
     _startupShiftCheckConsidered = true;
+    _startupGateDiagBoolTransition(
+      field: 'startup_shift_check_considered',
+      oldValue: oldConsidered,
+      newValue: _startupShiftCheckConsidered,
+      reason: 'open_startup_mark_considered',
+    );
+
+    final navigationRequired =
+        _dutySummary!.dutyStatus == 'offline' && !_shiftCheckCompletedToday;
+    _startupGateDiag(
+      'open_startup decision '
+      'navigation_required=$navigationRequired '
+      'duty_status=${_dutySummary!.dutyStatus} '
+      'shift_check_today=${_dutySummary!.shiftCheckToday} '
+      'pending=$_startupShiftCheckNavigationPending '
+      'selected_index=$_selectedIndex',
+    );
 
     if (_dutySummary!.dutyStatus == 'offline' && !_shiftCheckCompletedToday) {
+      _startupGateDiag(
+        'open_startup schedule_readiness=YES skip_reason=none',
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        _startupGateDiag(
+          'post_frame_callback entered '
+          'mounted=$mounted '
+          'pending=$_startupShiftCheckNavigationPending '
+          'considered=$_startupShiftCheckConsidered',
+        );
         if (!mounted) {
+          _startupGateDiag(
+            'post_frame_callback guard_mounted result=false '
+            'open_readiness=NO skip_reason=unmounted',
+          );
           return;
         }
+
+        final shiftCheckCompletedToday = _shiftCheckCompletedToday;
+        _startupGateDiag(
+          'post_frame_callback state '
+          'selected_index=$_selectedIndex '
+          'shift_check_completed_today=$shiftCheckCompletedToday '
+          'pending=$_startupShiftCheckNavigationPending '
+          'considered=$_startupShiftCheckConsidered',
+        );
+        _startupGateDiag(
+          'post_frame_callback guard_selected_index_nonzero '
+          'result=${_selectedIndex != 0}',
+        );
+        _startupGateDiag(
+          'post_frame_callback guard_shift_check_completed '
+          'result=$shiftCheckCompletedToday',
+        );
 
         if (_selectedIndex != 0 || _shiftCheckCompletedToday) {
+          final skipReason = _selectedIndex != 0
+              ? 'selected_index_nonzero'
+              : 'shift_check_completed_today';
+          final oldPending = _startupShiftCheckNavigationPending;
           setState(() {
             _startupShiftCheckNavigationPending = false;
+            _startupGateDiagBoolTransition(
+              field: 'startup_shift_check_navigation_pending',
+              oldValue: oldPending,
+              newValue: _startupShiftCheckNavigationPending,
+              reason: 'post_frame_guard_clear_$skipReason',
+            );
           });
+          _startupGateDiag(
+            'post_frame_callback open_readiness=NO '
+            'skip_reason=$skipReason',
+          );
           return;
         }
 
+        _startupGateDiag(
+          'post_frame_callback open_readiness=YES skip_reason=none',
+        );
         unawaited(
           _openReadiness().whenComplete(() {
+            _startupGateDiag(
+              'post_frame_callback readiness_future_completed '
+              'mounted=$mounted',
+            );
             if (!mounted) {
+              _startupGateDiag(
+                'post_frame_callback readiness_clear_skipped '
+                'reason=unmounted',
+              );
               return;
             }
+            final oldPending = _startupShiftCheckNavigationPending;
             setState(() {
               _startupShiftCheckNavigationPending = false;
+              _startupGateDiagBoolTransition(
+                field: 'startup_shift_check_navigation_pending',
+                oldValue: oldPending,
+                newValue: _startupShiftCheckNavigationPending,
+                reason: 'readiness_completion_or_failure_clear',
+              );
             });
           }),
         );
       });
+    } else {
+      final skipReason = _dutySummary!.dutyStatus != 'offline'
+          ? 'duty_status_not_offline'
+          : 'shift_check_completed_today';
+      _startupGateDiag(
+        'open_startup schedule_readiness=NO skip_reason=$skipReason',
+      );
     }
   }
 
   void _openAssignedTrips() {
-    setState(() => _selectedIndex = 1);
+    final oldSelectedIndex = _selectedIndex;
+    setState(() {
+      _selectedIndex = 1;
+      _startupGateDiagIndexTransition(
+        oldValue: oldSelectedIndex,
+        newValue: _selectedIndex,
+        reason: 'open_assigned_trips',
+      );
+    });
   }
 
   DriverShiftRecord get _currentShift {
@@ -241,44 +516,102 @@ class _DriverShellState extends State<DriverShell> {
   }
 
   Future<void> _openReadiness() async {
+    _startupGateDiag(
+      'open_readiness invoked '
+      'shift_check_completed_today=$_shiftCheckCompletedToday '
+      'pending=$_startupShiftCheckNavigationPending '
+      'considered=$_startupShiftCheckConsidered '
+      'selected_index=$_selectedIndex',
+    );
+
     if (_shiftCheckCompletedToday) {
+      _startupGateDiag(
+        'open_readiness early_return=YES '
+        'reason=shift_check_completed_today completion=early_return',
+      );
       return;
     }
 
-    final disposition = await Navigator.of(context)
-        .push<DriverShiftCheckSubmissionDisposition>(
-          MaterialPageRoute<DriverShiftCheckSubmissionDisposition>(
-            builder: (_) => DriverReadinessPage(
-              market: widget.configuration.market,
-              submissionController: widget.driverShiftCheckController,
-              deviceNow: widget.deviceNow,
-              navigationDelay: widget.driverDutyGateway == null
-                  ? const Duration(seconds: 2)
-                  : Duration.zero,
+    DriverShiftCheckSubmissionDisposition? disposition;
+    try {
+      _startupGateDiag('open_readiness navigator_push_about_to_start');
+      final navigation =
+          Navigator.of(context).push<DriverShiftCheckSubmissionDisposition>(
+            MaterialPageRoute<DriverShiftCheckSubmissionDisposition>(
+              builder: (_) => DriverReadinessPage(
+                market: widget.configuration.market,
+                submissionController: widget.driverShiftCheckController,
+                deviceNow: widget.deviceNow,
+                navigationDelay: widget.driverDutyGateway == null
+                    ? const Duration(seconds: 2)
+                    : Duration.zero,
+              ),
             ),
-          ),
-        );
+          );
+      _startupGateDiag(
+        'open_readiness navigator_push_successfully_initiated=YES',
+      );
+      disposition = await navigation;
+      _startupGateDiag(
+        'open_readiness navigator_push_returned '
+        'disposition=${disposition?.name ?? 'null'}',
+      );
+    } on Object catch (error) {
+      _startupGateDiag(
+        'open_readiness failure '
+        'type=${error.runtimeType} '
+        'message=${_startupGateDiagSanitizedErrorMessage(error)}',
+      );
+      _startupGateDiag('open_readiness completion=exception');
+      rethrow;
+    }
 
     if (!mounted || disposition == null) {
+      _startupGateDiag(
+        'open_readiness completion=without_disposition '
+        'mounted=$mounted disposition_null=${disposition == null}',
+      );
       return;
     }
 
     if (widget.driverDutyGateway == null) {
+      final oldSelectedIndex = _selectedIndex;
       setState(() {
         _localChecklistComplete = true;
         _selectedIndex = 0;
+        _startupGateDiagIndexTransition(
+          oldValue: oldSelectedIndex,
+          newValue: _selectedIndex,
+          reason: 'readiness_local_checklist_completion',
+        );
       });
+      _startupGateDiag('open_readiness completion=local_checklist');
       return;
     }
 
     if (disposition != DriverShiftCheckSubmissionDisposition.submitted) {
+      final oldSelectedIndex = _selectedIndex;
       setState(() {
         _selectedIndex = 0;
+        _startupGateDiagIndexTransition(
+          oldValue: oldSelectedIndex,
+          newValue: _selectedIndex,
+          reason: 'readiness_non_submitted_disposition',
+        );
       });
+      _startupGateDiag(
+        'open_readiness completion=non_submitted_disposition '
+        'disposition=${disposition.name}',
+      );
       return;
     }
 
+    _startupGateDiag(
+      'open_readiness submitted_disposition '
+      'confirm_online_after_shift_check=YES',
+    );
     await _confirmOnlineAfterShiftCheck();
+    _startupGateDiag('open_readiness completion=submitted');
   }
 
   Future<void> _confirmOnlineAfterShiftCheck() async {
@@ -287,10 +620,23 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
 
+    final oldDutyLoading = _dutyLoading;
+    final oldSelectedIndex = _selectedIndex;
     setState(() {
       _dutyLoading = true;
+      _startupGateDiagBoolTransition(
+        field: 'duty_loading',
+        oldValue: oldDutyLoading,
+        newValue: _dutyLoading,
+        reason: 'confirm_online_after_shift_check_start',
+      );
       _dutyError = null;
       _selectedIndex = 0;
+      _startupGateDiagIndexTransition(
+        oldValue: oldSelectedIndex,
+        newValue: _selectedIndex,
+        reason: 'confirm_online_after_shift_check_start',
+      );
     });
 
     try {
@@ -301,8 +647,15 @@ class _DriverShellState extends State<DriverShell> {
       }
 
       if (!refreshed.isOnline) {
+        final oldDutyLoading = _dutyLoading;
         setState(() {
           _dutyLoading = false;
+          _startupGateDiagBoolTransition(
+            field: 'duty_loading',
+            oldValue: oldDutyLoading,
+            newValue: _dutyLoading,
+            reason: 'confirm_online_server_not_online',
+          );
           _dutyError = const DriverDutyApiException(
             DriverDutyApiFailureType.badResponse,
             'Driver online status could not be confirmed.',
@@ -311,9 +664,20 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      final oldDutyLoading = _dutyLoading;
       setState(() {
         _dutySummary = refreshed;
+        _startupGateDiagDutySummary(
+          _dutySummary,
+          reason: 'confirm_online_refreshed_summary',
+        );
         _dutyLoading = false;
+        _startupGateDiagBoolTransition(
+          field: 'duty_loading',
+          oldValue: oldDutyLoading,
+          newValue: _dutyLoading,
+          reason: 'confirm_online_success',
+        );
         _dutyError = null;
         _showOnlineTransition = true;
       });
@@ -332,8 +696,15 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      final oldDutyLoading = _dutyLoading;
       setState(() {
         _dutyLoading = false;
+        _startupGateDiagBoolTransition(
+          field: 'duty_loading',
+          oldValue: oldDutyLoading,
+          newValue: _dutyLoading,
+          reason: 'confirm_online_failure',
+        );
         _dutyError = error;
       });
     }
@@ -376,6 +747,10 @@ class _DriverShellState extends State<DriverShell> {
 
       setState(() {
         _dutySummary = current.withDutyTransition(transition);
+        _startupGateDiagDutySummary(
+          _dutySummary,
+          reason: 'duty_status_transition',
+        );
         _dutyActionInFlight = false;
         _dutyError = null;
       });
@@ -413,15 +788,39 @@ class _DriverShellState extends State<DriverShell> {
   }
 
   Future<void> _signOut() async {
+    final oldDutyLoading = _dutyLoading;
+    final oldConsidered = _startupShiftCheckConsidered;
+    final oldSelectedIndex = _selectedIndex;
     setState(() {
       _localChecklistComplete = false;
       _dutySummary = null;
+      _startupGateDiagDutySummary(
+        _dutySummary,
+        reason: 'sign_out',
+      );
       _dutyError = null;
       _dutyLoading = false;
+      _startupGateDiagBoolTransition(
+        field: 'duty_loading',
+        oldValue: oldDutyLoading,
+        newValue: _dutyLoading,
+        reason: 'sign_out',
+      );
       _dutyActionInFlight = false;
       _showOnlineTransition = false;
       _startupShiftCheckConsidered = false;
+      _startupGateDiagBoolTransition(
+        field: 'startup_shift_check_considered',
+        oldValue: oldConsidered,
+        newValue: _startupShiftCheckConsidered,
+        reason: 'sign_out',
+      );
       _selectedIndex = 0;
+      _startupGateDiagIndexTransition(
+        oldValue: oldSelectedIndex,
+        newValue: _selectedIndex,
+        reason: 'sign_out',
+      );
     });
     await widget.onSignOut?.call();
   }
@@ -489,7 +888,15 @@ class _DriverShellState extends State<DriverShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
+          final oldSelectedIndex = _selectedIndex;
+          setState(() {
+            _selectedIndex = index;
+            _startupGateDiagIndexTransition(
+              oldValue: oldSelectedIndex,
+              newValue: _selectedIndex,
+              reason: 'bottom_navigation_destination_selected',
+            );
+          });
         },
         destinations: const [
           NavigationDestination(

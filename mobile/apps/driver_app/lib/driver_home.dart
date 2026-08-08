@@ -41,6 +41,11 @@ class DriverHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint(
+      'STARTUP_GATE_DIAG driver_home_build '
+      'is_on_shift=$isOnShift '
+      'shift_check_completed_today=$shiftCheckCompletedToday',
+    );
     return AsmScreenSurface(
       scrollable: true,
       expandToViewport: true,
