@@ -373,7 +373,7 @@ class _PassengerRegistrationFlowState extends State<PassengerRegistrationFlow> {
         ),
         const SizedBox(height: AsmSpacing.space8),
         Text(
-          'We will notify you when it is approved — usually within a few hours.',
+          'We will notify you when it is approved — usually within a few minutes.',
           style: TextStyle(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
             height: 1.45,
