@@ -7,6 +7,8 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'auth/passenger_otp_verification_screen.dart';
+import 'auth/passenger_registration.dart';
+import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'network/ghana_network_resilience.dart';
@@ -33,6 +35,9 @@ class PassengerApp extends StatelessWidget {
     this.showSplash = false,
     this.enableNetworkResilience = false,
     this.rideRequestSubmitter,
+    this.registrationSubmitter,
+    this.registrationIdempotencyKeyFactory =
+        PassengerRegistrationIdempotencyKey.generate,
     this.authService,
     this.authTokenStore,
     this.paymentRatingRepository,
@@ -45,6 +50,8 @@ class PassengerApp extends StatelessWidget {
   final bool showSplash;
   final bool enableNetworkResilience;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final PassengerRegistrationSubmitter? registrationSubmitter;
+  final String Function() registrationIdempotencyKeyFactory;
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
@@ -61,6 +68,13 @@ class PassengerApp extends StatelessWidget {
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
+    final resolvedRegistrationSubmitter =
+        registrationSubmitter ??
+        (AsmApiBaseUrl.isUsable(apiBaseUrl)
+            ? ApiPassengerRegistrationSubmitter.withDefaultClient(
+                baseUrl: apiBaseUrl,
+              )
+            : const _UnconfiguredPassengerRegistrationSubmitter());
     final resolvedRideRequestHistoryRepository =
         ApiPassengerRideRequestHistoryRepository.withDefaultClient(
           tokenStore: tokenStore,
@@ -92,6 +106,9 @@ class PassengerApp extends StatelessWidget {
             authService: resolvedAuthService,
             authTokenStore: tokenStore,
             rideRequestSubmitter: resolvedRideRequestSubmitter,
+            registrationSubmitter: resolvedRegistrationSubmitter,
+            registrationIdempotencyKeyFactory:
+                registrationIdempotencyKeyFactory,
             rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
@@ -214,6 +231,9 @@ class PassengerLoginShell extends StatefulWidget {
     this.authService,
     this.authTokenStore,
     this.rideRequestSubmitter,
+    this.registrationSubmitter,
+    this.registrationIdempotencyKeyFactory =
+        PassengerRegistrationIdempotencyKey.generate,
     required this.rideRequestHistoryRepository,
     required this.paymentRatingRepository,
     this.fareEstimateRepository,
@@ -225,6 +245,8 @@ class PassengerLoginShell extends StatefulWidget {
   final AuthService? authService;
   final AuthTokenStore? authTokenStore;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
+  final PassengerRegistrationSubmitter? registrationSubmitter;
+  final String Function() registrationIdempotencyKeyFactory;
   final PassengerRideRequestHistoryRepository rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
@@ -243,8 +265,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   String? _passengerPhoneNumber;
   late final AuthService _authService;
   late final PassengerRideRequestSubmitter _rideRequestSubmitter;
+  late final PassengerRegistrationSubmitter _registrationSubmitter;
 
   bool _localQaOpened = false;
+  bool _registrationOpen = false;
   bool _signedIn = false;
   bool _otpRequired = false;
   bool _isSigningIn = false;
@@ -268,6 +292,13 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           tokenStore: _tokenStore,
           baseUrl: apiBaseUrl,
         );
+    _registrationSubmitter =
+        widget.registrationSubmitter ??
+        (AsmApiBaseUrl.isUsable(apiBaseUrl)
+            ? ApiPassengerRegistrationSubmitter.withDefaultClient(
+                baseUrl: apiBaseUrl,
+              )
+            : const _UnconfiguredPassengerRegistrationSubmitter());
     _restoreStoredSession();
   }
 
@@ -356,6 +387,26 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
+  }
+
+  void _openRegistration() {
+    if (_isSigningIn) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _pinController.clear();
+    setState(() {
+      _registrationOpen = true;
+      _loginErrorMessage = null;
+    });
+  }
+
+  void _closeRegistration() {
+    setState(() {
+      _registrationOpen = false;
+      _loginErrorMessage = null;
+    });
   }
 
   Future<void> _signIn() async {
@@ -561,6 +612,15 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       'Service is temporarily unavailable. Please try again later.';
   static const _unknownApiErrorMessage =
       'Something went wrong. Please try again.';
+  static const _pendingApprovalLoginMessage =
+      'Your account is being reviewed.\n'
+      'Please wait for approval before signing in.';
+  static const _rejectedLoginMessage =
+      'Your registration was not approved.\n'
+      'Please contact us at contact@alanteh.io';
+  static const _inactiveLoginMessage =
+      'This account is not active.\n'
+      'Please contact us at contact@alanteh.io';
 
   String _passengerLoginErrorMessage(AuthException? error) {
     if (error == null) {
@@ -587,7 +647,12 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       }
 
       if (cause.statusCode == 403) {
-        return _passengerAccountMismatchMessage;
+        return switch (_accountStatusFromApiException(cause)) {
+          'pending_approval' => _pendingApprovalLoginMessage,
+          'rejected' => _rejectedLoginMessage,
+          'inactive' => _inactiveLoginMessage,
+          _ => _passengerAccountMismatchMessage,
+        };
       }
 
       if (cause.statusCode == 401 || cause.statusCode == 400) {
@@ -608,6 +673,17 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     }
 
     return _incorrectPhoneOrPinMessage;
+  }
+
+  String? _accountStatusFromApiException(AsmApiException error) {
+    final cause = error.cause;
+    if (cause is Map) {
+      final status = cause['account_status'];
+      if (status is String && status.trim().isNotEmpty) {
+        return status.trim();
+      }
+    }
+    return null;
   }
 
   String? _phoneNumberFromSession(AuthSession? session) {
@@ -640,6 +716,14 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         phoneNumber: _passengerPhoneNumber ?? _phoneController.text.trim(),
         onVerified: _completeOtpVerification,
         onUseAnotherNumber: _useAnotherPhoneNumber,
+      );
+    }
+
+    if (_registrationOpen) {
+      return PassengerRegistrationFlow(
+        submitter: _registrationSubmitter,
+        idempotencyKeyFactory: widget.registrationIdempotencyKeyFactory,
+        onBackToSignIn: _closeRegistration,
       );
     }
 
@@ -767,6 +851,14 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
                     ),
                     const SizedBox(height: AsmSpacing.space8),
                     AsmPrimaryActionButton(
+                      key: const Key('passenger-register-link'),
+                      onPressed: _isSigningIn ? null : _openRegistration,
+                      variant: AsmActionButtonVariant.text,
+                      label: "Don't have an account? Register",
+                      minimumHeight: 48,
+                    ),
+                    const SizedBox(height: AsmSpacing.space8),
+                    AsmPrimaryActionButton(
                       key: const Key('passenger-clear-form'),
                       onPressed: _isSigningIn ? null : _clearForm,
                       variant: AsmActionButtonVariant.text,
@@ -886,6 +978,24 @@ AuthService _authServiceFor({
     tokenStore: tokenStore,
     appContext: appContext,
   );
+}
+
+class _UnconfiguredPassengerRegistrationSubmitter
+    implements PassengerRegistrationSubmitter {
+  const _UnconfiguredPassengerRegistrationSubmitter();
+
+  @override
+  Future<PassengerRegistrationResult> submit({
+    required String phoneNumber,
+    required String fullName,
+    required String pin,
+    required String idempotencyKey,
+  }) async {
+    throw const PassengerRegistrationException(
+      type: PassengerRegistrationFailureType.invalidResponse,
+      message: AsmApiClient.connectionNotConfiguredMessage,
+    );
+  }
 }
 
 class _UnconfiguredAuthApiGateway implements AuthApiGateway {
