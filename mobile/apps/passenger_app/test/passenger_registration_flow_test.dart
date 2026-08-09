@@ -35,6 +35,16 @@ void main() {
 
     expect(find.text('Account submitted'), findsOneWidget);
     expect(find.text('Your account is being reviewed.'), findsOneWidget);
+    expect(
+      find.text(
+        'We will notify you when it is approved — usually within a few minutes.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('usually within a few hours'),
+      findsNothing,
+    );
     expect(find.text('Reference: REG-ABC1234567'), findsOneWidget);
     expect(submitter.calls, hasLength(1));
   });
