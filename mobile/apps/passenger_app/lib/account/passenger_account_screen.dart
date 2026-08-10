@@ -87,60 +87,6 @@ class PassengerAccountScreen extends StatelessWidget {
     );
   }
 
-  void _openSettings(BuildContext context) {
-    final customSettings = onOpenSettings;
-
-    if (customSettings != null) {
-      customSettings();
-      return;
-    }
-
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          key: const Key('passenger-account-settings-sheet'),
-          padding: const EdgeInsets.fromLTRB(
-            AsmSpacing.space20,
-            AsmSpacing.space8,
-            AsmSpacing.space20,
-            AsmSpacing.space24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Settings',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: AsmSpacing.space16),
-              const ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.notifications_outlined),
-                title: Text('Notifications'),
-                trailing: Text('On'),
-              ),
-              const ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.language_outlined),
-                title: Text('Language'),
-                trailing: Text('English'),
-              ),
-              const SizedBox(height: AsmSpacing.space12),
-              FilledButton(
-                key: const Key('passenger-account-settings-close'),
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Done'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -311,9 +257,9 @@ class PassengerAccountScreen extends StatelessWidget {
                   key: const Key('passenger-account-settings'),
                   leading: const Icon(Icons.settings_outlined),
                   title: const Text('Settings'),
-                  subtitle: const Text('Notifications, language'),
+                  subtitle: const Text('Notifications, legal, account'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openSettings(context),
+                  onTap: onOpenSettings,
                 ),
               ],
             ),

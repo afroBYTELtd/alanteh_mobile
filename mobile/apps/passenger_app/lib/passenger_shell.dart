@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'account/passenger_account_screen.dart';
 import 'account/passenger_payment_setup_screen.dart';
+import 'account/passenger_settings_screen.dart';
 import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
@@ -25,6 +26,11 @@ class PassengerShell extends StatefulWidget {
     this.phoneNumber,
     this.onSignInRequired,
     this.onSignOut,
+    this.settingsPreferenceStore,
+    this.legalLinkOpener,
+    this.deleteAccountSubmitter,
+    this.deleteAccountLiveEnabled = false,
+    this.onAccountDeletionRequested,
     super.key,
   });
 
@@ -37,6 +43,11 @@ class PassengerShell extends StatefulWidget {
   final String? phoneNumber;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
+  final PassengerSettingsPreferenceStore? settingsPreferenceStore;
+  final PassengerLegalLinkOpener? legalLinkOpener;
+  final PassengerDeleteAccountSubmitter? deleteAccountSubmitter;
+  final bool deleteAccountLiveEnabled;
+  final Future<void> Function()? onAccountDeletionRequested;
 
   @override
   State<PassengerShell> createState() => _PassengerShellState();
@@ -142,6 +153,31 @@ class _PassengerShellState extends State<PassengerShell> {
     }
 
     setState(() => _paymentNetwork = selected);
+  }
+
+  Future<void> _openSettings() {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerSettingsScreen(
+          preferenceStore:
+              widget.settingsPreferenceStore ??
+              const PlatformPassengerSettingsPreferenceStore(),
+          legalLinkOpener:
+              widget.legalLinkOpener ??
+              const PlatformPassengerLegalLinkOpener(),
+          deleteAccountSubmitter:
+              widget.deleteAccountSubmitter ??
+              const UnavailablePassengerDeleteAccountSubmitter(),
+          deleteAccountLiveEnabled: widget.deleteAccountLiveEnabled,
+          onAccountDeletionRequested: _completeAccountDeletionFromSettings,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _completeAccountDeletionFromSettings() async {
+    await Navigator.of(context).maybePop();
+    await (widget.onAccountDeletionRequested ?? _signOut).call();
   }
 
   Future<void> _signOut() async {
@@ -315,6 +351,7 @@ class _PassengerShellState extends State<PassengerShell> {
         paymentMethodLabel: _paymentNetwork.accountLabel,
         onOpenPaymentSetup: _openPaymentSetup,
         onOpenTrips: _openTripsTab,
+        onOpenSettings: _openSettings,
         onSignOut: _signOut,
       ),
     };

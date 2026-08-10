@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'auth/passenger_otp_verification_screen.dart';
 import 'auth/passenger_registration.dart';
+import 'account/passenger_settings_screen.dart';
 import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
@@ -583,6 +584,28 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  Future<void> _completeAccountDeletion() async {
+    await _tokenStore.clearTokens();
+    if (!mounted) {
+      return;
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    _phoneController.clear();
+    _pinController.clear();
+    _formKey.currentState?.reset();
+    setState(() {
+      _localQaOpened = false;
+      _signedIn = false;
+      _otpRequired = false;
+      _passengerPhoneNumber = null;
+      _isSigningIn = false;
+      _loginErrorMessage =
+          '$passengerDeleteAccountSuccessTitle\n'
+          '$passengerDeleteAccountSuccessMessage';
+    });
+  }
+
   Future<void> _signOut() async {
     await _tokenStore.clearTokens();
     if (!mounted) {
@@ -738,6 +761,13 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         phoneNumber: _passengerPhoneNumber,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,
+        deleteAccountSubmitter:
+            ApiPassengerDeleteAccountSubmitter.withDefaultClient(
+              tokenStore: _tokenStore,
+              baseUrl: AsmApiClient.defaultBaseUrl,
+            ),
+        deleteAccountLiveEnabled: passengerDeleteAccountLiveEnabled,
+        onAccountDeletionRequested: _completeAccountDeletion,
       );
     }
 
