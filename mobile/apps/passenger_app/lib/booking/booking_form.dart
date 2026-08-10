@@ -8,6 +8,7 @@ class BookingForm extends StatelessWidget {
     required this.pickupController,
     required this.destinationController,
     required this.assistanceController,
+    required this.passengerNoteController,
     required this.passengerCount,
     required this.onPassengerCountChanged,
     required this.onReview,
@@ -19,6 +20,7 @@ class BookingForm extends StatelessWidget {
   final TextEditingController pickupController;
   final TextEditingController destinationController;
   final TextEditingController assistanceController;
+  final TextEditingController passengerNoteController;
   final int passengerCount;
   final ValueChanged<int> onPassengerCountChanged;
   final VoidCallback onReview;
@@ -174,6 +176,23 @@ class BookingForm extends StatelessWidget {
               }
               return null;
             },
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          TextFormField(
+            key: const Key('booking-passenger-note'),
+            controller: passengerNoteController,
+            minLines: 2,
+            maxLines: 3,
+            maxLength: 160,
+            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+            textInputAction: TextInputAction.done,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Message to driver (optional)',
+              hintText: 'e.g. I am at the side entrance, blue jacket',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: AsmSpacing.space24),
           FilledButton.icon(

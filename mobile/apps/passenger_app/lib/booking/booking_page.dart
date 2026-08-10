@@ -56,6 +56,7 @@ class _BookingPageState extends State<BookingPage> {
   late final TextEditingController _pickupController;
   late final TextEditingController _destinationController;
   final _assistanceController = TextEditingController();
+  final _passengerNoteController = TextEditingController();
 
   int _passengerCount = 1;
   BookingDraft? _draft;
@@ -88,6 +89,7 @@ class _BookingPageState extends State<BookingPage> {
     _pickupController.dispose();
     _destinationController.dispose();
     _assistanceController.dispose();
+    _passengerNoteController.dispose();
     super.dispose();
   }
 
@@ -115,6 +117,7 @@ class _BookingPageState extends State<BookingPage> {
         destinationDescription: _destinationController.text,
         passengerCount: _passengerCount,
         assistanceNote: _assistanceController.text,
+        passengerNote: _passengerNoteController.text,
       );
     });
   }
@@ -275,6 +278,7 @@ class _BookingPageState extends State<BookingPage> {
       _pickupController.clear();
       _destinationController.clear();
       _assistanceController.clear();
+      _passengerNoteController.clear();
       _passengerCount = 1;
       _draft = null;
       _submissionStatus = BookingSubmissionStatus.idle;
@@ -308,6 +312,7 @@ class _BookingPageState extends State<BookingPage> {
                 pickupController: _pickupController,
                 destinationController: _destinationController,
                 assistanceController: _assistanceController,
+                passengerNoteController: _passengerNoteController,
                 passengerCount: _passengerCount,
                 onPassengerCountChanged: (value) {
                   setState(() {

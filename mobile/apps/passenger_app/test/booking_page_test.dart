@@ -62,6 +62,67 @@ void main() {
     );
   });
 
+  testWidgets('test_passenger_note_field_visible_on_booking_form', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1200));
+    await tester.pumpWidget(_bookingTestApp());
+
+    await _scrollUntilKey(tester, const Key('booking-passenger-note'));
+
+    final assistance = find.byKey(const Key('booking-assistance'));
+    final passengerNote = find.byKey(const Key('booking-passenger-note'));
+
+    expect(find.text('Special request (optional)'), findsOneWidget);
+    expect(find.text('Message to driver (optional)'), findsOneWidget);
+    expect(
+      find.text('e.g. I am at the side entrance, blue jacket'),
+      findsOneWidget,
+    );
+    expect(passengerNote, findsOneWidget);
+    expect(
+      tester.getTopLeft(passengerNote).dy,
+      greaterThan(tester.getTopLeft(assistance).dy),
+    );
+  });
+
+  testWidgets('test_passenger_note_character_counter_updates', (tester) async {
+    _useSurface(tester, const Size(430, 1200));
+    await tester.pumpWidget(_bookingTestApp());
+
+    await _scrollUntilKey(tester, const Key('booking-passenger-note'));
+
+    expect(find.text('0/160'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('booking-passenger-note')),
+      'Hello driver',
+    );
+    await tester.pump();
+
+    expect(find.text('12/160'), findsOneWidget);
+  });
+
+  testWidgets('test_passenger_note_max_160_enforced', (tester) async {
+    _useSurface(tester, const Size(430, 1200));
+    await tester.pumpWidget(_bookingTestApp());
+
+    await _scrollUntilKey(tester, const Key('booking-passenger-note'));
+
+    await tester.enterText(
+      find.byKey(const Key('booking-passenger-note')),
+      _repeatedText(161, 'N'),
+    );
+    await tester.pump();
+
+    final field = tester.widget<TextFormField>(
+      find.byKey(const Key('booking-passenger-note')),
+    );
+
+    expect(field.controller!.text.length, 160);
+    expect(find.text('160/160'), findsOneWidget);
+  });
+
   testWidgets('keeps empty booking validation in passenger language', (
     tester,
   ) async {

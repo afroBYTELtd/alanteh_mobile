@@ -25,6 +25,7 @@ class BookingDraft {
     required String destinationDescription,
     required int passengerCount,
     String? assistanceNote,
+    String? passengerNote,
   }) {
     final RideDraftIdentity draftIdentity =
         identity ??
@@ -52,6 +53,14 @@ class BookingDraft {
       () => RideAssistanceNote.optional(assistanceNote),
       field: 'assistanceNote',
     );
+    final normalizedPassengerNote = passengerNote?.trim();
+    if (normalizedPassengerNote != null &&
+        normalizedPassengerNote.length > 160) {
+      throw const BookingDraftValidationException(
+        field: 'passengerNote',
+        message: 'Message to driver is too long.',
+      );
+    }
 
     return BookingDraft._(
       _mapRideValidation(
@@ -66,12 +75,16 @@ class BookingDraft {
         ),
         field: 'destinationDescription',
       ),
+      normalizedPassengerNote == null || normalizedPassengerNote.isEmpty
+          ? null
+          : normalizedPassengerNote,
     );
   }
 
-  const BookingDraft._(this.rideDraft);
+  const BookingDraft._(this.rideDraft, this.passengerNote);
 
   final RideDraft rideDraft;
+  final String? passengerNote;
 
   RideDraftIdentity get identity => rideDraft.identity;
   RideLifecycleState get lifecycleState => rideDraft.lifecycleState;
@@ -91,6 +104,8 @@ class BookingDraft {
     int? passengerCount,
     String? assistanceNote,
     bool clearAssistanceNote = false,
+    String? passengerNote,
+    bool clearPassengerNote = false,
   }) {
     return BookingDraft(
       identity: identity ?? this.identity,
@@ -103,6 +118,9 @@ class BookingDraft {
       assistanceNote: clearAssistanceNote
           ? null
           : assistanceNote ?? this.assistanceNote?.value,
+      passengerNote: clearPassengerNote
+          ? null
+          : passengerNote ?? this.passengerNote,
     );
   }
 }

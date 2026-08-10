@@ -245,6 +245,35 @@ void main() {
       );
     });
 
+    test('test_passenger_note_submitted_with_booking_request', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-passenger-note-test',
+        pickupLocation: 'Accra Mall',
+        destination: 'Osu',
+        passengerCount: 1,
+        passengerNote: 'I am at the side entrance, blue jacket',
+      );
+
+      expect(
+        submission.toJson()['passenger_note'],
+        'I am at the side entrance, blue jacket',
+      );
+      expect(submission.toJson()['assistance_note'], isNull);
+    });
+
+    test('test_empty_passenger_note_omitted_or_empty_on_submit', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-empty-passenger-note-test',
+        pickupLocation: 'Accra Mall',
+        destination: 'Osu',
+        passengerCount: 1,
+        passengerNote: '   ',
+      );
+
+      expect(submission.passengerNote, isNull);
+      expect(submission.toJson().containsKey('passenger_note'), isFalse);
+    });
+
     test('M3A locks passenger ride requests to accepted endpoint only', () {
       final source = File('lib/asm_api_client.dart').readAsStringSync();
 
