@@ -250,6 +250,7 @@ class _DriverTripVisualSequencePageState
           primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'Next destination',
           secondaryLocationValue: destination,
+          passengerNote: widget.passengerNote,
           actionKey: const Key('driver-mark-arrived-pickup'),
           actionLabel: "I've arrived",
           actionIcon: Icons.location_on_outlined,

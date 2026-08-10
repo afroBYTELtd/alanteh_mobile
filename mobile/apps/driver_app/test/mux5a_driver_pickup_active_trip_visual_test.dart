@@ -100,6 +100,91 @@ void main() {
     expect(find.text('Arrived at destination'), findsOneWidget);
   });
 
+  testWidgets('test_driver_accepted_note_card_visible', (tester) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'driver_accepted',
+      passengerNote: 'I am at the side entrance, blue jacket',
+    );
+
+    expect(
+      find.byKey(const Key('driver-navigate-to-pickup')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('driver-passenger-note-card')),
+      findsOneWidget,
+    );
+    expect(find.text('Note from passenger'), findsOneWidget);
+  });
+
+  testWidgets('test_driver_accepted_exact_note_text', (tester) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'driver_accepted',
+      passengerNote: 'I am at the side entrance, blue jacket',
+    );
+
+    expect(
+      find.text('I am at the side entrance, blue jacket'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_driver_accepted_empty_note_hidden', (tester) async {
+    _useSurface(tester);
+
+    for (final note in <String?>[null, '', '   ']) {
+      await _pumpTripSequence(
+        tester,
+        initialStatus: 'driver_accepted',
+        passengerNote: note,
+      );
+
+      expect(
+        find.byKey(const Key('driver-navigate-to-pickup')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-passenger-note-card')),
+        findsNothing,
+      );
+      expect(find.text('Note from passenger'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
+  testWidgets('test_driver_accepted_note_above_pickup_action', (tester) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'driver_accepted',
+      passengerNote: 'I am at the side entrance, blue jacket',
+    );
+
+    final noteCard = find.byKey(const Key('driver-passenger-note-card'));
+    final pickupAction = find.byKey(
+      const Key('driver-mark-arrived-pickup'),
+    );
+
+    await tester.ensureVisible(noteCard);
+    await tester.pump();
+
+    expect(noteCard, findsOneWidget);
+    expect(pickupAction, findsOneWidget);
+    expect(
+      tester.getBottomLeft(noteCard).dy,
+      lessThan(tester.getTopLeft(pickupAction).dy),
+    );
+  });
+
   testWidgets('test_driver_trip_screen_shows_note_when_present', (
     tester,
   ) async {
