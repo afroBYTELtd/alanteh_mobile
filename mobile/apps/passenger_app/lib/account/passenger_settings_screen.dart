@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 const passengerPrivacyPolicyUrl = 'https://alanteh.io/privacy';
 const passengerTermsOfServiceUrl = 'https://alanteh.io/terms';
 const passengerDeleteAccountEndpoint = '/api/passenger/delete-account/';
-const passengerDeleteAccountLiveEnabled = false;
+const passengerDeleteAccountLiveEnabled = true;
 
 const passengerDeleteAccountSuccessTitle = 'Account deletion requested.';
 const passengerDeleteAccountSuccessMessage =
