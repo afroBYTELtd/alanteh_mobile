@@ -512,6 +512,7 @@ final class DriverAssignedTrip {
     this.vehicleReference,
     this.passengerCount,
     this.controlCenterMessage,
+    this.passengerNote,
     this.assignmentReleased,
   });
 
@@ -526,6 +527,7 @@ final class DriverAssignedTrip {
   final String? vehicleReference;
   final int? passengerCount;
   final String? controlCenterMessage;
+  final String? passengerNote;
   final bool? assignmentReleased;
 
   static DriverAssignedTrip fromJson(Object? json) {
@@ -615,6 +617,7 @@ final class DriverAssignedTrip {
         'driver_message',
         'message',
       ]),
+      passengerNote: _firstString(map, const ['passenger_note']),
       assignmentReleased: assignmentReleased,
     );
   }
@@ -1365,6 +1368,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           pickupLocation: trip.pickupLocation,
           destination: trip.destination,
           passengerCount: trip.passengerCount,
+          passengerNote: trip.passengerNote,
           onActionRejected: _handleRejectedAction,
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
         ),

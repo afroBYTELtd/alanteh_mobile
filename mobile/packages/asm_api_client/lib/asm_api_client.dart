@@ -139,6 +139,7 @@ final class PassengerRideRequestSubmission {
     required String destination,
     required int passengerCount,
     String? assistanceNote,
+    String? passengerNote,
   }) : idempotencyKey = _requiredString(
          idempotencyKey,
          'idempotencyKey',
@@ -159,6 +160,11 @@ final class PassengerRideRequestSubmission {
          assistanceNote,
          'assistanceNote',
          maxLength: 1000,
+       ),
+       passengerNote = _optionalString(
+         passengerNote,
+         'passengerNote',
+         maxLength: 160,
        );
 
   final String idempotencyKey;
@@ -166,6 +172,7 @@ final class PassengerRideRequestSubmission {
   final String destination;
   final int passengerCount;
   final String? assistanceNote;
+  final String? passengerNote;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -173,6 +180,7 @@ final class PassengerRideRequestSubmission {
       'destination': destination,
       'passenger_count': passengerCount,
       if (assistanceNote != null) 'assistance_note': assistanceNote,
+      if (passengerNote != null) 'passenger_note': passengerNote,
     };
   }
 

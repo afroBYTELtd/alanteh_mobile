@@ -30,6 +30,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.pickupLocation,
     this.destination,
     this.passengerCount,
+    this.passengerNote,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
     super.key,
@@ -40,6 +41,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final String? pickupLocation;
   final String? destination;
   final int? passengerCount;
+  final String? passengerNote;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
   final bool tripActionTelemetryQaEnabled;
@@ -294,6 +296,7 @@ class _DriverTripVisualSequencePageState
           primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'To',
           secondaryLocationValue: destination,
+          passengerNote: widget.passengerNote,
           actionKey: const Key('driver-mark-arrived-destination'),
           actionLabel: 'Arrived at destination',
           actionIcon: Icons.flag_outlined,
@@ -389,6 +392,7 @@ class _DriverMapStage extends StatelessWidget {
     required this.primaryLocationValue,
     required this.secondaryLocationLabel,
     required this.secondaryLocationValue,
+    this.passengerNote,
     required this.actionKey,
     required this.actionLabel,
     required this.actionIcon,
@@ -406,6 +410,7 @@ class _DriverMapStage extends StatelessWidget {
   final String primaryLocationValue;
   final String secondaryLocationLabel;
   final String secondaryLocationValue;
+  final String? passengerNote;
   final Key actionKey;
   final String actionLabel;
   final IconData actionIcon;
@@ -516,6 +521,39 @@ class _DriverMapStage extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (passengerNote?.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: AsmSpacing.space16),
+                      Container(
+                        key: const Key('driver-passenger-note-card'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(AsmSpacing.space16),
+                        decoration: BoxDecoration(
+                          color: AsmColors.driverCard,
+                          borderRadius: BorderRadius.circular(
+                            AsmRadii.radius24,
+                          ),
+                          border: Border.all(color: AsmColors.driverLine),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Note from passenger',
+                              key: Key('driver-passenger-note-title'),
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: AsmSpacing.space8),
+                            Text(
+                              passengerNote!.trim(),
+                              key: const Key('driver-passenger-note-text'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: AsmSpacing.space16),
                     FilledButton.icon(
                       key: actionKey,

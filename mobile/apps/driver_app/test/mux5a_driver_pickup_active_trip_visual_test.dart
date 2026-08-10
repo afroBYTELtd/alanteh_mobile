@@ -100,6 +100,67 @@ void main() {
     expect(find.text('Arrived at destination'), findsOneWidget);
   });
 
+  testWidgets('test_driver_trip_screen_shows_note_when_present', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'in_progress',
+      passengerNote: 'I am at the side entrance, blue jacket',
+    );
+
+    expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+    expect(find.byKey(const Key('driver-passenger-note-card')), findsOneWidget);
+    expect(find.text('Note from passenger'), findsOneWidget);
+    expect(find.text('I am at the side entrance, blue jacket'), findsOneWidget);
+  });
+
+  testWidgets('test_driver_trip_screen_hides_note_when_absent', (tester) async {
+    _useSurface(tester);
+
+    for (final note in <String?>[null, '', '   ']) {
+      await _pumpTripSequence(
+        tester,
+        initialStatus: 'in_progress',
+        passengerNote: note,
+      );
+
+      expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+      expect(find.byKey(const Key('driver-passenger-note-card')), findsNothing);
+      expect(find.text('Note from passenger'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+  });
+
+  testWidgets('test_note_card_positioned_above_action_buttons', (tester) async {
+    _useSurface(tester);
+
+    await _pumpTripSequence(
+      tester,
+      initialStatus: 'in_progress',
+      passengerNote: 'Meet me by the side entrance.',
+    );
+
+    final noteCard = find.byKey(const Key('driver-passenger-note-card'));
+    final actionButton = find.byKey(
+      const Key('driver-mark-arrived-destination'),
+    );
+
+    await tester.ensureVisible(noteCard);
+    await tester.pump();
+
+    expect(noteCard, findsOneWidget);
+    expect(actionButton, findsOneWidget);
+    expect(
+      tester.getBottomLeft(noteCard).dy,
+      lessThan(tester.getTopLeft(actionButton).dy),
+    );
+  });
+
   testWidgets('destination arrival completes the local visual sequence', (
     tester,
   ) async {
@@ -432,6 +493,7 @@ Future<void> _pumpTripSequence(
   String? pickupLocation = _authoritativePickup,
   String? destination = _authoritativeDestination,
   int? passengerCount = _authoritativePassengerCount,
+  String? passengerNote,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -442,6 +504,7 @@ Future<void> _pumpTripSequence(
         pickupLocation: pickupLocation,
         destination: destination,
         passengerCount: passengerCount,
+        passengerNote: passengerNote,
       ),
     ),
   );

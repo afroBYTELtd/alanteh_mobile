@@ -135,6 +135,7 @@ class ApiPassengerRideRequestSubmitter
         destination: draft.destinationDescription.value,
         passengerCount: draft.passengerCount.value,
         assistanceNote: draft.assistanceNote?.value,
+        passengerNote: draft.passengerNote,
       ),
     );
   }
