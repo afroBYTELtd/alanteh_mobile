@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
@@ -63,36 +65,312 @@ void main() {
     expect(_switchValue(tester, 'passenger-settings-sound-alerts'), isFalse);
   });
 
-  testWidgets('test_privacy_policy_link_opens_correct_url', (tester) async {
+  testWidgets('test_privacy_policy_tap_opens_dialog_not_browser', (
+    tester,
+  ) async {
     final opener = _RecordingLegalLinkOpener();
+    final pending = Completer<PassengerLegalDocument>();
+    final fetcher = _RecordingLegalDocumentFetcher(pending: pending);
 
     await _pumpSettings(
       tester,
       store: _MemoryPreferenceStore(),
       opener: opener,
+      legalDocumentFetcher: fetcher,
     );
+
+    expect(fetcher.paths, isEmpty);
 
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
     await tester.pump();
 
-    expect(opener.opened, <Uri>[Uri.parse(passengerPrivacyPolicyUrl)]);
+    expect(find.byKey(const Key('passenger-legal-dialog')), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-legal-dialog-loading')),
+      findsOneWidget,
+    );
+    expect(fetcher.paths, <String>[passengerPrivacyPolicyEndpoint]);
+    expect(opener.opened, isEmpty);
+
+    pending.complete(
+      const PassengerLegalDocument(
+        title: 'Privacy Policy',
+        content: 'Privacy content',
+      ),
+    );
+    await tester.pumpAndSettle();
   });
 
-  testWidgets('test_terms_link_opens_correct_url', (tester) async {
+  testWidgets('test_terms_tap_opens_dialog_not_browser', (tester) async {
     final opener = _RecordingLegalLinkOpener();
+    final pending = Completer<PassengerLegalDocument>();
+    final fetcher = _RecordingLegalDocumentFetcher(pending: pending);
 
     await _pumpSettings(
       tester,
       store: _MemoryPreferenceStore(),
       opener: opener,
+      legalDocumentFetcher: fetcher,
     );
+
+    expect(fetcher.paths, isEmpty);
 
     await tester.tap(find.byKey(const Key('passenger-settings-terms')));
     await tester.pump();
 
-    expect(opener.opened, <Uri>[Uri.parse(passengerTermsOfServiceUrl)]);
+    expect(find.byKey(const Key('passenger-legal-dialog')), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-legal-dialog-loading')),
+      findsOneWidget,
+    );
+    expect(fetcher.paths, <String>[passengerTermsOfServiceEndpoint]);
+    expect(opener.opened, isEmpty);
+
+    pending.complete(
+      const PassengerLegalDocument(
+        title: 'Terms of Service',
+        content: 'Terms content',
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('test_dialog_shows_title_from_api_response', (tester) async {
+    final fetcher = _RecordingLegalDocumentFetcher(
+      documents: const <String, PassengerLegalDocument>{
+        passengerPrivacyPolicyEndpoint: PassengerLegalDocument(
+          title: 'ALANTEH Privacy Policy',
+          content: 'Privacy document body.',
+        ),
+      },
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('passenger-legal-dialog-title')),
+      findsOneWidget,
+    );
+    expect(find.text('ALANTEH Privacy Policy'), findsOneWidget);
+  });
+
+  testWidgets('test_dialog_shows_content_from_api_response', (tester) async {
+    const apiContent =
+        'This privacy policy content came from the public content API.';
+    final fetcher = _RecordingLegalDocumentFetcher(
+      documents: const <String, PassengerLegalDocument>{
+        passengerPrivacyPolicyEndpoint: PassengerLegalDocument(
+          title: 'Privacy Policy',
+          content: apiContent,
+        ),
+      },
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('passenger-legal-dialog-content')),
+      findsOneWidget,
+    );
+    expect(find.text(apiContent), findsOneWidget);
+  });
+
+  testWidgets('test_ok_button_dismisses_dialog', (tester) async {
+    final fetcher = _RecordingLegalDocumentFetcher(
+      documents: const <String, PassengerLegalDocument>{
+        passengerPrivacyPolicyEndpoint: PassengerLegalDocument(
+          title: 'Privacy Policy',
+          content: 'Privacy document body.',
+        ),
+      },
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-legal-dialog')), findsNothing);
+  });
+
+  testWidgets('test_ok_returns_to_settings_no_navigation_change', (
+    tester,
+  ) async {
+    final fetcher = _RecordingLegalDocumentFetcher(
+      documents: const <String, PassengerLegalDocument>{
+        passengerTermsOfServiceEndpoint: PassengerLegalDocument(
+          title: 'Terms of Service',
+          content: 'Terms document body.',
+        ),
+      },
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(find.byKey(const Key('passenger-settings-terms')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-settings-screen')), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.byKey(const Key('passenger-legal-dialog')), findsNothing);
+  });
+
+  testWidgets('test_api_failure_shows_fallback_message_in_dialog', (
+    tester,
+  ) async {
+    final fetcher = _RecordingLegalDocumentFetcher(failing: true);
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(passengerPrivacyPolicyFailureMessage), findsOneWidget);
+    expect(find.byKey(const Key('passenger-legal-dialog-ok')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('passenger-settings-terms')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(passengerTermsOfServiceFailureMessage), findsOneWidget);
+    expect(find.byKey(const Key('passenger-legal-dialog-ok')), findsOneWidget);
+  });
+
+  testWidgets('test_no_url_opened_under_any_condition', (tester) async {
+    final opener = _RecordingLegalLinkOpener();
+    final fetcher = _MixedLegalDocumentFetcher();
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      opener: opener,
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+    expect(opener.opened, isEmpty);
+
+    await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('passenger-settings-terms')));
+    await tester.pumpAndSettle();
+    expect(find.text(passengerTermsOfServiceFailureMessage), findsOneWidget);
+    expect(opener.opened, isEmpty);
+
+    await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
+    await tester.pumpAndSettle();
+    expect(opener.opened, isEmpty);
+  });
+
+  testWidgets('test_content_area_scrollable_independently', (tester) async {
+    final longContent = List<String>.generate(
+      80,
+      (index) => 'Legal document paragraph ${index + 1}.',
+    ).join('\n\n');
+    final fetcher = _RecordingLegalDocumentFetcher(
+      documents: <String, PassengerLegalDocument>{
+        passengerPrivacyPolicyEndpoint: PassengerLegalDocument(
+          title: 'Scrollable Privacy Policy',
+          content: longContent,
+        ),
+      },
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      legalDocumentFetcher: fetcher,
+    );
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollFinder = find.byKey(
+      const Key('passenger-legal-dialog-content-scroll'),
+    );
+    final titleFinder = find.byKey(const Key('passenger-legal-dialog-title'));
+    final okFinder = find.byKey(const Key('passenger-legal-dialog-ok'));
+    final contentFinder = find.byKey(
+      const Key('passenger-legal-dialog-content'),
+    );
+
+    expect(scrollFinder, findsOneWidget);
+    expect(
+      find.ancestor(
+        of: contentFinder,
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: titleFinder,
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(of: okFinder, matching: find.byType(SingleChildScrollView)),
+      findsNothing,
+    );
+
+    final beforeTitle = tester.getTopLeft(titleFinder);
+    final beforeOk = tester.getTopLeft(okFinder);
+
+    await tester.drag(scrollFinder, const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(titleFinder), beforeTitle);
+    expect(tester.getTopLeft(okFinder), beforeOk);
   });
 
   testWidgets('test_delete_account_confirmation_dialog_shows', (tester) async {
@@ -222,6 +500,7 @@ Future<void> _pumpSettings(
   WidgetTester tester, {
   required PassengerSettingsPreferenceStore store,
   PassengerLegalLinkOpener? opener,
+  PassengerLegalDocumentFetcher? legalDocumentFetcher,
   PassengerDeleteAccountSubmitter? submitter,
   bool deleteAccountLiveEnabled = false,
 }) async {
@@ -231,6 +510,7 @@ Future<void> _pumpSettings(
       home: PassengerSettingsScreen(
         preferenceStore: store,
         legalLinkOpener: opener ?? _RecordingLegalLinkOpener(),
+        legalDocumentFetcher: legalDocumentFetcher,
         deleteAccountSubmitter:
             submitter ?? const UnavailablePassengerDeleteAccountSubmitter(),
         deleteAccountLiveEnabled: deleteAccountLiveEnabled,
@@ -274,6 +554,56 @@ final class _RecordingLegalLinkOpener implements PassengerLegalLinkOpener {
   @override
   Future<void> open(Uri uri) async {
     opened.add(uri);
+  }
+}
+
+final class _RecordingLegalDocumentFetcher
+    implements PassengerLegalDocumentFetcher {
+  _RecordingLegalDocumentFetcher({
+    this.documents = const <String, PassengerLegalDocument>{},
+    this.failing = false,
+    this.pending,
+  });
+
+  final Map<String, PassengerLegalDocument> documents;
+  final bool failing;
+  final Completer<PassengerLegalDocument>? pending;
+  final List<String> paths = <String>[];
+
+  @override
+  Future<PassengerLegalDocument> fetch(String path) async {
+    paths.add(path);
+
+    final pendingRequest = pending;
+    if (pendingRequest != null) {
+      return pendingRequest.future;
+    }
+
+    if (failing) {
+      throw const PassengerLegalDocumentException('Test failure.');
+    }
+
+    final document = documents[path];
+    if (document == null) {
+      throw const PassengerLegalDocumentException('Missing test document.');
+    }
+
+    return document;
+  }
+}
+
+final class _MixedLegalDocumentFetcher
+    implements PassengerLegalDocumentFetcher {
+  @override
+  Future<PassengerLegalDocument> fetch(String path) async {
+    if (path == passengerPrivacyPolicyEndpoint) {
+      return const PassengerLegalDocument(
+        title: 'Privacy Policy',
+        content: 'Privacy document body.',
+      );
+    }
+
+    throw const PassengerLegalDocumentException('Test failure.');
   }
 }
 

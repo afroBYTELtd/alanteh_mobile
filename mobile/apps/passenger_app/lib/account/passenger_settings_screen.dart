@@ -4,8 +4,14 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const passengerPrivacyPolicyUrl = 'https://alanteh.io/privacy';
-const passengerTermsOfServiceUrl = 'https://alanteh.io/terms';
+import '../network/ghana_network_resilience.dart';
+
+const passengerPrivacyPolicyEndpoint = '/api/content/privacy-policy/';
+const passengerTermsOfServiceEndpoint = '/api/content/terms/';
+const passengerPrivacyPolicyFailureMessage =
+    'Unable to load this document right now. Please visit alanteh.io for our Privacy Policy.';
+const passengerTermsOfServiceFailureMessage =
+    'Unable to load this document right now. Please visit alanteh.io for our Terms of Service.';
 const passengerDeleteAccountEndpoint = '/api/passenger/delete-account/';
 const passengerDeleteAccountLiveEnabled = true;
 
@@ -88,14 +94,91 @@ final class PlatformPassengerLegalLinkOpener
     implements PassengerLegalLinkOpener {
   const PlatformPassengerLegalLinkOpener();
 
-  static const MethodChannel _channel = MethodChannel(_settingsChannelName);
-
   @override
   Future<void> open(Uri uri) async {
-    await _channel.invokeMethod<void>('openInAppBrowser', <String, Object?>{
-      'url': uri.toString(),
-    });
+    // Retained only for PassengerShell constructor compatibility.
+    // Legal documents never invoke an external URL opener.
   }
+}
+
+final class PassengerLegalDocument {
+  const PassengerLegalDocument({required this.title, required this.content});
+
+  final String title;
+  final String content;
+}
+
+abstract interface class PassengerLegalDocumentFetcher {
+  Future<PassengerLegalDocument> fetch(String path);
+}
+
+final class ApiPassengerLegalDocumentFetcher
+    implements PassengerLegalDocumentFetcher {
+  const ApiPassengerLegalDocumentFetcher({
+    required this.client,
+    required this.connectionConfigured,
+  });
+
+  factory ApiPassengerLegalDocumentFetcher.withDefaultClient({
+    String? baseUrl,
+  }) {
+    final connectionConfigured = AsmApiBaseUrl.isUsable(baseUrl);
+    final resolvedBaseUrl = connectionConfigured
+        ? baseUrl!.trim()
+        : 'http://127.0.0.1:8000';
+
+    return ApiPassengerLegalDocumentFetcher(
+      client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
+      connectionConfigured: connectionConfigured,
+    );
+  }
+
+  final AsmApiClient client;
+  final bool connectionConfigured;
+
+  @override
+  Future<PassengerLegalDocument> fetch(String path) async {
+    if (!connectionConfigured) {
+      throw const PassengerLegalDocumentException(
+        AsmApiClient.connectionNotConfiguredMessage,
+      );
+    }
+
+    final response = await client.get<Map<String, Object?>>(
+      path,
+      decoder: _decodeObjectMap,
+    );
+
+    if (response.isSuccess &&
+        response.statusCode == 200 &&
+        response.data != null) {
+      final title = response.data!['title'];
+      final content = response.data!['content'];
+
+      if (title is String &&
+          title.trim().isNotEmpty &&
+          content is String &&
+          content.trim().isNotEmpty) {
+        return PassengerLegalDocument(
+          title: title.trim(),
+          content: content.trim(),
+        );
+      }
+    }
+
+    throw PassengerLegalDocumentException(
+      response.error?.message ?? 'Unable to load legal document.',
+    );
+  }
+}
+
+final class PassengerLegalDocumentException implements Exception {
+  const PassengerLegalDocumentException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'PassengerLegalDocumentException: $message';
 }
 
 final class PassengerDeleteAccountResult {
@@ -249,6 +332,7 @@ class PassengerSettingsScreen extends StatefulWidget {
   const PassengerSettingsScreen({
     this.preferenceStore = const PlatformPassengerSettingsPreferenceStore(),
     this.legalLinkOpener = const PlatformPassengerLegalLinkOpener(),
+    this.legalDocumentFetcher,
     this.deleteAccountSubmitter =
         const UnavailablePassengerDeleteAccountSubmitter(),
     this.deleteAccountLiveEnabled = false,
@@ -258,6 +342,7 @@ class PassengerSettingsScreen extends StatefulWidget {
 
   final PassengerSettingsPreferenceStore preferenceStore;
   final PassengerLegalLinkOpener legalLinkOpener;
+  final PassengerLegalDocumentFetcher? legalDocumentFetcher;
   final PassengerDeleteAccountSubmitter deleteAccountSubmitter;
   final bool deleteAccountLiveEnabled;
   final Future<void> Function() onAccountDeletionRequested;
@@ -272,10 +357,16 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
   bool _soundAlerts = true;
   bool _isLoading = true;
   bool _isDeleting = false;
+  late final PassengerLegalDocumentFetcher _legalDocumentFetcher;
 
   @override
   void initState() {
     super.initState();
+    _legalDocumentFetcher =
+        widget.legalDocumentFetcher ??
+        ApiPassengerLegalDocumentFetcher.withDefaultClient(
+          baseUrl: AsmApiClient.defaultBaseUrl,
+        );
     _loadPreferences();
   }
 
@@ -330,15 +421,20 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
     }
   }
 
-  Future<void> _openLegal(String value) async {
-    try {
-      await widget.legalLinkOpener.open(Uri.parse(value));
-    } on Object {
-      if (!mounted) {
-        return;
-      }
-      _showSettingsError('Unable to open this page. Please try again.');
-    }
+  Future<void> _showLegalDocument({
+    required String endpoint,
+    required String initialTitle,
+    required String failureMessage,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _PassengerLegalDocumentDialog(
+        endpoint: endpoint,
+        initialTitle: initialTitle,
+        failureMessage: failureMessage,
+        fetcher: _legalDocumentFetcher,
+      ),
+    );
   }
 
   Future<void> _confirmDeleteAccount() async {
@@ -485,7 +581,11 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                   leading: const Icon(Icons.privacy_tip_outlined),
                   title: const Text('Privacy Policy'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openLegal(passengerPrivacyPolicyUrl),
+                  onTap: () => _showLegalDocument(
+                    endpoint: passengerPrivacyPolicyEndpoint,
+                    initialTitle: 'Privacy Policy',
+                    failureMessage: passengerPrivacyPolicyFailureMessage,
+                  ),
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -493,7 +593,11 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Terms of Service'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openLegal(passengerTermsOfServiceUrl),
+                  onTap: () => _showLegalDocument(
+                    endpoint: passengerTermsOfServiceEndpoint,
+                    initialTitle: 'Terms of Service',
+                    failureMessage: passengerTermsOfServiceFailureMessage,
+                  ),
                 ),
               ],
             ),
@@ -523,6 +627,125 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                       : null,
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PassengerLegalDocumentDialog extends StatefulWidget {
+  const _PassengerLegalDocumentDialog({
+    required this.endpoint,
+    required this.initialTitle,
+    required this.failureMessage,
+    required this.fetcher,
+  });
+
+  final String endpoint;
+  final String initialTitle;
+  final String failureMessage;
+  final PassengerLegalDocumentFetcher fetcher;
+
+  @override
+  State<_PassengerLegalDocumentDialog> createState() =>
+      _PassengerLegalDocumentDialogState();
+}
+
+class _PassengerLegalDocumentDialogState
+    extends State<_PassengerLegalDocumentDialog> {
+  late String _title;
+  String _content = '';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = widget.initialTitle;
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final document = await widget.fetcher.fetch(widget.endpoint);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _title = document.title;
+        _content = document.content;
+        _loading = false;
+      });
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _content = widget.failureMessage;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxDialogHeight = MediaQuery.sizeOf(context).height * 0.72;
+
+    return Dialog(
+      key: const Key('passenger-legal-dialog'),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: maxDialogHeight,
+          minHeight: maxDialogHeight.clamp(320.0, 440.0),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+              child: Text(
+                _title,
+                key: const Key('passenger-legal-dialog-title'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      key: Key('passenger-legal-dialog-loading'),
+                      child: CircularProgressIndicator(),
+                    )
+                  : SingleChildScrollView(
+                      key: const Key('passenger-legal-dialog-content-scroll'),
+                      padding: const EdgeInsets.all(24),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: Text(
+                          _content,
+                          key: const Key('passenger-legal-dialog-content'),
+                        ),
+                      ),
+                    ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const Key('passenger-legal-dialog-ok'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ),
             ),
           ],
         ),
