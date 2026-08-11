@@ -9,7 +9,6 @@ import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'location/location_search_page.dart';
-import 'location/pickup_map_confirmation_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
@@ -58,7 +57,6 @@ class _PassengerShellState extends State<PassengerShell> {
   int _selectedIndex = 0;
   String? _pickupDescription;
   String? _destinationDescription;
-  bool _selectingPickupOnMap = false;
   PassengerMobileMoneyNetwork _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
   late SessionLocationHistory _locationHistory;
 
@@ -200,7 +198,6 @@ class _PassengerShellState extends State<PassengerShell> {
       _selectedIndex = 0;
       _pickupDescription = null;
       _destinationDescription = null;
-      _selectingPickupOnMap = false;
       _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
     });
     await widget.onSignOut?.call();
@@ -239,19 +236,10 @@ class _PassengerShellState extends State<PassengerShell> {
     }
   }
 
-  void _openRequestForm() {
-    setState(() => _selectingPickupOnMap = true);
-  }
-
-  void _cancelPickupMap() {
-    setState(() => _selectingPickupOnMap = false);
-  }
-
   Future<void> _confirmPickupFromMap(PassengerPickupSelection selection) async {
     setState(() {
       _pickupDescription = selection.address;
       _locationHistory = _locationHistory.record(selection.address);
-      _selectingPickupOnMap = false;
     });
 
     final closed = await Navigator.of(context).push<bool>(
@@ -370,13 +358,6 @@ class _PassengerShellState extends State<PassengerShell> {
 
   Widget get _selectedPage {
     return switch (_selectedIndex) {
-      0 when _selectingPickupOnMap => PickupMapConfirmationPage(
-        onOpenLocationSearch: _searchPickupAddress,
-        onConfirm: (selection) {
-          _confirmPickupFromMap(selection);
-        },
-        onCancel: _cancelPickupMap,
-      ),
       0 => PassengerHome(
         market: widget.configuration.market,
         localQaEnabled: widget.localQaEnabled,
@@ -390,10 +371,13 @@ class _PassengerShellState extends State<PassengerShell> {
         onChooseDestination: () =>
             _chooseLocation(LocationSearchKind.destination),
         onContinue: _continueToDraft,
-        onStartRequest: _openRequestForm,
         onOpenRequests: _openRideRequests,
         onSwap: _swapRoute,
         onClear: _clearRoute,
+        onOpenPickupSearch: _searchPickupAddress,
+        onConfirmPickup: (selection) {
+          _confirmPickupFromMap(selection);
+        },
       ),
       1 => PassengerRideRequestHistoryPage(
         repository:
@@ -424,12 +408,7 @@ class _PassengerShellState extends State<PassengerShell> {
       bottomNavigationBar: AsmBottomNavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-            if (index != 0) {
-              _selectingPickupOnMap = false;
-            }
-          });
+          setState(() => _selectedIndex = index);
         },
         destinations: const [
           AsmBottomNavigationDestination(

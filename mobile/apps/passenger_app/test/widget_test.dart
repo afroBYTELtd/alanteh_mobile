@@ -809,25 +809,12 @@ void main() {
     expect(find.byKey(const Key('choose-pickup')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('open-live-request')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
     expect(
-      find.byKey(const Key('pickup-map-confirmation-screen')),
+      find.byKey(const Key('passenger-home-pickup-address-row')),
       findsOneWidget,
     );
     expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
-    expect(find.byKey(const Key('booking-pickup')), findsNothing);
-
-    await tester.tap(find.byKey(const Key('pickup-map-cancel')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(
-      find.byKey(const Key('passenger-home-full-screen-map-layout')),
-      findsOneWidget,
-    );
 
     AsmBottomNavigationBar navigationBar() => tester
         .widget<AsmBottomNavigationBar>(find.byType(AsmBottomNavigationBar));
@@ -952,7 +939,7 @@ void main() {
       find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
     );
-    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
     expect(find.byKey(const Key('passenger-map')), findsOneWidget);
     expect(
       find.byKey(const Key('passenger-home-floating-logo')),
@@ -1004,7 +991,7 @@ void main() {
       find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
     );
-    expect(find.byType(AsmPassengerMap), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
     expect(find.byKey(const Key('passenger-map')), findsOneWidget);
     expect(find.byKey(const Key('open-live-request')), findsOneWidget);
     expect(find.text('Route preview'), findsNothing);

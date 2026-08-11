@@ -712,14 +712,7 @@ void main() {
     expect(find.byKey(const Key('choose-destination')), findsNothing);
     expect(find.byKey(const Key('continue-local-draft')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('open-live-request')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    expect(
-      find.byKey(const Key('pickup-map-confirmation-screen')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
     expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('confirm-pickup')));

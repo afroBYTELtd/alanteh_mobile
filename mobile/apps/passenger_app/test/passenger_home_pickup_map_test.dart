@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:asm_app_config/asm_app_config.dart';
@@ -9,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:passenger_app/booking/booking_page.dart';
 import 'package:passenger_app/location/location_search_page.dart';
-import 'package:passenger_app/location/pickup_map_confirmation_page.dart';
+import 'package:passenger_app/passenger_home.dart';
 import 'package:passenger_app/passenger_shell.dart';
 
 void main() {
@@ -17,23 +16,23 @@ void main() {
     tester,
   ) async {
     final geocoder = _FakeReverseGeocoder(address: 'Accra pickup');
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
 
-    final centrePin = find.byKey(const Key('pickup-map-centre-pin'));
+    final centrePin = find.byKey(const Key('passenger-home-centre-pin'));
     expect(centrePin, findsOneWidget);
     expect(
-      find.descendant(of: centrePin, matching: find.byType(Marker)),
+      find.descendant(of: find.byType(FlutterMap), matching: centrePin),
       findsNothing,
     );
 
     final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('pickup-confirmation-flutter-map')),
+      find.byKey(const Key('passenger-home-flutter-map')),
     );
     expect(map.children.whereType<MarkerLayer>(), hasLength(1));
     final markerLayer = map.children.whereType<MarkerLayer>().single;
     expect(
       markerLayer.markers.any(
-        (marker) => marker.child.key == const Key('pickup-map-centre-pin'),
+        (marker) => marker.child.key == const Key('passenger-home-centre-pin'),
       ),
       isFalse,
     );
@@ -43,12 +42,12 @@ void main() {
     tester,
   ) async {
     final geocoder = _FakeReverseGeocoder(address: 'Idle address');
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
     await tester.pump(const Duration(milliseconds: 401));
     geocoder.reset();
 
     final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('pickup-confirmation-flutter-map')),
+      find.byKey(const Key('passenger-home-flutter-map')),
     );
     final controller = map.mapController!;
     final oldCamera = controller.camera;
@@ -78,12 +77,12 @@ void main() {
 
   testWidgets('test_geocoding_debounced_300_to_500ms', (tester) async {
     final geocoder = _FakeReverseGeocoder(address: 'Debounced address');
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
     await tester.pump(const Duration(milliseconds: 401));
     geocoder.reset();
 
     final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('pickup-confirmation-flutter-map')),
+      find.byKey(const Key('passenger-home-flutter-map')),
     );
     final controller = map.mapController!;
     final firstCamera = controller.camera.withPosition(
@@ -106,28 +105,31 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 1));
     expect(geocoder.calls, [const LatLng(5.6120, -0.1720)]);
-    expect(pickupMapGeocodeDebounce.inMilliseconds, inInclusiveRange(300, 500));
+    expect(
+      passengerHomePickupGeocodeDebounce.inMilliseconds,
+      inInclusiveRange(300, 500),
+    );
   });
 
   testWidgets('test_address_field_tap_opens_location_search', (tester) async {
-    await _pumpShellToPickupMap(tester);
+    await _pumpShell(tester);
 
-    await tester.tap(find.byKey(const Key('pickup-map-address-row')));
+    await tester.tap(
+      find.byKey(const Key('passenger-home-pickup-address-row')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(LocationSearchPage), findsOneWidget);
-    expect(find.text('Where are you?'), findsWidgets);
     expect(find.byKey(const Key('location-description')), findsOneWidget);
   });
 
   testWidgets('test_edit_icon_opens_location_search', (tester) async {
-    await _pumpShellToPickupMap(tester);
+    await _pumpShell(tester);
 
-    await tester.tap(find.byKey(const Key('pickup-map-edit-address')));
+    await tester.tap(find.byKey(const Key('passenger-home-edit-pickup')));
     await tester.pumpAndSettle();
 
     expect(find.byType(LocationSearchPage), findsOneWidget);
-    expect(find.text('Where are you?'), findsWidgets);
     expect(find.byKey(const Key('location-description')), findsOneWidget);
   });
 
@@ -135,7 +137,7 @@ void main() {
     tester,
   ) async {
     final geocoder = _FakeReverseGeocoder(shouldThrow: true);
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
     await tester.pump(const Duration(milliseconds: 401));
 
     expect(find.text('5.60500, -0.16680'), findsOneWidget);
@@ -147,51 +149,49 @@ void main() {
         'Accra, Greater Accra Region, Ghana';
     final geocoder = _FakeReverseGeocoder(address: fullAddress);
 
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
     await tester.pump(const Duration(milliseconds: 401));
 
     final displayed = tester.widget<Text>(
-      find.byKey(const Key('pickup-map-address-text')),
+      find.byKey(const Key('passenger-home-pickup-address-text')),
     );
     expect(displayed.data, isNot(fullAddress));
     expect(displayed.data!.runes.length, lessThanOrEqualTo(60));
 
-    await tester.longPress(find.byKey(const Key('pickup-map-address-row')));
+    await tester.longPress(
+      find.byKey(const Key('passenger-home-pickup-address-row')),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('pickup-map-full-address')), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-pickup-full-address')),
+      findsOneWidget,
+    );
     expect(find.text(fullAddress), findsOneWidget);
   });
 
   testWidgets('test_underline_styling_absent', (tester) async {
     final geocoder = _FakeReverseGeocoder(address: 'Accra pickup');
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
 
+    final row = find.byKey(const Key('passenger-home-pickup-address-row'));
     expect(
-      find.descendant(
-        of: find.byKey(const Key('pickup-map-address-row')),
-        matching: find.byType(TextField),
-      ),
+      find.descendant(of: row, matching: find.byType(TextField)),
       findsNothing,
     );
     expect(
-      find.descendant(
-        of: find.byKey(const Key('pickup-map-address-row')),
-        matching: find.byType(TextFormField),
-      ),
+      find.descendant(of: row, matching: find.byType(TextFormField)),
       findsNothing,
     );
 
-    final source = File(
-      'lib/location/pickup_map_confirmation_page.dart',
-    ).readAsStringSync();
+    final source = File('lib/passenger_home.dart').readAsStringSync();
     expect(source, isNot(contains('UnderlineInputBorder')));
   });
 
   testWidgets('test_confirm_pickup_passes_coordinates_downstream', (
     tester,
   ) async {
-    await _pumpShellToPickupMap(tester);
+    await _pumpShell(tester);
 
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
@@ -205,15 +205,14 @@ void main() {
 
   testWidgets('test_recenter_fab_present', (tester) async {
     final geocoder = _FakeReverseGeocoder(address: 'Accra pickup');
-    await _pumpPickupPage(tester, geocoder: geocoder);
+    await _pumpHome(tester, geocoder: geocoder);
 
-    expect(find.byKey(const Key('pickup-map-recenter')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-recenter')), findsOneWidget);
     expect(find.byIcon(Icons.my_location), findsOneWidget);
   });
 
   test('test_geolocator_used_only_for_device_position_not_driver_tracking', () {
-    final passengerLib = Directory('lib');
-    final geolocatorFiles = passengerLib
+    final geolocatorFiles = Directory('lib')
         .listSync(recursive: true)
         .whereType<File>()
         .where((file) => file.path.endsWith('.dart'))
@@ -221,12 +220,9 @@ void main() {
         .map((file) => file.path.replaceAll('\\', '/'))
         .toList();
 
-    expect(geolocatorFiles, ['lib/location/pickup_map_confirmation_page.dart']);
+    expect(geolocatorFiles, ['lib/passenger_home.dart']);
 
-    final source = File(
-      'lib/location/pickup_map_confirmation_page.dart',
-    ).readAsStringSync();
-
+    final source = File('lib/passenger_home.dart').readAsStringSync();
     expect(source, contains('Geolocator.getCurrentPosition()'));
     expect(source, contains('Geolocator.getPositionStream()'));
     expect(source, isNot(contains('driverPosition')));
@@ -234,21 +230,80 @@ void main() {
     expect(source, isNot(contains('fakeGps')));
     expect(source, isNot(contains('ETA')));
   });
+
+  testWidgets('test_home_map_is_only_pickup_map_surface', (tester) async {
+    await _pumpShell(tester);
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
+
+    final libSources = Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .map((file) => file.readAsStringSync())
+        .join('\n');
+
+    expect(libSources, isNot(contains('PickupMapConfirmationPage')));
+    expect(
+      File('lib/location/pickup_map_confirmation_page.dart').existsSync(),
+      isFalse,
+    );
+  });
+
+  testWidgets('test_no_navigation_to_second_pickup_map', (tester) async {
+    await _pumpShell(tester);
+
+    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(
+      find.byKey(const Key('passenger-home-pickup-address-row')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('confirm-pickup')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BookingPage), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsNothing);
+
+    final shellSource = File('lib/passenger_shell.dart').readAsStringSync();
+    expect(shellSource, isNot(contains('PickupMapConfirmationPage')));
+    expect(shellSource, isNot(contains('_selectingPickupOnMap')));
+  });
 }
 
-Future<void> _pumpPickupPage(
+Future<void> _pumpHome(
   WidgetTester tester, {
-  required PickupReverseGeocoder geocoder,
+  required PassengerHomeReverseGeocoder geocoder,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.passenger,
       home: Scaffold(
-        body: PickupMapConfirmationPage(
+        body: PassengerHome(
+          market: AsmAppConfig.localGhana.market,
+          localQaEnabled: true,
+          pickupDescription: null,
+          destinationDescription: null,
+          canContinue: false,
+          locationsMatch: false,
+          canSwap: false,
+          hasRoute: false,
+          onChoosePickup: () {},
+          onChooseDestination: () {},
+          onContinue: () {},
+          onOpenRequests: () {},
+          onSwap: () {},
+          onClear: () {},
+          onOpenPickupSearch: (_) async => null,
+          onConfirmPickup: (_) {},
           reverseGeocoder: geocoder,
           deviceLocationService: const _NoDeviceLocationService(),
-          onOpenLocationSearch: (_) async => null,
-          onConfirm: (_) {},
         ),
       ),
     ),
@@ -256,7 +311,7 @@ Future<void> _pumpPickupPage(
   await tester.pump();
 }
 
-Future<void> _pumpShellToPickupMap(WidgetTester tester) async {
+Future<void> _pumpShell(WidgetTester tester) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.passenger,
@@ -267,18 +322,9 @@ Future<void> _pumpShellToPickupMap(WidgetTester tester) async {
     ),
   );
   await tester.pumpAndSettle();
-
-  await tester.tap(find.byKey(const Key('open-live-request')));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 50));
-
-  expect(
-    find.byKey(const Key('pickup-map-confirmation-screen')),
-    findsOneWidget,
-  );
 }
 
-class _FakeReverseGeocoder implements PickupReverseGeocoder {
+class _FakeReverseGeocoder implements PassengerHomeReverseGeocoder {
   _FakeReverseGeocoder({
     this.address = 'Accra pickup',
     this.shouldThrow = false,
@@ -300,7 +346,7 @@ class _FakeReverseGeocoder implements PickupReverseGeocoder {
   }
 }
 
-class _NoDeviceLocationService implements PickupDeviceLocationService {
+class _NoDeviceLocationService implements PassengerHomeDeviceLocationService {
   const _NoDeviceLocationService();
 
   @override
