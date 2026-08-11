@@ -264,6 +264,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   late final AuthTokenStore _tokenStore;
   String? _passengerPhoneNumber;
+  String? _passengerName;
   late final AuthService _authService;
   late final PassengerRideRequestSubmitter _rideRequestSubmitter;
   late final PassengerRegistrationSubmitter _registrationSubmitter;
@@ -328,6 +329,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       setState(() {
         _signedIn = false;
         _passengerPhoneNumber = null;
+        _passengerName = null;
         _isSigningIn = false;
         _loginErrorMessage = hadStoredSession
             ? 'Please sign in again to continue.'
@@ -348,6 +350,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       setState(() {
         _signedIn = false;
         _passengerPhoneNumber = null;
+        _passengerName = null;
         _isSigningIn = false;
         _loginErrorMessage = 'Please sign in again to continue.';
       });
@@ -363,6 +366,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         (accountType == null || accountType == AuthAccountType.passenger)) {
       setState(() {
         _signedIn = true;
+        _passengerName = _passengerNameFromSession(state.session);
         _otpRequired = false;
         _isSigningIn = false;
         _loginErrorMessage = null;
@@ -378,6 +382,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     setState(() {
       _signedIn = false;
       _passengerPhoneNumber = null;
+      _passengerName = null;
       _isSigningIn = false;
       _loginErrorMessage = 'Please sign in again to continue.';
     });
@@ -437,11 +442,13 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         final enteredPhoneNumber = _phoneController.text.trim();
         final sessionPhoneNumber =
             _phoneNumberFromSession(state.session) ?? enteredPhoneNumber;
+        final sessionPassengerName = _passengerNameFromSession(state.session);
         _pinController.clear();
         setState(() {
           _passengerPhoneNumber = sessionPhoneNumber.isEmpty
               ? null
               : sessionPhoneNumber;
+          _passengerName = sessionPassengerName;
           _signedIn = true;
           _otpRequired = false;
           _isSigningIn = false;
@@ -563,6 +570,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _signedIn = false;
       _otpRequired = false;
       _passengerPhoneNumber = null;
+      _passengerName = null;
       _loginErrorMessage = null;
     });
   }
@@ -578,6 +586,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _signedIn = false;
       _otpRequired = false;
       _passengerPhoneNumber = null;
+      _passengerName = null;
       _isSigningIn = false;
       _loginErrorMessage =
           PassengerRideRequestSubmissionException.signInRequiredMessage;
@@ -599,6 +608,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _signedIn = false;
       _otpRequired = false;
       _passengerPhoneNumber = null;
+      _passengerName = null;
       _isSigningIn = false;
       _loginErrorMessage =
           '$passengerDeleteAccountSuccessTitle\n'
@@ -621,6 +631,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _signedIn = false;
       _otpRequired = false;
       _passengerPhoneNumber = null;
+      _passengerName = null;
       _isSigningIn = false;
       _loginErrorMessage = null;
     });
@@ -709,6 +720,28 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     return null;
   }
 
+  String? _passengerNameFromSession(AuthSession? session) {
+    final account = session?.account;
+    if (account == null) {
+      return null;
+    }
+
+    for (final key in const [
+      'display_name',
+      'displayName',
+      'full_name',
+      'fullName',
+      'name',
+    ]) {
+      final value = account[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
   String? _phoneNumberFromSession(AuthSession? session) {
     final account = session?.account;
     if (account == null) {
@@ -759,6 +792,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         paymentRatingRepository: widget.paymentRatingRepository,
         fareEstimateRepository: widget.fareEstimateRepository,
         phoneNumber: _passengerPhoneNumber,
+        passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,
         onSignOut: _signOut,
         deleteAccountSubmitter:

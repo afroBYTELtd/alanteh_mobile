@@ -24,6 +24,7 @@ class PassengerShell extends StatefulWidget {
     this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.phoneNumber,
+    this.passengerName,
     this.onSignInRequired,
     this.onSignOut,
     this.settingsPreferenceStore,
@@ -41,6 +42,7 @@ class PassengerShell extends StatefulWidget {
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final String? phoneNumber;
+  final String? passengerName;
   final VoidCallback? onSignInRequired;
   final Future<void> Function()? onSignOut;
   final PassengerSettingsPreferenceStore? settingsPreferenceStore;
@@ -178,6 +180,10 @@ class _PassengerShellState extends State<PassengerShell> {
           legalLinkOpener:
               widget.legalLinkOpener ??
               const PlatformPassengerLegalLinkOpener(),
+          passengerName: widget.passengerName,
+          tripHistoryRepository:
+              widget.rideRequestHistoryRepository ??
+              const EmptyPassengerRideRequestHistoryRepository(),
           deleteAccountSubmitter:
               widget.deleteAccountSubmitter ??
               const UnavailablePassengerDeleteAccountSubmitter(),

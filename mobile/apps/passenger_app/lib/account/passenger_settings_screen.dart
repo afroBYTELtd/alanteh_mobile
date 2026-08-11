@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../ride_requests/ride_request_history.dart';
+import '../support/new_message_form.dart';
 
 const passengerPrivacyPolicyEndpoint = '/api/content/privacy-policy/';
 const passengerTermsOfServiceEndpoint = '/api/content/terms/';
@@ -333,6 +335,10 @@ class PassengerSettingsScreen extends StatefulWidget {
     this.preferenceStore = const PlatformPassengerSettingsPreferenceStore(),
     this.legalLinkOpener = const PlatformPassengerLegalLinkOpener(),
     this.legalDocumentFetcher,
+    this.passengerName,
+    this.tripHistoryRepository =
+        const EmptyPassengerRideRequestHistoryRepository(),
+    this.supportMessageSubmitter,
     this.deleteAccountSubmitter =
         const UnavailablePassengerDeleteAccountSubmitter(),
     this.deleteAccountLiveEnabled = false,
@@ -343,6 +349,9 @@ class PassengerSettingsScreen extends StatefulWidget {
   final PassengerSettingsPreferenceStore preferenceStore;
   final PassengerLegalLinkOpener legalLinkOpener;
   final PassengerLegalDocumentFetcher? legalDocumentFetcher;
+  final String? passengerName;
+  final PassengerRideRequestHistoryRepository tripHistoryRepository;
+  final PassengerSupportMessageSubmitter? supportMessageSubmitter;
   final PassengerDeleteAccountSubmitter deleteAccountSubmitter;
   final bool deleteAccountLiveEnabled;
   final Future<void> Function() onAccountDeletionRequested;
@@ -433,6 +442,23 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
         initialTitle: initialTitle,
         failureMessage: failureMessage,
         fetcher: _legalDocumentFetcher,
+      ),
+    );
+  }
+
+  Future<void> _openLostItem() {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NewMessageForm(
+          initialCategory: 'Lost item',
+          initialPassengerName: widget.passengerName,
+          tripHistoryRepository: widget.tripHistoryRepository,
+          submitter:
+              widget.supportMessageSubmitter ??
+              ApiPassengerSupportMessageSubmitter.withDefaultClient(
+                baseUrl: AsmApiClient.defaultBaseUrl,
+              ),
+        ),
       ),
     );
   }
@@ -569,6 +595,19 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                   title: const Text('Sound alerts'),
                   value: _soundAlerts,
                   onChanged: _isLoading ? null : _setSoundAlerts,
+                ),
+              ],
+            ),
+            const SizedBox(height: AsmSpacing.space12),
+            _sectionTitle('Help'),
+            _settingsCard(
+              children: [
+                ListTile(
+                  key: const Key('passenger-settings-lost-item'),
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text('Lost Item'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openLostItem,
                 ),
               ],
             ),

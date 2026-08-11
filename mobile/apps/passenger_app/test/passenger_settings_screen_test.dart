@@ -380,9 +380,11 @@ void main() {
       deleteAccountLiveEnabled: true,
     );
 
-    await tester.tap(
-      find.byKey(const Key('passenger-settings-delete-account')),
+    final deleteAccountRow = find.byKey(
+      const Key('passenger-settings-delete-account'),
     );
+    await tester.ensureVisible(deleteAccountRow);
+    await tester.tap(deleteAccountRow);
     await tester.pumpAndSettle();
 
     expect(find.text('Delete account?'), findsOneWidget);
@@ -419,9 +421,11 @@ void main() {
       deleteAccountLiveEnabled: true,
     );
 
-    await tester.tap(
-      find.byKey(const Key('passenger-settings-delete-account')),
+    final deleteAccountRow = find.byKey(
+      const Key('passenger-settings-delete-account'),
     );
+    await tester.ensureVisible(deleteAccountRow);
+    await tester.tap(deleteAccountRow);
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const Key('passenger-settings-delete-confirm')),
@@ -451,9 +455,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const Key('passenger-settings-delete-account')),
+    final deleteAccountRow = find.byKey(
+      const Key('passenger-settings-delete-account'),
     );
+    await tester.ensureVisible(deleteAccountRow);
+    await tester.tap(deleteAccountRow);
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const Key('passenger-settings-delete-confirm')),
@@ -480,9 +486,11 @@ void main() {
       deleteAccountLiveEnabled: true,
     );
 
-    await tester.tap(
-      find.byKey(const Key('passenger-settings-delete-account')),
+    final deleteAccountRow = find.byKey(
+      const Key('passenger-settings-delete-account'),
     );
+    await tester.ensureVisible(deleteAccountRow);
+    await tester.tap(deleteAccountRow);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('passenger-settings-delete-cancel')));
     await tester.pumpAndSettle();
