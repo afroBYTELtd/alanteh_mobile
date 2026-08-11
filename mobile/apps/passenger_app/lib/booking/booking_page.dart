@@ -18,6 +18,8 @@ class BookingPage extends StatefulWidget {
   const BookingPage({
     required this.market,
     this.initialPickupDescription = '',
+    this.initialPickupLatitude,
+    this.initialPickupLongitude,
     this.initialDestinationDescription = '',
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
@@ -33,6 +35,8 @@ class BookingPage extends StatefulWidget {
 
   final MarketConfig market;
   final String initialPickupDescription;
+  final double? initialPickupLatitude;
+  final double? initialPickupLongitude;
   final String initialDestinationDescription;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;

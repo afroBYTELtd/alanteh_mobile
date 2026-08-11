@@ -52,7 +52,8 @@ void main() {
     expect(source, isNot(contains('/api/logout')));
     expect(source, isNot(contains('session/validate')));
     expect(source, isNot(contains('GoogleMap')));
-    expect(source, isNot(contains('geolocator')));
+    expect(source, contains("package:geolocator/geolocator.dart"));
+    expect(source, isNot(contains('google_maps_flutter')));
     for (final credential in _m3aDevelopmentCredentials) {
       expect(source, isNot(contains(credential)));
     }
@@ -812,12 +813,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
-    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+    expect(
+      find.byKey(const Key('pickup-map-confirmation-screen')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('booking-pickup')), findsNothing);
 
-    await tester.pageBack();
+    await tester.tap(find.byKey(const Key('pickup-map-cancel')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
 
     AsmBottomNavigationBar navigationBar() => tester
         .widget<AsmBottomNavigationBar>(find.byType(AsmBottomNavigationBar));

@@ -9,6 +9,7 @@ import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'location/location_search_page.dart';
+import 'location/pickup_map_confirmation_page.dart';
 import 'location/session_location_history.dart';
 import 'passenger_home.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
@@ -57,6 +58,7 @@ class _PassengerShellState extends State<PassengerShell> {
   int _selectedIndex = 0;
   String? _pickupDescription;
   String? _destinationDescription;
+  bool _selectingPickupOnMap = false;
   PassengerMobileMoneyNetwork _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
   late SessionLocationHistory _locationHistory;
 
@@ -82,6 +84,19 @@ class _PassengerShellState extends State<PassengerShell> {
     return pickup.isNotEmpty &&
         destination.isNotEmpty &&
         pickup.toLowerCase() == destination.toLowerCase();
+  }
+
+  Future<String?> _searchPickupAddress(String currentAddress) {
+    return Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => LocationSearchPage(
+          kind: LocationSearchKind.pickup,
+          market: widget.configuration.market,
+          initialDescription: currentAddress,
+          recentDescriptions: _locationHistory.entries,
+        ),
+      ),
+    );
   }
 
   Future<void> _chooseLocation(LocationSearchKind kind) async {
@@ -185,6 +200,7 @@ class _PassengerShellState extends State<PassengerShell> {
       _selectedIndex = 0;
       _pickupDescription = null;
       _destinationDescription = null;
+      _selectingPickupOnMap = false;
       _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
     });
     await widget.onSignOut?.call();
@@ -223,12 +239,28 @@ class _PassengerShellState extends State<PassengerShell> {
     }
   }
 
-  Future<void> _openRequestForm() async {
+  void _openRequestForm() {
+    setState(() => _selectingPickupOnMap = true);
+  }
+
+  void _cancelPickupMap() {
+    setState(() => _selectingPickupOnMap = false);
+  }
+
+  Future<void> _confirmPickupFromMap(PassengerPickupSelection selection) async {
+    setState(() {
+      _pickupDescription = selection.address;
+      _locationHistory = _locationHistory.record(selection.address);
+      _selectingPickupOnMap = false;
+    });
+
     final closed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => BookingPage(
           market: widget.configuration.market,
-          initialPickupDescription: _pickupDescription ?? '',
+          initialPickupDescription: selection.address,
+          initialPickupLatitude: selection.coordinates.latitude,
+          initialPickupLongitude: selection.coordinates.longitude,
           initialDestinationDescription: _destinationDescription ?? '',
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
@@ -338,6 +370,13 @@ class _PassengerShellState extends State<PassengerShell> {
 
   Widget get _selectedPage {
     return switch (_selectedIndex) {
+      0 when _selectingPickupOnMap => PickupMapConfirmationPage(
+        onOpenLocationSearch: _searchPickupAddress,
+        onConfirm: (selection) {
+          _confirmPickupFromMap(selection);
+        },
+        onCancel: _cancelPickupMap,
+      ),
       0 => PassengerHome(
         market: widget.configuration.market,
         localQaEnabled: widget.localQaEnabled,
@@ -385,7 +424,12 @@ class _PassengerShellState extends State<PassengerShell> {
       bottomNavigationBar: AsmBottomNavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
+          setState(() {
+            _selectedIndex = index;
+            if (index != 0) {
+              _selectingPickupOnMap = false;
+            }
+          });
         },
         destinations: const [
           AsmBottomNavigationDestination(
