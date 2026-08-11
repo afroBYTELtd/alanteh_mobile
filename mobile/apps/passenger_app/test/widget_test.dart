@@ -826,8 +826,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('No trips yet.'), findsOneWidget);
-    expect(find.text('Your ride history will appear here.'), findsOneWidget);
+    expect(
+      find.text('No trips yet. Book your first ALANTEH ride.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('trip-filter-active')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('No active rides right now.'), findsOneWidget);
+    expect(
+      find.text('No trips yet. Book your first ALANTEH ride.'),
+      findsNothing,
+    );
 
     navigationBar().onDestinationSelected!.call(0);
     await tester.pump();
@@ -837,6 +849,16 @@ void main() {
       find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
     );
+
+    navigationBar().onDestinationSelected!.call(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('No trips yet. Book your first ALANTEH ride.'),
+      findsOneWidget,
+    );
+    expect(find.text('No active rides right now.'), findsNothing);
 
     navigationBar().onDestinationSelected!.call(2);
     await tester.pump();

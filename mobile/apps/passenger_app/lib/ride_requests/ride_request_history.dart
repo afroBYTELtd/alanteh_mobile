@@ -158,7 +158,8 @@ class PassengerRideRequestRecord {
           _optionalString(map, 'assistance_note') ??
           _optionalString(map, 'special_request'),
       fareDisplay:
-          _optionalString(map, 'fare_display') ?? _optionalString(map, 'fare'),
+          _optionalStringOrNumber(map, 'fare_display') ??
+          _optionalStringOrNumber(map, 'fare'),
       plateNumber:
           _optionalString(map, 'plate_number') ??
           _optionalString(map, 'vehicle_plate_number'),
@@ -206,6 +207,21 @@ class PassengerRideRequestRecord {
 
     final normalized = value.trim();
     return normalized.isEmpty ? null : normalized;
+  }
+
+  static String? _optionalStringOrNumber(Map<String, Object?> map, String key) {
+    final value = map[key];
+
+    if (value is String) {
+      final normalized = value.trim();
+      return normalized.isEmpty ? null : normalized;
+    }
+
+    if (value is num && value.isFinite) {
+      return value.toString();
+    }
+
+    return null;
   }
 
   static int _requiredInt(Map<String, Object?> map, String key) {
@@ -259,7 +275,9 @@ final class PassengerTripRecord {
 
   String get normalizedStatus => status.trim().toLowerCase();
 
-  bool get isTerminal => normalizedStatus == 'completed_pending_review';
+  bool get isTerminal =>
+      normalizedStatus == 'completed_pending_review' ||
+      normalizedStatus == 'completed_confirmed';
 
   PassengerRideState get passengerState =>
       PassengerRideState.fromStatus(status, message: controlCenterMessage);
@@ -347,7 +365,8 @@ enum PassengerRideState {
       'driver_accepted' => PassengerRideState.vehicleEnRoute,
       'arrived_at_pickup' => PassengerRideState.driverArrived,
       'in_progress' => PassengerRideState.inProgress,
-      'completed_pending_review' => PassengerRideState.arrived,
+      'completed_pending_review' ||
+      'completed_confirmed' => PassengerRideState.arrived,
       _ => null,
     };
     if (canonicalState != null) {
@@ -675,12 +694,29 @@ class PassengerRideRequestHistoryException implements Exception {
   String toString() => message;
 }
 
+enum _TripsFilter { all, active, completed }
+
+bool _isActiveTripStatus(String status) {
+  return switch (status.trim().toLowerCase()) {
+    'requested' || 'under_review' || 'accepted_for_trip' => true,
+    _ => false,
+  };
+}
+
+bool _isCompletedTripStatus(String status) {
+  return switch (status.trim().toLowerCase()) {
+    'completed_confirmed' || 'completed_pending_review' => true,
+    _ => false,
+  };
+}
+
 class PassengerRideRequestHistoryPage extends StatefulWidget {
   const PassengerRideRequestHistoryPage({
     required this.repository,
     this.onSignInRequired,
     this.onBookRide,
     this.onBookAgain,
+    this.onReturn,
     this.onOpenActiveTracking,
     this.paymentRatingRepository,
     super.key,
@@ -690,6 +726,7 @@ class PassengerRideRequestHistoryPage extends StatefulWidget {
   final VoidCallback? onSignInRequired;
   final VoidCallback? onBookRide;
   final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
+  final ValueChanged<PassengerRideRequestRecord>? onReturn;
   final Future<void> Function(PassengerRideRequestRecord)? onOpenActiveTracking;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
 
@@ -704,6 +741,21 @@ class _PassengerRideRequestHistoryPageState
   List<PassengerRideRequestRecord> _records =
       const <PassengerRideRequestRecord>[];
   PassengerRideRequestHistoryException? _error;
+  _TripsFilter _selectedFilter = _TripsFilter.all;
+
+  List<PassengerRideRequestRecord> get _visibleRecords {
+    return switch (_selectedFilter) {
+      _TripsFilter.all => _records,
+      _TripsFilter.active =>
+        _records
+            .where((record) => _isActiveTripStatus(record.status))
+            .toList(growable: false),
+      _TripsFilter.completed =>
+        _records
+            .where((record) => _isCompletedTripStatus(record.status))
+            .toList(growable: false),
+    };
+  }
 
   @override
   void initState() {
@@ -852,6 +904,13 @@ class _PassengerRideRequestHistoryPageState
     );
   }
 
+  void _selectFilter(_TripsFilter filter) {
+    if (_selectedFilter == filter) {
+      return;
+    }
+    setState(() => _selectedFilter = filter);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -866,7 +925,15 @@ class _PassengerRideRequestHistoryPageState
           ),
         ],
       ),
-      body: _buildBody(context),
+      body: Column(
+        children: [
+          _TripsFilterTabs(
+            selectedFilter: _selectedFilter,
+            onSelected: _selectFilter,
+          ),
+          Expanded(child: _buildBody(context)),
+        ],
+      ),
     );
   }
 
@@ -887,40 +954,13 @@ class _PassengerRideRequestHistoryPageState
       );
     }
 
-    if (_records.isEmpty) {
-      return RefreshIndicator(
+    final visibleRecords = _visibleRecords;
+
+    if (visibleRecords.isEmpty) {
+      return _TripsEmptyState(
+        filter: _selectedFilter,
+        onBookRide: widget.onBookRide,
         onRefresh: () => _load(showLoading: false),
-        child: ListView(
-          key: const Key('ride-request-history-empty'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(AsmSpacing.space24),
-          children: [
-            const SizedBox(height: 120),
-            const Icon(Icons.receipt_long_outlined, size: 56),
-            const SizedBox(height: AsmSpacing.space16),
-            const Text(
-              'No trips yet.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: AsmSpacing.space8),
-            const Text(
-              'Your ride history will appear here.',
-              textAlign: TextAlign.center,
-            ),
-            if (widget.onBookRide != null) ...[
-              const SizedBox(height: AsmSpacing.space24),
-              Center(
-                child: FilledButton.icon(
-                  key: const Key('empty-history-book-ride'),
-                  onPressed: widget.onBookRide,
-                  icon: const Icon(Icons.add_road_outlined),
-                  label: const Text('Book a ride'),
-                ),
-              ),
-            ],
-          ],
-        ),
       );
     }
 
@@ -930,17 +970,126 @@ class _PassengerRideRequestHistoryPageState
         key: const Key('ride-request-history-loaded'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(AsmSpacing.space16),
-        itemCount: _records.length,
+        itemCount: visibleRecords.length,
         separatorBuilder: (_, _) => const SizedBox(height: AsmSpacing.space12),
         itemBuilder: (context, index) {
-          final record = _records[index];
+          final record = visibleRecords[index];
 
           return _RideRequestCard(
             record: record,
             onTap: () => _openDetail(record),
             onBookAgain: widget.onBookAgain,
+            onReturn: widget.onReturn,
           );
         },
+      ),
+    );
+  }
+}
+
+class _TripsFilterTabs extends StatelessWidget {
+  const _TripsFilterTabs({
+    required this.selectedFilter,
+    required this.onSelected,
+  });
+
+  final _TripsFilter selectedFilter;
+  final ValueChanged<_TripsFilter> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AsmSpacing.space16,
+        AsmSpacing.space8,
+        AsmSpacing.space16,
+        AsmSpacing.space12,
+      ),
+      child: Row(
+        children: [
+          _button(_TripsFilter.all, 'All'),
+          const SizedBox(width: AsmSpacing.space8),
+          _button(_TripsFilter.active, 'Active'),
+          const SizedBox(width: AsmSpacing.space8),
+          _button(_TripsFilter.completed, 'Completed'),
+        ],
+      ),
+    );
+  }
+
+  Widget _button(_TripsFilter filter, String label) {
+    final selected = selectedFilter == filter;
+
+    return Expanded(
+      child: selected
+          ? FilledButton(
+              key: Key('trip-filter-${filter.name}'),
+              onPressed: () => onSelected(filter),
+              child: Text(label),
+            )
+          : OutlinedButton(
+              key: Key('trip-filter-${filter.name}'),
+              onPressed: () => onSelected(filter),
+              child: Text(label),
+            ),
+    );
+  }
+}
+
+class _TripsEmptyState extends StatelessWidget {
+  const _TripsEmptyState({
+    required this.filter,
+    required this.onBookRide,
+    required this.onRefresh,
+  });
+
+  final _TripsFilter filter;
+  final VoidCallback? onBookRide;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final (message, showBookButton) = switch (filter) {
+      _TripsFilter.all => ('No trips yet. Book your first ALANTEH ride.', true),
+      _TripsFilter.active => ('No active rides right now.', true),
+      _TripsFilter.completed => ('No completed trips yet.', false),
+    };
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView(
+        key: Key(
+          filter == _TripsFilter.all
+              ? 'ride-request-history-empty'
+              : 'ride-request-history-empty-${filter.name}',
+        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(AsmSpacing.space24),
+        children: [
+          const SizedBox(height: 120),
+          Icon(
+            Icons.electric_car_outlined,
+            size: 56,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          if (showBookButton && onBookRide != null) ...[
+            const SizedBox(height: AsmSpacing.space24),
+            Center(
+              child: FilledButton.icon(
+                key: const Key('empty-history-book-ride'),
+                onPressed: onBookRide,
+                icon: const Icon(Icons.add_road_outlined),
+                label: const Text('Book a ride'),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -951,15 +1100,18 @@ class _RideRequestCard extends StatelessWidget {
     required this.record,
     required this.onTap,
     this.onBookAgain,
+    this.onReturn,
   });
 
   final PassengerRideRequestRecord record;
   final VoidCallback onTap;
   final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
+  final ValueChanged<PassengerRideRequestRecord>? onReturn;
 
   @override
   Widget build(BuildContext context) {
-    final statusMessage = _historyStatusMessage(record);
+    final completed = _isCompletedTripStatus(record.status);
+    final fare = completed ? _formatTripFare(record.fareDisplay) : null;
 
     return Card(
       key: ValueKey<String>('ride-request-${record.requestReference}'),
@@ -972,61 +1124,108 @@ class _RideRequestCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                    ),
+                    child: const Icon(Icons.electric_car_outlined),
+                  ),
+                  const SizedBox(width: AsmSpacing.space12),
                   Expanded(
-                    child: Text(
-                      '${record.pickupLocation} → ${record.destination}',
-                      key: const Key('trip-card-route-title'),
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    child: Wrap(
+                      spacing: AsmSpacing.space8,
+                      runSpacing: AsmSpacing.space4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Text(
+                          'Electric Ride',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        _StatusChip(status: record.status),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: AsmSpacing.space8),
-                  _StatusChip(status: record.status),
                 ],
               ),
-              const SizedBox(height: AsmSpacing.space12),
-              const SizedBox(height: AsmSpacing.space12),
-              Text(
-                statusMessage,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (record.passengerState == PassengerRideState.arrived &&
-                  record.fareDisplay?.trim().isNotEmpty == true) ...[
-                const SizedBox(height: AsmSpacing.space8),
-                Text(
-                  'Fare ${record.fareDisplay!.trim()}',
-                  key: const Key('history-card-fare'),
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ],
+              const SizedBox(height: AsmSpacing.space16),
+              _TripRouteLine(label: 'From', value: record.pickupLocation),
+              const SizedBox(height: AsmSpacing.space8),
+              _TripRouteLine(label: 'To', value: record.destination),
               const SizedBox(height: AsmSpacing.space8),
               Text(
-                'Created ${_formatDateTime(record.createdAt)}',
-                style: Theme.of(context).textTheme.bodySmall,
+                '${record.pickupLocation} → ${record.destination}',
+                key: const Key('trip-card-route-title'),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: AsmSpacing.space12),
               Row(
                 children: [
                   Expanded(
-                    child: TextButton.icon(
-                      onPressed: onTap,
-                      icon: const Icon(Icons.open_in_new),
-                      label: const Text('View detail'),
+                    child: Text(
+                      _formatDateTime(record.createdAt),
+                      key: ValueKey<String>(
+                        'trip-card-date-${record.requestReference}',
+                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                  const SizedBox(width: AsmSpacing.space12),
-                  Expanded(
-                    child: FilledButton(
-                      key: const Key('history-card-book-again'),
-                      onPressed: onBookAgain == null
-                          ? null
-                          : () => onBookAgain!(record),
-                      child: const Text('Book again'),
+                  if (fare != null) ...[
+                    const SizedBox(width: AsmSpacing.space12),
+                    Text(
+                      fare,
+                      key: const Key('history-card-fare'),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: AsmSpacing.space8),
+              Text(
+                _historyStatusMessage(record),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AsmSpacing.space12),
+              Wrap(
+                spacing: AsmSpacing.space8,
+                runSpacing: AsmSpacing.space4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton(
+                    key: const Key('history-card-book-again'),
+                    onPressed: onBookAgain == null
+                        ? null
+                        : () => onBookAgain!(record),
+                    child: const Text('Book again'),
+                  ),
+                  if (completed && onReturn != null)
+                    OutlinedButton(
+                      key: const Key('history-card-return'),
+                      onPressed: () => onReturn!(record),
+                      child: const Text('Return'),
+                    ),
+                  TextButton.icon(
+                    key: const Key('history-card-view-details'),
+                    onPressed: onTap,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('View details'),
                   ),
                 ],
               ),
@@ -1034,6 +1233,38 @@ class _RideRequestCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _TripRouteLine extends StatelessWidget {
+  const _TripRouteLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 48,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1223,9 +1454,33 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalized = status.trim().toLowerCase();
+
+    final (background, foreground) = switch (normalized) {
+      'completed_confirmed' || 'completed_pending_review' => (
+        const Color(0xFFE2F0E7),
+        AsmColors.brandDeepGreen,
+      ),
+      'accepted_for_trip' ||
+      'accepted' ||
+      'approved' ||
+      'assigned' ||
+      'driver_offer_sent' ||
+      'driver_accepted' ||
+      'arrived_at_pickup' ||
+      'in_progress' => (const Color(0xFFFFE7B0), const Color(0xFF725000)),
+      _ => (const Color(0xFFE9ECEF), const Color(0xFF4B5563)),
+    };
+
     return Chip(
-      key: ValueKey<String>('ride-request-status-$status'),
-      label: Text(_statusLabel(status)),
+      key: ValueKey<String>('ride-request-status-$normalized'),
+      backgroundColor: background,
+      side: BorderSide.none,
+      visualDensity: VisualDensity.compact,
+      label: Text(
+        _statusLabel(status),
+        style: TextStyle(color: foreground, fontWeight: FontWeight.w800),
+      ),
     );
   }
 }
@@ -1314,7 +1569,7 @@ class _HistoryErrorState extends StatelessWidget {
 }
 
 String _historyStatusMessage(PassengerRideRequestRecord record) {
-  if (record.status.trim().toLowerCase() == 'completed_pending_review') {
+  if (_isCompletedTripStatus(record.status)) {
     return PassengerRideState.arrived.defaultMessage;
   }
 
@@ -1354,7 +1609,11 @@ String _safeStatusMessage(String status, {String? preferredMessage}) {
   return switch (status.trim().toLowerCase()) {
     'requested' => 'Request received.',
     'under_review' => 'Being reviewed.',
-    'accepted' || 'approved' => 'Accepted for trip preparation.',
+    'accepted' ||
+    'approved' ||
+    'accepted_for_trip' => 'Accepted for trip preparation.',
+    'completed_confirmed' ||
+    'completed_pending_review' => PassengerRideState.arrived.defaultMessage,
     'rejected' || 'declined' => 'Could not be accepted.',
     'cancelled' || 'canceled' => 'Cancelled.',
     'trip_created' => 'Trip record created.',
@@ -1366,11 +1625,16 @@ String _statusLabel(String status) {
   return switch (status.trim().toLowerCase()) {
     'requested' => 'Received by ALANTEH',
     'under_review' => 'Being reviewed',
-    'accepted' || 'approved' => 'Accepted for trip preparation',
+    'accepted' || 'approved' || 'accepted_for_trip' => 'Accepted',
+    'assigned' ||
+    'driver_offer_sent' ||
+    'driver_accepted' ||
+    'arrived_at_pickup' ||
+    'in_progress' => 'Active',
     'rejected' || 'declined' => 'Could not be accepted',
     'cancelled' || 'canceled' => 'Cancelled',
     'trip_created' => 'Trip record created',
-    'completed_pending_review' => 'Completed',
+    'completed_confirmed' || 'completed_pending_review' => 'Completed',
     _ => 'Request update',
   };
 }
@@ -1381,16 +1645,45 @@ String _formatDateTime(DateTime? value) {
   }
 
   final local = value.toLocal();
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
 
-  String twoDigits(int number) {
-    return number.toString().padLeft(2, '0');
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+
+  return '${local.day} ${months[local.month - 1]} ${local.year} '
+      'at ${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+}
+
+String? _formatTripFare(String? rawFare) {
+  final raw = rawFare?.trim();
+  if (raw == null || raw.isEmpty) {
+    return null;
   }
 
-  return '${local.year}-'
-      '${twoDigits(local.month)}-'
-      '${twoDigits(local.day)} '
-      '${twoDigits(local.hour)}:'
-      '${twoDigits(local.minute)}';
+  var normalized = raw.replaceAll(',', '');
+  normalized = normalized.replaceFirst(
+    RegExp(r'^(GH₵|GH¢|GHS)\s*', caseSensitive: false),
+    '',
+  );
+
+  final value = double.tryParse(normalized.trim());
+  if (value == null || !value.isFinite || value <= 0) {
+    return null;
+  }
+
+  return 'GH₵${value.toStringAsFixed(2)}';
 }
 
 class _HistoryTokenProvider implements TokenProvider {

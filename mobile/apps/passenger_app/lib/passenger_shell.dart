@@ -271,6 +271,25 @@ class _PassengerShellState extends State<PassengerShell> {
     );
   }
 
+  Future<void> _openReturnTrip(PassengerRideRequestRecord record) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => BookingPage(
+          market: widget.configuration.market,
+          initialPickupDescription: record.destination,
+          initialDestinationDescription: record.pickupLocation,
+          rideRequestSubmitter: widget.rideRequestSubmitter,
+          onSignInRequired: widget.onSignInRequired,
+          rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
+          paymentRatingRepository: widget.paymentRatingRepository,
+          phoneNumber: widget.phoneNumber,
+          initialPaymentNetwork: _paymentNetwork,
+          fareEstimateRepository: widget.fareEstimateRepository,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openTrackedRequest(PassengerRideRequestRecord record) {
     final repository =
         widget.rideRequestHistoryRepository ??
@@ -310,6 +329,7 @@ class _PassengerShellState extends State<PassengerShell> {
             setState(() => _selectedIndex = 0);
           },
           onBookAgain: _openBookAgain,
+          onReturn: _openReturnTrip,
           onOpenActiveTracking: _openTrackedRequest,
         ),
       ),
@@ -344,6 +364,7 @@ class _PassengerShellState extends State<PassengerShell> {
         onSignInRequired: widget.onSignInRequired,
         onBookRide: () => setState(() => _selectedIndex = 0),
         onBookAgain: _openBookAgain,
+        onReturn: _openReturnTrip,
         onOpenActiveTracking: _openTrackedRequest,
       ),
       _ => PassengerAccountScreen(

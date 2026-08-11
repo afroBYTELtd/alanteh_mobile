@@ -157,8 +157,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('ride-request-history-empty')), findsOneWidget);
-    expect(find.text('No trips yet.'), findsOneWidget);
-    expect(find.text('Your ride history will appear here.'), findsOneWidget);
+    expect(
+      find.text('No trips yet. Book your first ALANTEH ride.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('request history shows safe error state', (tester) async {
@@ -529,12 +531,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.tripCalls, <String>['TRIP-COMPLETED']);
-    expect(find.text('Completed'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_pending_review'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Thank you for riding with ALANTEH.'), findsOneWidget);
     expect(find.text('Request update'), findsNothing);
     expect(find.text('Trip record created.'), findsNothing);
     expect(find.textContaining('pending review'), findsNothing);
-    expect(find.text('Fare GHS 45.00'), findsOneWidget);
+    expect(find.text('GH₵45.00'), findsOneWidget);
   });
 
   testWidgets(
@@ -586,7 +593,18 @@ void main() {
 
     expect(repository.tripCalls, isEmpty);
     expect(find.text('Received by ALANTEH'), findsOneWidget);
-    expect(find.text('Completed'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_pending_review'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_confirmed'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('test_book_again_preserved_on_completed_card', (tester) async {
@@ -616,7 +634,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Completed'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_pending_review'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Book again'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('history-card-book-again')));
@@ -682,13 +705,343 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Completed'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'ride-request-status-completed_pending_review',
+          ),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('completed_pending_review'), findsNothing);
       expect(find.textContaining('pending review'), findsNothing);
       expect(find.text('Thank you for riding with ALANTEH.'), findsOneWidget);
       expect(find.byKey(const Key('history-card-fare')), findsNothing);
     },
   );
+
+  testWidgets('test_return_button_only_on_completed_cards', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-RETURN-COMPLETED',
+            status: 'completed_confirmed',
+          ),
+          _record(reference: 'RR-RETURN-REQUESTED', status: 'requested'),
+          _record(reference: 'RR-RETURN-REVIEW', status: 'under_review'),
+          _record(reference: 'RR-RETURN-ACCEPTED', status: 'accepted_for_trip'),
+        ],
+      ),
+      onReturn: (_) {},
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('history-card-return')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('trip-filter-active')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('history-card-return')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('trip-filter-completed')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('history-card-return')), findsOneWidget);
+  });
+
+  testWidgets('test_tab_filter_all_shows_everything', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-ALL-REQUESTED',
+            pickup: 'Requested pickup',
+            status: 'requested',
+            createdAt: DateTime(2026, 8, 12, 15),
+          ),
+          _record(
+            reference: 'RR-ALL-COMPLETED',
+            pickup: 'Completed pickup',
+            status: 'completed_confirmed',
+            createdAt: DateTime(2026, 8, 12, 14),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-ALL-REQUESTED')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-ALL-COMPLETED')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_tab_filter_active_shows_correct_statuses', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-ACTIVE-REQUESTED',
+            status: 'requested',
+            createdAt: DateTime(2026, 8, 12, 15, 3),
+          ),
+          _record(
+            reference: 'RR-ACTIVE-REVIEW',
+            status: 'under_review',
+            createdAt: DateTime(2026, 8, 12, 15, 2),
+          ),
+          _record(
+            reference: 'RR-ACTIVE-ACCEPTED',
+            status: 'accepted_for_trip',
+            createdAt: DateTime(2026, 8, 12, 15, 1),
+          ),
+          _record(
+            reference: 'RR-ACTIVE-COMPLETED',
+            status: 'completed_confirmed',
+            createdAt: DateTime(2026, 8, 12, 15),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trip-filter-active')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-status-requested')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-status-under_review')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_confirmed'),
+      ),
+      findsNothing,
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('ride-request-RR-ACTIVE-ACCEPTED')),
+      260,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-accepted_for_trip'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('ride-request-status-completed_confirmed'),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('test_tab_filter_completed_shows_correct_statuses', (
+    tester,
+  ) async {
+    final repository = _TripAwareFakeRepository(
+      listLoader: () async => <PassengerRideRequestRecord>[
+        _record(
+          reference: 'RR-COMPLETE-CONFIRMED',
+          status: 'completed_confirmed',
+          createdAt: DateTime(2026, 8, 12, 15, 3),
+        ),
+        _record(
+          reference: 'RR-COMPLETE-PENDING',
+          status: 'completed_pending_review',
+          createdAt: DateTime(2026, 8, 12, 15, 2),
+        ),
+        _record(
+          reference: 'RR-COMPLETE-CONVERTED',
+          status: 'converted',
+          tripCreated: true,
+          tripReference: 'TRIP-COMPLETE-CONVERTED',
+          createdAt: DateTime(2026, 8, 12, 15, 1),
+        ),
+        _record(
+          reference: 'RR-COMPLETE-ACTIVE',
+          status: 'accepted_for_trip',
+          createdAt: DateTime(2026, 8, 12, 15),
+        ),
+      ],
+      tripLoader: (reference) async => PassengerTripRecord(
+        tripReference: reference,
+        status: 'completed_confirmed',
+      ),
+    );
+
+    await _pumpHistory(tester, repository);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trip-filter-completed')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-CONFIRMED')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-PENDING')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-ACTIVE')),
+      findsNothing,
+    );
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-CONVERTED')),
+      260,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-CONVERTED')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-ACTIVE')),
+      findsNothing,
+    );
+    expect(repository.tripCalls, <String>['TRIP-COMPLETE-CONVERTED']);
+  });
+
+  testWidgets('test_fare_shown_when_available', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-FARE-CONFIRMED',
+            status: 'completed_confirmed',
+            fareDisplay: 'GHS 35',
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('GH₵35.00'), findsOneWidget);
+    expect(find.byKey(const Key('history-card-fare')), findsOneWidget);
+  });
+
+  testWidgets('test_fare_hidden_when_not_confirmed', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-FARE-ACTIVE',
+            status: 'accepted_for_trip',
+            fareDisplay: 'GHS 35',
+          ),
+          _record(
+            reference: 'RR-FARE-ZERO',
+            status: 'completed_confirmed',
+            fareDisplay: '0',
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('GH₵35.00'), findsNothing);
+    expect(find.text('GH₵0.00'), findsNothing);
+    expect(find.byKey(const Key('history-card-fare')), findsNothing);
+  });
+
+  testWidgets('test_date_formatted_human_readable', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-HUMAN-DATE',
+            createdAt: DateTime(2026, 8, 12, 15, 53),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('12 Aug 2026 at 15:53'), findsOneWidget);
+    expect(find.textContaining('2026-08-12'), findsNothing);
+  });
+
+  testWidgets('test_empty_state_all_tab', (tester) async {
+    var bookRideTapped = false;
+
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => const <PassengerRideRequestRecord>[],
+      ),
+      onBookRide: () {
+        bookRideTapped = true;
+      },
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('No trips yet. Book your first ALANTEH ride.'),
+      findsOneWidget,
+    );
+    expect(find.text('Book a ride'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('empty-history-book-ride')));
+    await tester.pump();
+
+    expect(bookRideTapped, isTrue);
+  });
+
+  testWidgets('test_empty_state_active_tab', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => const <PassengerRideRequestRecord>[],
+      ),
+      onBookRide: () {},
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trip-filter-active')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No active rides right now.'), findsOneWidget);
+    expect(find.text('Book a ride'), findsOneWidget);
+  });
+
+  testWidgets('test_empty_state_completed_tab', (tester) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => const <PassengerRideRequestRecord>[],
+      ),
+      onBookRide: () {},
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('trip-filter-completed')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No completed trips yet.'), findsOneWidget);
+    expect(find.text('Book a ride'), findsNothing);
+  });
 
   test('Passenger navigation and receipt link to request history', () {
     final homeSource = File('lib/passenger_home.dart').readAsStringSync();
@@ -745,6 +1098,8 @@ Future<void> _pumpHistory(
   PassengerPaymentRatingRepository? paymentRatingRepository,
   Future<void> Function(PassengerRideRequestRecord)? onOpenActiveTracking,
   ValueChanged<PassengerRideRequestRecord>? onBookAgain,
+  ValueChanged<PassengerRideRequestRecord>? onReturn,
+  VoidCallback? onBookRide,
 }) async {
   tester.view.physicalSize = const Size(430, 900);
   tester.view.devicePixelRatio = 1;
@@ -761,6 +1116,8 @@ Future<void> _pumpHistory(
         onSignInRequired: onSignInRequired,
         onOpenActiveTracking: onOpenActiveTracking,
         onBookAgain: onBookAgain,
+        onReturn: onReturn,
+        onBookRide: onBookRide,
       ),
     ),
   );

@@ -772,6 +772,118 @@ void main() {
     );
   });
 
+  testWidgets('test_return_trip_swaps_pickup_and_destination', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+
+    final record = PassengerRideRequestRecord(
+      requestReference: 'RR-APP-RETURN-SWAP',
+      status: 'completed_confirmed',
+      pickupLocation: 'Accra Mall',
+      destination: 'University of Ghana',
+      passengerCount: 2,
+      createdAt: DateTime.utc(2026, 8, 12, 12),
+      updatedAt: DateTime.utc(2026, 8, 12, 13),
+      hasMobileReceipt: true,
+      tripCreated: true,
+    );
+    final repository = _BookAgainHistoryRepository(record);
+    final submitter = _FakeRideRequestSubmitter.success();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        home: PassengerShell(
+          rideRequestHistoryRepository: repository,
+          rideRequestSubmitter: submitter,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final navigationBar = tester.widget<AsmBottomNavigationBar>(
+      find.byType(AsmBottomNavigationBar),
+    );
+    navigationBar.onDestinationSelected!.call(1);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('history-card-return')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('history-card-return')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+          .controller!
+          .text,
+      'University of Ghana',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+          .controller!
+          .text,
+      'Accra Mall',
+    );
+  });
+
+  testWidgets('test_return_trip_opens_booking_form_prefilled', (tester) async {
+    _useSurface(tester, const Size(430, 1000));
+
+    final record = PassengerRideRequestRecord(
+      requestReference: 'RR-APP-RETURN-PREFILL',
+      status: 'completed_pending_review',
+      pickupLocation: 'Kotoka International Airport',
+      destination: 'Osu',
+      passengerCount: 1,
+      createdAt: DateTime.utc(2026, 8, 12, 14),
+      updatedAt: DateTime.utc(2026, 8, 12, 15),
+      hasMobileReceipt: true,
+      tripCreated: true,
+    );
+    final repository = _BookAgainHistoryRepository(record);
+    final submitter = _FakeRideRequestSubmitter.success();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        home: PassengerShell(
+          rideRequestHistoryRepository: repository,
+          rideRequestSubmitter: submitter,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final navigationBar = tester.widget<AsmBottomNavigationBar>(
+      find.byType(AsmBottomNavigationBar),
+    );
+    navigationBar.onDestinationSelected!.call(1);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('history-card-return')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Book a ride'), findsWidgets);
+    expect(find.byKey(const Key('booking-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-pickup')))
+          .controller!
+          .text,
+      'Osu',
+    );
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('booking-destination')))
+          .controller!
+          .text,
+      'Kotoka International Airport',
+    );
+    expect(submitter.submissions, isEmpty);
+  });
+
   testWidgets(
     'Book again from embedded Trips opens prefilled form without submission',
     (tester) async {
