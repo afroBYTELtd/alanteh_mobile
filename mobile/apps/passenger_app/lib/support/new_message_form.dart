@@ -11,8 +11,9 @@ import '../network/ghana_network_resilience.dart';
 import '../ride_requests/ride_request_history.dart';
 
 const passengerSupportMessageEndpoint = '/api/passenger/support-message/';
+const passengerSupportCategoriesEndpoint = '/api/content/support-categories/';
 
-const passengerSupportCategories = <String>[
+const _fallbackCategories = <String>[
   'Lost item',
   'General enquiry',
   'Trip issue',
@@ -20,6 +21,140 @@ const passengerSupportCategories = <String>[
 ];
 
 final RegExp _supportMessageReferencePattern = RegExp(r'^MSG-[A-Z0-9]+$');
+
+abstract interface class PassengerSupportCategoryFetcher {
+  Future<List<String>> fetch();
+}
+
+final class ApiPassengerSupportCategoryFetcher
+    implements PassengerSupportCategoryFetcher {
+  const ApiPassengerSupportCategoryFetcher({
+    required this.client,
+    required this.connectionConfigured,
+  });
+
+  factory ApiPassengerSupportCategoryFetcher.withDefaultClient({
+    String? baseUrl,
+  }) {
+    final connectionConfigured = AsmApiBaseUrl.isUsable(baseUrl);
+    final resolvedBaseUrl = connectionConfigured
+        ? baseUrl!.trim()
+        : 'http://127.0.0.1:8000';
+
+    return ApiPassengerSupportCategoryFetcher(
+      client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
+      connectionConfigured: connectionConfigured,
+    );
+  }
+
+  final AsmApiClient client;
+  final bool connectionConfigured;
+
+  @override
+  Future<List<String>> fetch() async {
+    if (!connectionConfigured) {
+      throw const FormatException('Support category API is not configured.');
+    }
+
+    final response = await client.get<Map<String, Object?>>(
+      passengerSupportCategoriesEndpoint,
+      decoder: _decodeObjectMap,
+    );
+
+    if (!response.isSuccess ||
+        response.statusCode != 200 ||
+        response.data == null) {
+      throw const FormatException('Unable to load support categories.');
+    }
+
+    final rawCategories = response.data!['categories'];
+    if (rawCategories is! List || rawCategories.isEmpty) {
+      throw const FormatException('Support categories are unusable.');
+    }
+
+    final categories = <String>[];
+    final seen = <String>{};
+
+    for (final value in rawCategories) {
+      if (value is! String) {
+        throw const FormatException('Support categories are unusable.');
+      }
+
+      final category = value.trim();
+      if (category.isEmpty || !seen.add(category)) {
+        throw const FormatException('Support categories are unusable.');
+      }
+
+      categories.add(category);
+    }
+
+    return List<String>.unmodifiable(categories);
+  }
+}
+
+List<String>? _cachedSupportCategories;
+Future<List<String>>? _supportCategoriesLoadInFlight;
+PassengerSupportCategoryFetcher? _supportCategoryFetcherForTesting;
+
+Future<List<String>> _loadPassengerSupportCategories() async {
+  final cached = _cachedSupportCategories;
+  if (cached != null) {
+    return cached;
+  }
+
+  final inFlight = _supportCategoriesLoadInFlight;
+  if (inFlight != null) {
+    return inFlight;
+  }
+
+  final fetcher =
+      _supportCategoryFetcherForTesting ??
+      ApiPassengerSupportCategoryFetcher.withDefaultClient(
+        baseUrl: AsmApiClient.defaultBaseUrl,
+      );
+
+  final load = _fetchAndCachePassengerSupportCategories(fetcher);
+  _supportCategoriesLoadInFlight = load;
+
+  try {
+    return await load;
+  } finally {
+    if (identical(_supportCategoriesLoadInFlight, load)) {
+      _supportCategoriesLoadInFlight = null;
+    }
+  }
+}
+
+Future<List<String>> _fetchAndCachePassengerSupportCategories(
+  PassengerSupportCategoryFetcher fetcher,
+) async {
+  try {
+    final categories = await fetcher.fetch();
+    if (categories.isEmpty) {
+      return _fallbackCategories;
+    }
+
+    final cachedCategories = List<String>.unmodifiable(categories);
+    _cachedSupportCategories = cachedCategories;
+    return cachedCategories;
+  } on Object {
+    return _fallbackCategories;
+  }
+}
+
+void setPassengerSupportCategoryFetcherForTesting(
+  PassengerSupportCategoryFetcher? fetcher,
+) {
+  _supportCategoryFetcherForTesting = fetcher;
+  _cachedSupportCategories = null;
+  _supportCategoriesLoadInFlight = null;
+}
+
+void resetPassengerSupportCategorySessionForTesting() {
+  _supportCategoryFetcherForTesting = null;
+  _cachedSupportCategories = null;
+  _supportCategoriesLoadInFlight = null;
+}
 
 final class PassengerSupportMessageResult {
   const PassengerSupportMessageResult({required this.reference});
@@ -281,12 +416,14 @@ class _NewMessageFormState extends State<NewMessageForm> {
   late final PassengerImagePicker _imagePicker;
   late String? _selectedCategory;
 
+  List<String> _categoryOptions = const <String>[];
   List<PassengerRideRequestRecord> _tripOptions =
       const <PassengerRideRequestRecord>[];
   String? _selectedTripReference;
   String? _attachmentPath;
   String? _submissionError;
   String? _successReference;
+  bool _loadingCategories = true;
   bool _loadingTrips = true;
   bool _submitting = false;
 
@@ -298,12 +435,39 @@ class _NewMessageFormState extends State<NewMessageForm> {
     _imagePicker = widget.imagePicker ?? PlatformPassengerImagePicker();
     _selectedCategory = widget.initialCategory;
 
+    final initialCategory = _selectedCategory?.trim();
+    if (initialCategory != null && initialCategory.isNotEmpty) {
+      _categoryOptions = <String>[initialCategory];
+    }
+
     final initialName = widget.initialPassengerName?.trim();
     if (initialName != null && initialName.isNotEmpty) {
       _nameController.text = initialName;
     }
 
+    _loadCategories();
     _loadTrips();
+  }
+
+  Future<void> _loadCategories() async {
+    final categories = await _loadPassengerSupportCategories();
+    if (!mounted) {
+      return;
+    }
+
+    final options = List<String>.of(categories);
+    final selectedCategory = _selectedCategory?.trim();
+
+    if (selectedCategory != null &&
+        selectedCategory.isNotEmpty &&
+        !options.contains(selectedCategory)) {
+      options.insert(0, selectedCategory);
+    }
+
+    setState(() {
+      _categoryOptions = List<String>.unmodifiable(options);
+      _loadingCategories = false;
+    });
   }
 
   @override
@@ -498,7 +662,7 @@ class _NewMessageFormState extends State<NewMessageForm> {
                     labelText: 'Category',
                     border: OutlineInputBorder(),
                   ),
-                  items: passengerSupportCategories
+                  items: _categoryOptions
                       .map(
                         (category) => DropdownMenuItem<String>(
                           value: category,
@@ -506,7 +670,7 @@ class _NewMessageFormState extends State<NewMessageForm> {
                         ),
                       )
                       .toList(growable: false),
-                  onChanged: _categoryLocked
+                  onChanged: _categoryLocked || _loadingCategories
                       ? null
                       : (value) => setState(() => _selectedCategory = value),
                   validator: (value) {

@@ -1,3 +1,4 @@
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,166 @@ import 'package:passenger_app/ride_requests/ride_request_history.dart';
 import 'package:passenger_app/support/new_message_form.dart';
 
 void main() {
+  setUp(resetPassengerSupportCategorySessionForTesting);
+  tearDown(resetPassengerSupportCategorySessionForTesting);
+
+  testWidgets('test_categories_fetched_from_api_on_form_load', (tester) async {
+    final client = _RecordingSupportCategoryApiClient(
+      responseBody: const <String, Object?>{
+        'categories': <Object?>[
+          'Lost item',
+          'General enquiry',
+          'Trip issue',
+          'Other',
+        ],
+      },
+    );
+    setPassengerSupportCategoryFetcherForTesting(
+      ApiPassengerSupportCategoryFetcher(
+        client: client,
+        connectionConfigured: true,
+      ),
+    );
+
+    await _pumpForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    expect(client.getCalls, 1);
+    expect(client.lastPath, passengerSupportCategoriesEndpoint);
+  });
+
+  testWidgets('test_api_categories_populate_dropdown', (tester) async {
+    setPassengerSupportCategoryFetcherForTesting(
+      _FakeSupportCategoryFetcher(
+        categories: const <String>['API category A', 'API category B'],
+      ),
+    );
+
+    await _pumpForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const Key('new-message-category')),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+
+    expect(
+      dropdown.items!.map((item) => item.value).toList(growable: false),
+      const <String>['API category A', 'API category B'],
+    );
+  });
+
+  testWidgets('test_fallback_categories_used_when_fetch_fails', (tester) async {
+    setPassengerSupportCategoryFetcherForTesting(
+      _FakeSupportCategoryFetcher(shouldFail: true),
+    );
+
+    await _pumpForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const Key('new-message-category')),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+
+    expect(
+      dropdown.items!.map((item) => item.value).toList(growable: false),
+      const <String>['Lost item', 'General enquiry', 'Trip issue', 'Other'],
+    );
+  });
+
+  testWidgets('test_initial_category_locks_selection_regardless_of_source', (
+    tester,
+  ) async {
+    setPassengerSupportCategoryFetcherForTesting(
+      _FakeSupportCategoryFetcher(
+        categories: const <String>[
+          'Lost item',
+          'General enquiry',
+          'Trip issue',
+          'Other',
+        ],
+      ),
+    );
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    var field = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const Key('new-message-category')),
+    );
+    expect(field.initialValue, 'Lost item');
+    expect(field.onChanged, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    resetPassengerSupportCategorySessionForTesting();
+    setPassengerSupportCategoryFetcherForTesting(
+      _FakeSupportCategoryFetcher(shouldFail: true),
+    );
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    field = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const Key('new-message-category')),
+    );
+    expect(field.initialValue, 'Lost item');
+    expect(field.onChanged, isNull);
+  });
+
+  testWidgets('test_categories_cached_for_session', (tester) async {
+    final fetcher = _FakeSupportCategoryFetcher(
+      categories: const <String>[
+        'Lost item',
+        'General enquiry',
+        'Trip issue',
+        'Other',
+      ],
+    );
+    setPassengerSupportCategoryFetcherForTesting(fetcher);
+
+    await _pumpForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+    expect(fetcher.calls, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    await _pumpForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    expect(fetcher.calls, 1);
+  });
+
   testWidgets('test_lost_item_from_settings_prefills_category', (tester) async {
     await _pumpSettings(
       tester,
@@ -323,6 +484,51 @@ PassengerRideRequestRecord _tripRecord({
     tripCreated: true,
     tripReference: tripReference,
   );
+}
+
+final class _FakeSupportCategoryFetcher
+    implements PassengerSupportCategoryFetcher {
+  _FakeSupportCategoryFetcher({
+    this.categories = const <String>[],
+    this.shouldFail = false,
+  });
+
+  final List<String> categories;
+  final bool shouldFail;
+  int calls = 0;
+
+  @override
+  Future<List<String>> fetch() async {
+    calls += 1;
+    if (shouldFail) {
+      throw const FormatException('Category fetch failed.');
+    }
+    return categories;
+  }
+}
+
+final class _RecordingSupportCategoryApiClient extends AsmApiClient {
+  _RecordingSupportCategoryApiClient({required this.responseBody})
+    : super(baseUrl: 'https://example.test');
+
+  final Map<String, Object?> responseBody;
+
+  int getCalls = 0;
+  String? lastPath;
+
+  @override
+  Future<ApiResponse<T>> get<T>(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+    JsonDecoder<T>? decoder,
+  }) async {
+    getCalls += 1;
+    lastPath = path;
+
+    final decoded = decoder == null ? responseBody as T : decoder(responseBody);
+
+    return ApiResponse<T>.success(decoded, statusCode: 200);
+  }
 }
 
 final class _FakeTripHistoryRepository
