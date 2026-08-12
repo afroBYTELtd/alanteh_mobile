@@ -1113,6 +1113,49 @@ void main() {
     expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
+  testWidgets('test_new_message_form_prefills_name_from_restored_session', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    await store.savePassengerDisplayName('Restored Passenger');
+
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-account-settings')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-account-settings')));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-lost-item')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.pumpAndSettle();
+
+    final nameField = tester.widget<TextFormField>(
+      find.byKey(const Key('new-message-name')),
+    );
+    expect(nameField.controller?.text, 'Restored Passenger');
+  });
+
   testWidgets('Passenger sign out after restored startup clears next startup', (
     tester,
   ) async {

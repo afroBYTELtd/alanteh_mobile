@@ -228,6 +228,28 @@ void main() {
     expect(find.byKey(const Key('new-message-success')), findsOneWidget);
   });
 
+  testWidgets('test_name_field_remains_editable', (tester) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    expect(_textValue(tester, const Key('new-message-name')), 'Test Passenger');
+
+    await tester.enterText(
+      find.byKey(const Key('new-message-name')),
+      'Edited Passenger',
+    );
+    await tester.pump();
+
+    expect(
+      _textValue(tester, const Key('new-message-name')),
+      'Edited Passenger',
+    );
+  });
+
   testWidgets('test_new_message_form_reusable_widget', (tester) async {
     await _pumpForm(
       tester,

@@ -234,13 +234,24 @@ abstract interface class AuthTokenStore {
   Future<void> clearTokens();
 }
 
+/// Optional Passenger session metadata storage used alongside auth tokens.
+abstract interface class PassengerDisplayNameStore {
+  Future<void> savePassengerDisplayName(String displayName);
+
+  Future<String?> readPassengerDisplayName();
+
+  Future<void> clearPassengerDisplayName();
+}
+
 /// Secure token storage foundation backed by flutter_secure_storage.
-class SecureAuthTokenStore implements AuthTokenStore {
+class SecureAuthTokenStore
+    implements AuthTokenStore, PassengerDisplayNameStore {
   SecureAuthTokenStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
 
   static const accessTokenKey = 'asm.auth.access_token';
   static const refreshTokenKey = 'asm.auth.refresh_token';
+  static const passengerDisplayNameKey = 'passenger_display_name';
 
   final FlutterSecureStorage _storage;
 
@@ -261,16 +272,37 @@ class SecureAuthTokenStore implements AuthTokenStore {
   }
 
   @override
+  Future<void> savePassengerDisplayName(String displayName) {
+    return _storage.write(
+      key: passengerDisplayNameKey,
+      value: displayName.trim(),
+    );
+  }
+
+  @override
+  Future<String?> readPassengerDisplayName() {
+    return _storage.read(key: passengerDisplayNameKey);
+  }
+
+  @override
+  Future<void> clearPassengerDisplayName() {
+    return _storage.delete(key: passengerDisplayNameKey);
+  }
+
+  @override
   Future<void> clearTokens() async {
     await _storage.delete(key: accessTokenKey);
     await _storage.delete(key: refreshTokenKey);
+    await clearPassengerDisplayName();
   }
 }
 
 /// In-memory token storage for tests and local non-platform checks only.
-class MemoryAuthTokenStore implements AuthTokenStore {
+class MemoryAuthTokenStore
+    implements AuthTokenStore, PassengerDisplayNameStore {
   String? _accessToken;
   String? _refreshToken;
+  String? _passengerDisplayName;
 
   @override
   Future<void> saveTokens(AuthTokens tokens) async {
@@ -285,9 +317,23 @@ class MemoryAuthTokenStore implements AuthTokenStore {
   Future<String?> readRefreshToken() async => _refreshToken;
 
   @override
+  Future<void> savePassengerDisplayName(String displayName) async {
+    _passengerDisplayName = displayName.trim();
+  }
+
+  @override
+  Future<String?> readPassengerDisplayName() async => _passengerDisplayName;
+
+  @override
+  Future<void> clearPassengerDisplayName() async {
+    _passengerDisplayName = null;
+  }
+
+  @override
   Future<void> clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
+    _passengerDisplayName = null;
   }
 }
 
@@ -392,6 +438,7 @@ class AuthService {
     try {
       final session = _sessionFromLoginResponse(response.data!);
       await _tokenStore.saveTokens(session.tokens);
+      await _persistPassengerDisplayName(session);
       return AuthState.authenticated(session);
     } on Object catch (error) {
       await _tokenStore.clearTokens();
@@ -426,7 +473,15 @@ class AuthService {
         fallbackRefreshToken: storedRefreshToken,
       );
       await _tokenStore.saveTokens(tokens);
-      return AuthState.authenticated(AuthSession(tokens: tokens));
+      final passengerDisplayName = await _readPassengerDisplayName();
+      return AuthState.authenticated(
+        AuthSession(
+          tokens: tokens,
+          account: passengerDisplayName == null
+              ? null
+              : <String, Object?>{'display_name': passengerDisplayName},
+        ),
+      );
     } on Object catch (error) {
       await _tokenStore.clearTokens();
       return AuthState.unauthenticated(_parseError(error));
@@ -453,7 +508,49 @@ class AuthService {
       accessToken: accessToken,
       refreshToken: refreshToken,
     );
-    return AuthState.authenticated(AuthSession(tokens: tokens));
+    final passengerDisplayName = await _readPassengerDisplayName();
+    return AuthState.authenticated(
+      AuthSession(
+        tokens: tokens,
+        account: passengerDisplayName == null
+            ? null
+            : <String, Object?>{'display_name': passengerDisplayName},
+      ),
+    );
+  }
+
+  Future<void> _persistPassengerDisplayName(AuthSession session) async {
+    if (_appContext != AuthAppContext.passenger) {
+      return;
+    }
+
+    final store = _tokenStore;
+    if (store is! PassengerDisplayNameStore) {
+      return;
+    }
+    final displayNameStore = store as PassengerDisplayNameStore;
+
+    final value = session.account?['display_name'];
+    if (value is String && value.trim().isNotEmpty) {
+      await displayNameStore.savePassengerDisplayName(value.trim());
+    } else {
+      await displayNameStore.clearPassengerDisplayName();
+    }
+  }
+
+  Future<String?> _readPassengerDisplayName() async {
+    if (_appContext != AuthAppContext.passenger) {
+      return null;
+    }
+
+    final store = _tokenStore;
+    if (store is! PassengerDisplayNameStore) {
+      return null;
+    }
+    final displayNameStore = store as PassengerDisplayNameStore;
+
+    final value = (await displayNameStore.readPassengerDisplayName())?.trim();
+    return value == null || value.isEmpty ? null : value;
   }
 
   AuthSession _sessionFromLoginResponse(Map<String, Object?> json) {

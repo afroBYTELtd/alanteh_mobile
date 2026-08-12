@@ -423,6 +423,69 @@ void main() {
       expect(await store.readRefreshToken(), 'refresh-one');
     });
 
+    test('test_display_name_persisted_on_login', () async {
+      final store = MemoryAuthTokenStore();
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(responseData: _successLoginResponse()),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233000000000', '0000');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(await store.readPassengerDisplayName(), 'Test Passenger');
+    });
+
+    test('test_display_name_restored_on_session_restoration', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-access',
+          refreshToken: 'stored-refresh',
+        ),
+      );
+      await store.savePassengerDisplayName('Restored Passenger');
+
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: <String, Object?>{'access': 'refreshed-access'},
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.refresh();
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(state.session?.account?['display_name'], 'Restored Passenger');
+      expect(await store.readPassengerDisplayName(), 'Restored Passenger');
+    });
+
+    test('test_display_name_cleared_on_logout', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-access',
+          refreshToken: 'stored-refresh',
+        ),
+      );
+      await store.savePassengerDisplayName('Stored Passenger');
+
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(responseData: _successLoginResponse()),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.logout();
+
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(await store.readPassengerDisplayName(), isNull);
+    });
+
     test('logout clears tokens', () async {
       final store = MemoryAuthTokenStore();
       await store.saveTokens(
