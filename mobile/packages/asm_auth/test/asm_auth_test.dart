@@ -462,6 +462,101 @@ void main() {
       expect(await store.readPassengerDisplayName(), 'Restored Passenger');
     });
 
+    test(
+      'test_real_session_restore_path_restores_persisted_display_name',
+      () async {
+        final store = MemoryAuthTokenStore();
+        await store.saveTokens(
+          AuthTokens(
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+          ),
+        );
+        await store.savePassengerDisplayName('Runtime Passenger');
+
+        final service = AuthService(
+          apiGateway: _MockAuthApiGateway(
+            responseData: <String, Object?>{'access': 'refreshed-access'},
+          ),
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        );
+
+        final state = await service.refresh();
+
+        expect(state.status, AuthStatus.authenticated);
+        expect(state.session?.account?['display_name'], 'Runtime Passenger');
+        expect(await store.readPassengerDisplayName(), 'Runtime Passenger');
+      },
+    );
+
+    test(
+      'test_restored_display_name_survives_auth_refresh_or_session_reconstruction',
+      () async {
+        final store = MemoryAuthTokenStore();
+        final loginService = AuthService(
+          apiGateway: _MockAuthApiGateway(
+            responseData: _successLoginResponse(
+              account: const <String, Object?>{
+                'id': 'passenger-runtime-account',
+                'full_name': 'Runtime Passenger',
+                'passenger_profile': <String, Object?>{
+                  'display_name': 'Profile Passenger',
+                },
+              },
+            ),
+          ),
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        );
+
+        final loginState = await loginService.login('+233000000000', '0000');
+        expect(loginState.status, AuthStatus.authenticated);
+        expect(await store.readPassengerDisplayName(), 'Runtime Passenger');
+
+        final refreshService = AuthService(
+          apiGateway: _MockAuthApiGateway(
+            responseData: <String, Object?>{'access': 'refreshed-access'},
+          ),
+          tokenStore: store,
+          appContext: AuthAppContext.passenger,
+        );
+
+        final refreshedState = await refreshService.refresh();
+
+        expect(refreshedState.status, AuthStatus.authenticated);
+        expect(
+          refreshedState.session?.account?['display_name'],
+          'Runtime Passenger',
+        );
+        expect(await store.readPassengerDisplayName(), 'Runtime Passenger');
+      },
+    );
+
+    test('test_logout_clears_persisted_display_name', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-access',
+          refreshToken: 'stored-refresh',
+        ),
+      );
+      await store.savePassengerDisplayName('Runtime Passenger');
+
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(responseData: _successLoginResponse()),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.logout();
+
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(await store.readPassengerDisplayName(), isNull);
+    });
+
     test('test_display_name_cleared_on_logout', () async {
       final store = MemoryAuthTokenStore();
       await store.saveTokens(

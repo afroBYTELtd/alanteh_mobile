@@ -256,6 +256,40 @@ void main() {
     expect(find.text('LOCAL DEMO'), findsNothing);
   });
 
+  testWidgets('test_real_passenger_login_path_persists_display_name', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    final api = _FakeAuthApiGateway(
+      responseData: _loginResponse(
+        fullName: 'Runtime Passenger',
+        passengerProfileDisplayName: 'Profile Passenger',
+      ),
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('passenger-phone-field')),
+      '+233000000000',
+    );
+    await tester.enterText(
+      find.byKey(const Key('passenger-pin-field')),
+      '0000',
+    );
+    await tester.tap(find.byKey(const Key('passenger-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(api.paths, <String>[AuthService.tokenPath]);
+    expect(await store.readPassengerDisplayName(), 'Runtime Passenger');
+    expect(
+      find.byKey(const Key('passenger-home-full-screen-map-layout')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Passenger invalid login input is blocked before network', (
     tester,
   ) async {
@@ -1156,6 +1190,116 @@ void main() {
     expect(nameField.controller?.text, 'Restored Passenger');
   });
 
+  testWidgets('test_new_message_form_prefills_name_after_restored_session', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+
+    final loginApi = _FakeAuthApiGateway(
+      responseData: _loginResponse(
+        fullName: 'Runtime Passenger',
+        passengerProfileDisplayName: 'Profile Passenger',
+      ),
+    );
+    final loginService = AuthService(
+      apiGateway: loginApi,
+      tokenStore: store,
+      appContext: AuthAppContext.passenger,
+    );
+
+    final loginState = await loginService.login('+233000000000', '0000');
+    expect(loginState.status, AuthStatus.authenticated);
+    expect(await store.readPassengerDisplayName(), 'Runtime Passenger');
+
+    final refreshApi = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: refreshApi, store: store));
+    await tester.pumpAndSettle();
+
+    expect(refreshApi.paths, <String>[AuthService.refreshPath]);
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-account-settings')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-account-settings')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-lost-item')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.pumpAndSettle();
+
+    final nameField = tester.widget<TextFormField>(
+      find.byKey(const Key('new-message-name')),
+    );
+    expect(nameField.controller?.text, 'Runtime Passenger');
+  });
+
+  testWidgets('test_name_field_remains_editable_after_restored_prefill', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    await store.savePassengerDisplayName('Runtime Passenger');
+
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-account-settings')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-account-settings')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-lost-item')),
+    );
+    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('new-message-name')))
+          .controller
+          ?.text,
+      'Runtime Passenger',
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('new-message-name')),
+      'Edited Runtime Passenger',
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const Key('new-message-name')))
+          .controller
+          ?.text,
+      'Edited Runtime Passenger',
+    );
+  });
+
   testWidgets('Passenger sign out after restored startup clears next startup', (
     tester,
   ) async {
@@ -1304,10 +1448,20 @@ Widget _loginTestApp({
 Map<String, Object?> _loginResponse({
   Object? accountType = 'passenger',
   String? phoneNumber = '+233559991234',
+  String? fullName,
+  String? passengerProfileDisplayName,
 }) {
   final account = <String, Object?>{};
   if (phoneNumber != null) {
     account['phone'] = phoneNumber;
+  }
+  if (fullName != null) {
+    account['full_name'] = fullName;
+  }
+  if (passengerProfileDisplayName != null) {
+    account['passenger_profile'] = <String, Object?>{
+      'display_name': passengerProfileDisplayName,
+    };
   }
 
   final response = <String, Object?>{

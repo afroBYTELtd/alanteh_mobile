@@ -530,12 +530,39 @@ class AuthService {
     }
     final displayNameStore = store as PassengerDisplayNameStore;
 
-    final value = session.account?['display_name'];
-    if (value is String && value.trim().isNotEmpty) {
-      await displayNameStore.savePassengerDisplayName(value.trim());
+    final value = _passengerDisplayNameFromAccount(session.account);
+    if (value != null) {
+      await displayNameStore.savePassengerDisplayName(value);
     } else {
       await displayNameStore.clearPassengerDisplayName();
     }
+  }
+
+  String? _passengerDisplayNameFromAccount(Map<String, Object?>? account) {
+    if (account == null) {
+      return null;
+    }
+
+    for (final key in const [
+      'display_name',
+      'displayName',
+      'full_name',
+      'fullName',
+      'name',
+    ]) {
+      final value = account[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    final passengerProfile = _mapField(account, 'passenger_profile');
+    final nestedDisplayName = passengerProfile?['display_name'];
+    if (nestedDisplayName is String && nestedDisplayName.trim().isNotEmpty) {
+      return nestedDisplayName.trim();
+    }
+
+    return null;
   }
 
   Future<String?> _readPassengerDisplayName() async {
