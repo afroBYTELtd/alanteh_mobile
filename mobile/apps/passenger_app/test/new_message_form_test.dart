@@ -304,6 +304,153 @@ void main() {
     expect(find.byKey(const Key('new-message-success')), findsOneWidget);
   });
 
+  testWidgets('test_choose_trip_tap_opens_trip_picker', (tester) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('new-message-trip-picker')), findsOneWidget);
+    expect(find.byKey(const Key('new-message-trip-empty')), findsOneWidget);
+  });
+
+  testWidgets('test_trip_picker_loads_existing_trip_history', (tester) async {
+    final repository = _FakeTripHistoryRepository(
+      records: <PassengerRideRequestRecord>[
+        _tripRecord(
+          tripReference: 'TRIP-LOAD123',
+          pickup: 'Airport',
+          destination: 'Osu',
+          createdAt: DateTime(2026, 8, 11, 9),
+        ),
+      ],
+    );
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: repository,
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    expect(repository.fetchRequestsCalls, 0);
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(repository.fetchRequestsCalls, 1);
+    expect(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-LOAD123')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_trip_picker_displays_route_and_date', (tester) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(
+        records: <PassengerRideRequestRecord>[
+          _tripRecord(
+            tripReference: 'TRIP-DISPLAY123',
+            pickup: 'Accra Mall',
+            destination: 'Osu',
+            createdAt: DateTime(2026, 8, 10, 12),
+          ),
+        ],
+      ),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Accra Mall → Osu'), findsOneWidget);
+    expect(find.text('10 Aug 2026'), findsOneWidget);
+  });
+
+  testWidgets('test_trip_selection_returns_trip_reference', (tester) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(
+        records: <PassengerRideRequestRecord>[
+          _tripRecord(
+            tripReference: 'TRIP-SELECT123',
+            pickup: 'Airport',
+            destination: 'East Legon',
+            createdAt: DateTime(2026, 8, 12, 10),
+          ),
+        ],
+      ),
+      submitter: submitter,
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-SELECT123')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Airport → East Legon'), findsOneWidget);
+
+    await _fillValidRequiredFields(tester);
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.calls, 1);
+    expect(submitter.lastTripReference, 'TRIP-SELECT123');
+  });
+
+  testWidgets('test_trip_picker_remains_optional', (tester) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: submitter,
+    );
+
+    await _fillValidRequiredFields(tester);
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.calls, 1);
+    expect(submitter.lastTripReference, isNull);
+    expect(find.byKey(const Key('new-message-success')), findsOneWidget);
+  });
+
+  testWidgets('test_choose_trip_control_is_tappable_when_form_loaded', (
+    tester,
+  ) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final control = tester.widget<InkWell>(
+      find.byKey(const Key('new-message-trip')),
+    );
+    expect(control.onTap, isNotNull);
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('new-message-trip-picker')), findsOneWidget);
+  });
+
   testWidgets('test_trip_picker_populated_from_history', (tester) async {
     await _pumpForm(
       tester,
@@ -560,9 +707,13 @@ final class _FakeTripHistoryRepository
   });
 
   final List<PassengerRideRequestRecord> records;
+  int fetchRequestsCalls = 0;
 
   @override
-  Future<List<PassengerRideRequestRecord>> fetchRequests() async => records;
+  Future<List<PassengerRideRequestRecord>> fetchRequests() async {
+    fetchRequestsCalls += 1;
+    return records;
+  }
 
   @override
   Future<PassengerRideRequestRecord> fetchRequest(String requestReference) {

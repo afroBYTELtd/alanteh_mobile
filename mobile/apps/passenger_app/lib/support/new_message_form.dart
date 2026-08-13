@@ -417,14 +417,12 @@ class _NewMessageFormState extends State<NewMessageForm> {
   late String? _selectedCategory;
 
   List<String> _categoryOptions = const <String>[];
-  List<PassengerRideRequestRecord> _tripOptions =
-      const <PassengerRideRequestRecord>[];
   String? _selectedTripReference;
+  PassengerRideRequestRecord? _selectedTrip;
   String? _attachmentPath;
   String? _submissionError;
   String? _successReference;
   bool _loadingCategories = true;
-  bool _loadingTrips = true;
   bool _submitting = false;
 
   bool get _categoryLocked => widget.initialCategory != null;
@@ -446,7 +444,6 @@ class _NewMessageFormState extends State<NewMessageForm> {
     }
 
     _loadCategories();
-    _loadTrips();
   }
 
   Future<void> _loadCategories() async {
@@ -477,37 +474,29 @@ class _NewMessageFormState extends State<NewMessageForm> {
     super.dispose();
   }
 
-  Future<void> _loadTrips() async {
-    try {
-      final records = await widget.tripHistoryRepository.fetchRequests();
-      if (!mounted) {
-        return;
-      }
+  Future<void> _openTripPicker() async {
+    final selected = await showModalBottomSheet<PassengerRideRequestRecord>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PassengerSupportTripPicker(
+        repository: widget.tripHistoryRepository,
+        selectedTripReference: _selectedTripReference,
+      ),
+    );
 
-      final seen = <String>{};
-      final options = <PassengerRideRequestRecord>[];
-
-      for (final record in records) {
-        final reference = record.normalizedTripReference;
-        if (reference == null || !seen.add(reference)) {
-          continue;
-        }
-        options.add(record);
-      }
-
-      setState(() {
-        _tripOptions = options;
-        _loadingTrips = false;
-      });
-    } on Object {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _tripOptions = const <PassengerRideRequestRecord>[];
-        _loadingTrips = false;
-      });
+    if (!mounted || selected == null) {
+      return;
     }
+
+    final reference = selected.normalizedTripReference;
+    if (reference == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedTripReference = reference;
+      _selectedTrip = selected;
+    });
   }
 
   Future<void> _chooseAttachment() async {
@@ -682,41 +671,27 @@ class _NewMessageFormState extends State<NewMessageForm> {
                   },
                 ),
                 const SizedBox(height: AsmSpacing.space12),
-                DropdownButtonFormField<String>(
+                InkWell(
                   key: const Key('new-message-trip'),
-                  initialValue: _selectedTripReference,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: 'Choose trip (optional)',
-                    hintText: 'Select a trip (optional)',
-                    border: const OutlineInputBorder(),
-                    suffixIcon: _loadingTrips
-                        ? const Padding(
-                            padding: EdgeInsets.all(14),
-                            child: SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : null,
-                  ),
-                  items: _tripOptions
-                      .map(
-                        (record) => DropdownMenuItem<String>(
-                          value: record.normalizedTripReference!,
-                          child: Text(
-                            '${record.pickupLocation} → ${record.destination}\n'
-                            '${_formatSupportTripDate(record.createdAt)}',
+                  onTap: _openTripPicker,
+                  borderRadius: BorderRadius.circular(4),
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Choose trip (optional)',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.arrow_drop_down),
+                    ),
+                    isEmpty: _selectedTrip == null,
+                    child: _selectedTrip == null
+                        ? const Text('Select a trip (optional)')
+                        : Text(
+                            '${_selectedTrip!.pickupLocation} → '
+                            '${_selectedTrip!.destination}\n'
+                            '${_formatSupportTripDate(_selectedTrip!.createdAt)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: _loadingTrips
-                      ? null
-                      : (value) =>
-                            setState(() => _selectedTripReference = value),
+                  ),
                 ),
                 const SizedBox(height: AsmSpacing.space12),
                 Expanded(
@@ -827,6 +802,153 @@ class _NewMessageFormState extends State<NewMessageForm> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PassengerSupportTripPicker extends StatefulWidget {
+  const _PassengerSupportTripPicker({
+    required this.repository,
+    required this.selectedTripReference,
+  });
+
+  final PassengerRideRequestHistoryRepository repository;
+  final String? selectedTripReference;
+
+  @override
+  State<_PassengerSupportTripPicker> createState() =>
+      _PassengerSupportTripPickerState();
+}
+
+class _PassengerSupportTripPickerState
+    extends State<_PassengerSupportTripPicker> {
+  late Future<List<PassengerRideRequestRecord>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<PassengerRideRequestRecord>> _load() async {
+    final records = await widget.repository.fetchRequests();
+    final seen = <String>{};
+    final options = <PassengerRideRequestRecord>[];
+
+    for (final record in records) {
+      final reference = record.normalizedTripReference;
+      if (reference == null || !seen.add(reference)) {
+        continue;
+      }
+      options.add(record);
+    }
+
+    return List<PassengerRideRequestRecord>.unmodifiable(options);
+  }
+
+  void _retry() {
+    setState(() => _future = _load());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        key: const Key('new-message-trip-picker'),
+        padding: const EdgeInsets.fromLTRB(
+          AsmSpacing.space16,
+          AsmSpacing.space20,
+          AsmSpacing.space16,
+          AsmSpacing.space24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Choose trip',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: AsmSpacing.space4),
+            const Text('Optional — select a trip related to this message.'),
+            const SizedBox(height: AsmSpacing.space16),
+            Flexible(
+              child: FutureBuilder<List<PassengerRideRequestRecord>>(
+                future: _future,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(
+                      key: Key('new-message-trip-loading'),
+                      child: Padding(
+                        padding: EdgeInsets.all(AsmSpacing.space24),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    return Column(
+                      key: const Key('new-message-trip-error'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Unable to load trip history. Please try again.',
+                        ),
+                        const SizedBox(height: AsmSpacing.space12),
+                        OutlinedButton(
+                          key: const Key('new-message-trip-retry'),
+                          onPressed: _retry,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    );
+                  }
+
+                  final options =
+                      snapshot.data ?? const <PassengerRideRequestRecord>[];
+                  if (options.isEmpty) {
+                    return const Padding(
+                      key: Key('new-message-trip-empty'),
+                      padding: EdgeInsets.all(AsmSpacing.space24),
+                      child: Text(
+                        'No trips are available to attach to this message.',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: AsmSpacing.space16),
+                    itemBuilder: (context, index) {
+                      final record = options[index];
+                      final reference = record.normalizedTripReference!;
+                      return ListTile(
+                        key: ValueKey('new-message-trip-option-$reference'),
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          '${record.pickupLocation} → ${record.destination}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          _formatSupportTripDate(record.createdAt),
+                        ),
+                        trailing: reference == widget.selectedTripReference
+                            ? const Icon(Icons.check)
+                            : null,
+                        onTap: () => Navigator.of(context).pop(record),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
