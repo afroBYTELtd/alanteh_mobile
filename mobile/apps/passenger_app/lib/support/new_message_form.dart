@@ -412,13 +412,14 @@ class _NewMessageFormState extends State<NewMessageForm> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _messageController = TextEditingController();
+  final _tripController = TextEditingController();
 
   late final PassengerImagePicker _imagePicker;
   late String? _selectedCategory;
+  late Future<List<PassengerRideRequestRecord>> _tripHistoryFuture;
 
   List<String> _categoryOptions = const <String>[];
   String? _selectedTripReference;
-  PassengerRideRequestRecord? _selectedTrip;
   String? _attachmentPath;
   String? _submissionError;
   String? _successReference;
@@ -444,6 +445,8 @@ class _NewMessageFormState extends State<NewMessageForm> {
     }
 
     _loadCategories();
+    _tripHistoryFuture = _loadSupportTripOptions(widget.tripHistoryRepository);
+    _tripHistoryFuture.then<void>((_) {}, onError: (_) {});
   }
 
   Future<void> _loadCategories() async {
@@ -471,6 +474,7 @@ class _NewMessageFormState extends State<NewMessageForm> {
   void dispose() {
     _nameController.dispose();
     _messageController.dispose();
+    _tripController.dispose();
     super.dispose();
   }
 
@@ -480,6 +484,7 @@ class _NewMessageFormState extends State<NewMessageForm> {
       isScrollControlled: true,
       builder: (_) => _PassengerSupportTripPicker(
         repository: widget.tripHistoryRepository,
+        initialFuture: _tripHistoryFuture,
         selectedTripReference: _selectedTripReference,
       ),
     );
@@ -495,7 +500,9 @@ class _NewMessageFormState extends State<NewMessageForm> {
 
     setState(() {
       _selectedTripReference = reference;
-      _selectedTrip = selected;
+      _tripController.text =
+          '${selected.pickupLocation} → ${selected.destination}\n'
+          '${_formatSupportTripDate(selected.createdAt)}';
     });
   }
 
@@ -671,26 +678,18 @@ class _NewMessageFormState extends State<NewMessageForm> {
                   },
                 ),
                 const SizedBox(height: AsmSpacing.space12),
-                InkWell(
+                TextFormField(
                   key: const Key('new-message-trip'),
+                  controller: _tripController,
+                  readOnly: true,
+                  showCursor: false,
+                  enableInteractiveSelection: false,
+                  maxLines: 2,
                   onTap: _openTripPicker,
-                  borderRadius: BorderRadius.circular(4),
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Choose trip (optional)',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.arrow_drop_down),
-                    ),
-                    isEmpty: _selectedTrip == null,
-                    child: _selectedTrip == null
-                        ? const Text('Select a trip (optional)')
-                        : Text(
-                            '${_selectedTrip!.pickupLocation} → '
-                            '${_selectedTrip!.destination}\n'
-                            '${_formatSupportTripDate(_selectedTrip!.createdAt)}',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                  decoration: const InputDecoration(
+                    hintText: 'Select a trip (optional)',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.arrow_drop_down),
                   ),
                 ),
                 const SizedBox(height: AsmSpacing.space12),
@@ -808,13 +807,33 @@ class _NewMessageFormState extends State<NewMessageForm> {
   }
 }
 
+Future<List<PassengerRideRequestRecord>> _loadSupportTripOptions(
+  PassengerRideRequestHistoryRepository repository,
+) async {
+  final records = await repository.fetchRequests();
+  final seen = <String>{};
+  final options = <PassengerRideRequestRecord>[];
+
+  for (final record in records) {
+    final reference = record.normalizedTripReference;
+    if (reference == null || !seen.add(reference)) {
+      continue;
+    }
+    options.add(record);
+  }
+
+  return List<PassengerRideRequestRecord>.unmodifiable(options);
+}
+
 class _PassengerSupportTripPicker extends StatefulWidget {
   const _PassengerSupportTripPicker({
     required this.repository,
+    required this.initialFuture,
     required this.selectedTripReference,
   });
 
   final PassengerRideRequestHistoryRepository repository;
+  final Future<List<PassengerRideRequestRecord>> initialFuture;
   final String? selectedTripReference;
 
   @override
@@ -829,27 +848,11 @@ class _PassengerSupportTripPickerState
   @override
   void initState() {
     super.initState();
-    _future = _load();
-  }
-
-  Future<List<PassengerRideRequestRecord>> _load() async {
-    final records = await widget.repository.fetchRequests();
-    final seen = <String>{};
-    final options = <PassengerRideRequestRecord>[];
-
-    for (final record in records) {
-      final reference = record.normalizedTripReference;
-      if (reference == null || !seen.add(reference)) {
-        continue;
-      }
-      options.add(record);
-    }
-
-    return List<PassengerRideRequestRecord>.unmodifiable(options);
+    _future = widget.initialFuture;
   }
 
   void _retry() {
-    setState(() => _future = _load());
+    setState(() => _future = _loadSupportTripOptions(widget.repository));
   }
 
   @override

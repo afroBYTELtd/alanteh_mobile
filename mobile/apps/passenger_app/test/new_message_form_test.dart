@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
@@ -338,7 +340,7 @@ void main() {
       submitter: _RecordingSupportMessageSubmitter(),
     );
 
-    expect(repository.fetchRequestsCalls, 0);
+    expect(repository.fetchRequestsCalls, 1);
 
     await tester.tap(find.byKey(const Key('new-message-trip')));
     await tester.pumpAndSettle();
@@ -440,15 +442,208 @@ void main() {
       submitter: _RecordingSupportMessageSubmitter(),
     );
 
-    final control = tester.widget<InkWell>(
-      find.byKey(const Key('new-message-trip')),
-    );
+    final control = _renderedTripTextField(tester);
+    expect(control.readOnly, isTrue);
     expect(control.onTap, isNotNull);
 
     await tester.tap(find.byKey(const Key('new-message-trip')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('new-message-trip-picker')), findsOneWidget);
+  });
+
+  testWidgets('test_choose_trip_field_renders_single_non_overlapping_prompt', (
+    tester,
+  ) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final field = _renderedTripTextField(tester);
+
+    expect(field.decoration?.labelText, isNull);
+    expect(field.decoration?.hintText, 'Select a trip (optional)');
+    expect(find.text('Select a trip (optional)'), findsOneWidget);
+    expect(find.text('Choose trip (optional)'), findsNothing);
+  });
+
+  testWidgets('test_choose_trip_field_enabled_after_trip_history_load', (
+    tester,
+  ) async {
+    final repository = _FakeTripHistoryRepository(
+      records: <PassengerRideRequestRecord>[
+        _tripRecord(
+          tripReference: 'TRIP-ENABLED123',
+          pickup: 'Airport',
+          destination: 'Osu',
+          createdAt: DateTime(2026, 8, 13, 8),
+        ),
+      ],
+    );
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: repository,
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    expect(repository.fetchRequestsCalls, 1);
+
+    final field = _renderedTripTextField(tester);
+    expect(field.readOnly, isTrue);
+    expect(field.onTap, isNotNull);
+    expect(field.decoration?.enabled, isTrue);
+  });
+
+  testWidgets('test_tapping_rendered_choose_trip_field_opens_picker', (
+    tester,
+  ) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(
+        records: <PassengerRideRequestRecord>[
+          _tripRecord(
+            tripReference: 'TRIP-TAP123',
+            pickup: 'Airport',
+            destination: 'Osu',
+            createdAt: DateTime(2026, 8, 13, 8),
+          ),
+        ],
+      ),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('new-message-trip-picker')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-TAP123')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_picker_displays_trip_route_and_date', (tester) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(
+        records: <PassengerRideRequestRecord>[
+          _tripRecord(
+            tripReference: 'TRIP-VISUAL123',
+            pickup: 'Accra Mall',
+            destination: 'Osu',
+            createdAt: DateTime(2026, 8, 13, 9),
+          ),
+        ],
+      ),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Accra Mall → Osu'), findsOneWidget);
+    expect(find.text('13 Aug 2026'), findsOneWidget);
+  });
+
+  testWidgets('test_selecting_trip_sets_trip_reference', (tester) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(
+        records: <PassengerRideRequestRecord>[
+          _tripRecord(
+            tripReference: 'TRIP-SET123',
+            pickup: 'Airport',
+            destination: 'East Legon',
+            createdAt: DateTime(2026, 8, 13, 10),
+          ),
+        ],
+      ),
+      submitter: submitter,
+    );
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-SET123')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Airport → East Legon'), findsOneWidget);
+
+    await _fillValidRequiredFields(tester);
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.calls, 1);
+    expect(submitter.lastTripReference, 'TRIP-SET123');
+  });
+
+  testWidgets('test_choose_trip_remains_optional', (tester) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: submitter,
+    );
+
+    await _fillValidRequiredFields(tester);
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.calls, 1);
+    expect(submitter.lastTripReference, isNull);
+    expect(find.byKey(const Key('new-message-success')), findsOneWidget);
+  });
+
+  testWidgets('test_trip_history_async_completion_enables_real_control', (
+    tester,
+  ) async {
+    final repository = _CompletingTripHistoryRepository();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: repository,
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    var field = _renderedTripTextField(tester);
+    expect(field.onTap, isNotNull);
+
+    repository.complete(<PassengerRideRequestRecord>[
+      _tripRecord(
+        tripReference: 'TRIP-ASYNC123',
+        pickup: 'Airport',
+        destination: 'Osu',
+        createdAt: DateTime(2026, 8, 13, 11),
+      ),
+    ]);
+    await tester.pump();
+
+    field = _renderedTripTextField(tester);
+    expect(field.onTap, isNotNull);
+
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('new-message-trip-picker')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-ASYNC123')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('test_trip_picker_populated_from_history', (tester) async {
@@ -631,6 +826,15 @@ Future<void> _fillValidRequiredFields(WidgetTester tester) async {
   );
 }
 
+TextField _renderedTripTextField(WidgetTester tester) {
+  return tester.widget<TextField>(
+    find.descendant(
+      of: find.byKey(const Key('new-message-trip')),
+      matching: find.byType(TextField),
+    ),
+  );
+}
+
 String _textValue(WidgetTester tester, Key key) {
   return tester.widget<TextFormField>(find.byKey(key)).controller!.text;
 }
@@ -697,6 +901,31 @@ final class _RecordingSupportCategoryApiClient extends AsmApiClient {
     final decoded = decoder == null ? responseBody as T : decoder(responseBody);
 
     return ApiResponse<T>.success(decoded, statusCode: 200);
+  }
+}
+
+final class _CompletingTripHistoryRepository
+    implements PassengerRideRequestHistoryRepository {
+  final Completer<List<PassengerRideRequestRecord>> _completer =
+      Completer<List<PassengerRideRequestRecord>>();
+
+  int fetchRequestsCalls = 0;
+
+  void complete(List<PassengerRideRequestRecord> records) {
+    _completer.complete(records);
+  }
+
+  @override
+  Future<List<PassengerRideRequestRecord>> fetchRequests() {
+    fetchRequestsCalls += 1;
+    return _completer.future;
+  }
+
+  @override
+  Future<PassengerRideRequestRecord> fetchRequest(String requestReference) {
+    return Future<PassengerRideRequestRecord>.error(
+      const PassengerRideRequestHistoryException.notFound(),
+    );
   }
 }
 
