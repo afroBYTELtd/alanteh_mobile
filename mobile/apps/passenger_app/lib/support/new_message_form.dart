@@ -218,6 +218,13 @@ final class ApiPassengerSupportMessageSubmitter
     required String name,
     required String message,
   }) async {
+    final normalizedMessage = message.trim();
+    if (normalizedMessage.length < 10) {
+      throw const PassengerSupportMessageException(
+        'Message must be at least 10 characters.',
+      );
+    }
+
     final accessToken = (await tokenStore.readAccessToken())?.trim();
     if (accessToken == null || accessToken.isEmpty) {
       throw const PassengerSupportMessageException.signInRequired();
@@ -231,7 +238,7 @@ final class ApiPassengerSupportMessageSubmitter
       category: category,
       tripReference: tripReference,
       name: name,
-      message: message,
+      message: normalizedMessage,
     );
 
     if (response.statusCode == 401) {
@@ -244,7 +251,7 @@ final class ApiPassengerSupportMessageSubmitter
         category: category,
         tripReference: tripReference,
         name: name,
-        message: message,
+        message: normalizedMessage,
       );
 
       if (retryResponse.statusCode == 401) {
@@ -610,97 +617,102 @@ class _NewMessageFormState extends State<NewMessageForm> {
 
     return Scaffold(
       key: const Key('new-message-form'),
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(title: const Text('New message')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AsmSpacing.space16,
-            AsmSpacing.space16,
-            AsmSpacing.space16,
-            AsmSpacing.space12,
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Need help? Send us a message and we will get back to you.',
-                  key: Key('new-message-intro'),
-                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
-                ),
-                const SizedBox(height: AsmSpacing.space16),
-                TextFormField(
-                  key: const Key('new-message-name'),
-                  controller: _nameController,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    border: OutlineInputBorder(),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            key: const Key('new-message-scroll-view'),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.fromLTRB(
+              AsmSpacing.space16,
+              AsmSpacing.space16,
+              AsmSpacing.space16,
+              AsmSpacing.space12,
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Need help? Send us a message and we will get back to you.',
+                    key: Key('new-message-intro'),
+                    style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
                   ),
-                  validator: (value) {
-                    final normalized = value?.trim() ?? '';
-                    if (normalized.isEmpty) {
-                      return 'Name is required.';
-                    }
-                    if (normalized.length < 2) {
-                      return 'Name must be at least 2 characters.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AsmSpacing.space12),
-                DropdownButtonFormField<String>(
-                  key: const Key('new-message-category'),
-                  initialValue: _selectedCategory,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: AsmSpacing.space16),
+                  TextFormField(
+                    key: const Key('new-message-name'),
+                    controller: _nameController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      final normalized = value?.trim() ?? '';
+                      if (normalized.isEmpty) {
+                        return 'Name is required.';
+                      }
+                      if (normalized.length < 2) {
+                        return 'Name must be at least 2 characters.';
+                      }
+                      return null;
+                    },
                   ),
-                  items: _categoryOptions
-                      .map(
-                        (category) => DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(category),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: _categoryLocked || _loadingCategories
-                      ? null
-                      : (value) => setState(() => _selectedCategory = value),
-                  validator: (value) {
-                    final normalized = value?.trim() ?? '';
-                    if (normalized.isEmpty) {
-                      return 'Category is required.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AsmSpacing.space12),
-                TextFormField(
-                  key: const Key('new-message-trip'),
-                  controller: _tripController,
-                  readOnly: true,
-                  showCursor: false,
-                  enableInteractiveSelection: false,
-                  maxLines: 2,
-                  onTap: _openTripPicker,
-                  decoration: const InputDecoration(
-                    hintText: 'Select a trip (optional)',
-                    border: OutlineInputBorder(),
-                    suffixIcon: Icon(Icons.arrow_drop_down),
+                  const SizedBox(height: AsmSpacing.space12),
+                  DropdownButtonFormField<String>(
+                    key: const Key('new-message-category'),
+                    initialValue: _selectedCategory,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categoryOptions
+                        .map(
+                          (category) => DropdownMenuItem<String>(
+                            value: category,
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: _categoryLocked || _loadingCategories
+                        ? null
+                        : (value) => setState(() => _selectedCategory = value),
+                    validator: (value) {
+                      final normalized = value?.trim() ?? '';
+                      if (normalized.isEmpty) {
+                        return 'Category is required.';
+                      }
+                      return null;
+                    },
                   ),
-                ),
-                const SizedBox(height: AsmSpacing.space12),
-                Expanded(
-                  child: TextFormField(
+                  const SizedBox(height: AsmSpacing.space12),
+                  TextFormField(
+                    key: const Key('new-message-trip'),
+                    controller: _tripController,
+                    readOnly: true,
+                    showCursor: false,
+                    enableInteractiveSelection: false,
+                    maxLines: 2,
+                    onTap: _openTripPicker,
+                    decoration: const InputDecoration(
+                      hintText: 'Select a trip (optional)',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.arrow_drop_down),
+                    ),
+                  ),
+                  const SizedBox(height: AsmSpacing.space12),
+                  TextFormField(
                     key: const Key('new-message-message'),
                     controller: _messageController,
-                    expands: true,
-                    minLines: null,
+                    minLines: 6,
                     maxLines: null,
                     textAlignVertical: TextAlignVertical.top,
+                    scrollPadding: const EdgeInsets.only(
+                      bottom: AsmSpacing.space24,
+                    ),
                     decoration: const InputDecoration(
                       labelText: 'Message',
                       alignLabelWithHint: true,
@@ -717,88 +729,90 @@ class _NewMessageFormState extends State<NewMessageForm> {
                       return null;
                     },
                   ),
-                ),
-                if (_attachmentPath case final path?) ...[
-                  const SizedBox(height: AsmSpacing.space8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(AsmRadii.radius8),
-                      child: Image.file(
-                        File(path),
-                        key: const Key('new-message-attachment-thumbnail'),
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          key: const Key(
-                            'new-message-attachment-thumbnail-fallback',
-                          ),
+                  if (_attachmentPath case final path?) ...[
+                    const SizedBox(height: AsmSpacing.space8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AsmRadii.radius8),
+                        child: Image.file(
+                          File(path),
+                          key: const Key('new-message-attachment-thumbnail'),
                           width: 72,
                           height: 72,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: AsmColors.passengerLine),
-                            borderRadius: BorderRadius.circular(
-                              AsmRadii.radius8,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            key: const Key(
+                              'new-message-attachment-thumbnail-fallback',
                             ),
+                            width: 72,
+                            height: 72,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: AsmColors.passengerLine,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AsmRadii.radius8,
+                              ),
+                            ),
+                            child: const Icon(Icons.image_outlined),
                           ),
-                          child: const Icon(Icons.image_outlined),
                         ),
-                      ),
-                    ),
-                  ),
-                ],
-                if (_submissionError case final error?) ...[
-                  const SizedBox(height: AsmSpacing.space8),
-                  Container(
-                    key: const Key('new-message-failure-state'),
-                    padding: const EdgeInsets.all(AsmSpacing.space12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AsmColors.passengerLine),
-                      borderRadius: BorderRadius.circular(AsmRadii.radius8),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(error)),
-                        const SizedBox(width: AsmSpacing.space8),
-                        TextButton(
-                          key: const Key('new-message-retry'),
-                          onPressed: _submitting ? null : _submit,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: AsmSpacing.space8),
-                Row(
-                  key: const Key('new-message-bottom-actions'),
-                  children: [
-                    IconButton(
-                      key: const Key('new-message-attachment'),
-                      tooltip: 'Add image',
-                      onPressed: _submitting ? null : _chooseAttachment,
-                      icon: const Icon(Icons.attach_file),
-                    ),
-                    const SizedBox(width: AsmSpacing.space12),
-                    Expanded(
-                      child: FilledButton(
-                        key: const Key('new-message-send'),
-                        onPressed: _submitting ? null : _submit,
-                        child: _submitting
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('Send'),
                       ),
                     ),
                   ],
-                ),
-              ],
+                  if (_submissionError case final error?) ...[
+                    const SizedBox(height: AsmSpacing.space8),
+                    Container(
+                      key: const Key('new-message-failure-state'),
+                      padding: const EdgeInsets.all(AsmSpacing.space12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AsmColors.passengerLine),
+                        borderRadius: BorderRadius.circular(AsmRadii.radius8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(error)),
+                          const SizedBox(width: AsmSpacing.space8),
+                          TextButton(
+                            key: const Key('new-message-retry'),
+                            onPressed: _submitting ? null : _submit,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AsmSpacing.space8),
+                  Row(
+                    key: const Key('new-message-bottom-actions'),
+                    children: [
+                      IconButton(
+                        key: const Key('new-message-attachment'),
+                        tooltip: 'Add image',
+                        onPressed: _submitting ? null : _chooseAttachment,
+                        icon: const Icon(Icons.attach_file),
+                      ),
+                      const SizedBox(width: AsmSpacing.space12),
+                      Expanded(
+                        child: FilledButton(
+                          key: const Key('new-message-send'),
+                          onPressed: _submitting ? null : _submit,
+                          child: _submitting
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Send'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

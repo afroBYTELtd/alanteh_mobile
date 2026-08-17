@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -253,6 +254,8 @@ void main() {
       find.byKey(const Key('new-message-message')),
       'Too short',
     );
+    await tester.ensureVisible(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('new-message-send')));
     await tester.pump();
 
@@ -774,6 +777,244 @@ void main() {
     expect(find.byKey(const Key('new-message-attachment')), findsOneWidget);
     expect(find.byKey(const Key('new-message-send')), findsOneWidget);
   });
+
+  testWidgets(
+    'test_ios_small_viewport_keyboard_does_not_overflow_new_message_form',
+    (tester) async {
+      await _pumpCompactKeyboardForm(
+        tester,
+        repository: _FakeTripHistoryRepository(),
+        submitter: _RecordingSupportMessageSubmitter(),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('new-message-scroll-view')), findsOneWidget);
+    },
+  );
+
+  testWidgets('test_message_field_remains_reachable_with_keyboard_open', (
+    tester,
+  ) async {
+    await _pumpCompactKeyboardForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final message = find.byKey(const Key('new-message-message'));
+    await tester.ensureVisible(message);
+    await tester.pumpAndSettle();
+
+    expect(message.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('test_send_action_remains_reachable_with_keyboard_open', (
+    tester,
+  ) async {
+    await _pumpCompactKeyboardForm(
+      tester,
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    final send = find.byKey(const Key('new-message-send'));
+    await tester.ensureVisible(send);
+    await tester.pumpAndSettle();
+
+    expect(send.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('test_message_under_10_characters_blocks_submission', (
+    tester,
+  ) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: submitter,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('new-message-message')),
+      'QA lost',
+    );
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pump();
+
+    expect(submitter.calls, 0);
+    expect(find.byKey(const Key('new-message-success')), findsNothing);
+  });
+
+  test(
+    'test_under_10_message_makes_zero_support_message_post_requests',
+    () async {
+      final client = _RecordingSupportMessageApiClient();
+      final tokenStore = _SupportMessageAuthTokenStore(
+        accessToken: 'test-access-token',
+      );
+      final submitter = ApiPassengerSupportMessageSubmitter(
+        client,
+        tokenStore: tokenStore,
+        connectionConfigured: true,
+      );
+
+      await expectLater(
+        submitter.submit(
+          category: 'Lost item',
+          tripReference: null,
+          name: 'Test Passenger',
+          message: 'QA lost',
+        ),
+        throwsA(
+          isA<PassengerSupportMessageException>().having(
+            (error) => error.message,
+            'message',
+            'Message must be at least 10 characters.',
+          ),
+        ),
+      );
+
+      expect(client.postCalls, 0);
+    },
+  );
+
+  testWidgets('test_message_10_characters_or_more_allows_submission', (
+    tester,
+  ) async {
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: submitter,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('new-message-message')),
+      '1234567890',
+    );
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pumpAndSettle();
+
+    expect(submitter.calls, 1);
+    expect(find.byKey(const Key('new-message-success')), findsOneWidget);
+  });
+
+  testWidgets('test_validation_error_visible_for_short_message', (
+    tester,
+  ) async {
+    await _pumpForm(
+      tester,
+      initialCategory: 'Lost item',
+      repository: _FakeTripHistoryRepository(),
+      submitter: _RecordingSupportMessageSubmitter(),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('new-message-message')),
+      'QA lost',
+    );
+    await tester.tap(find.byKey(const Key('new-message-send')));
+    await tester.pump();
+
+    expect(
+      find.text('Message must be at least 10 characters.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_trip_selection_preserved_when_keyboard_opens', (
+    tester,
+  ) async {
+    final repository = _FakeTripHistoryRepository(
+      records: <PassengerRideRequestRecord>[
+        _tripRecord(
+          tripReference: 'TRIP-KEYBOARD123',
+          pickup: 'Airport',
+          destination: 'East Legon',
+          createdAt: DateTime(2026, 8, 17, 12),
+        ),
+      ],
+    );
+    final submitter = _RecordingSupportMessageSubmitter();
+
+    await _pumpCompactForm(
+      tester,
+      repository: repository,
+      submitter: submitter,
+      keyboardInset: 0,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('new-message-trip')));
+    await tester.tap(find.byKey(const Key('new-message-trip')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('new-message-trip-option-TRIP-KEYBOARD123')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Airport → East Legon'), findsOneWidget);
+
+    await _pumpCompactForm(
+      tester,
+      repository: repository,
+      submitter: submitter,
+      keyboardInset: 300,
+    );
+
+    expect(find.textContaining('Airport → East Legon'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Future<void> _pumpCompactKeyboardForm(
+  WidgetTester tester, {
+  required PassengerRideRequestHistoryRepository repository,
+  required PassengerSupportMessageSubmitter submitter,
+}) {
+  return _pumpCompactForm(
+    tester,
+    repository: repository,
+    submitter: submitter,
+    keyboardInset: 300,
+  );
+}
+
+Future<void> _pumpCompactForm(
+  WidgetTester tester, {
+  required PassengerRideRequestHistoryRepository repository,
+  required PassengerSupportMessageSubmitter submitter,
+  required double keyboardInset,
+}) async {
+  tester.view.physicalSize = const Size(375, 812);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AsmThemes.passenger,
+      home: MediaQuery(
+        data: MediaQueryData(
+          size: const Size(375, 812),
+          devicePixelRatio: 1,
+          viewInsets: EdgeInsets.only(bottom: keyboardInset),
+        ),
+        child: NewMessageForm(
+          initialCategory: 'Lost item',
+          initialPassengerName: 'Test Passenger',
+          tripHistoryRepository: repository,
+          submitter: submitter,
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 Future<void> _pumpSettings(
@@ -949,6 +1190,46 @@ final class _FakeTripHistoryRepository
     return Future<PassengerRideRequestRecord>.error(
       const PassengerRideRequestHistoryException.notFound(),
     );
+  }
+}
+
+final class _RecordingSupportMessageApiClient extends AsmApiClient {
+  _RecordingSupportMessageApiClient() : super(baseUrl: 'https://example.test');
+
+  int postCalls = 0;
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) async {
+    postCalls += 1;
+    throw StateError('Unexpected support-message POST.');
+  }
+}
+
+final class _SupportMessageAuthTokenStore implements AuthTokenStore {
+  _SupportMessageAuthTokenStore({this._accessToken});
+
+  String? _accessToken;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    _accessToken = tokens.accessToken;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => _accessToken;
+
+  @override
+  Future<String?> readRefreshToken() async => null;
+
+  @override
+  Future<void> clearTokens() async {
+    _accessToken = null;
   }
 }
 
