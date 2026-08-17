@@ -13,6 +13,9 @@ import 'map/passenger_map.dart';
 const passengerHomePickupDefaultCenter = LatLng(5.6050, -0.1668);
 const passengerHomePickupInitialZoom = 16.0;
 const passengerHomePickupGeocodeDebounce = Duration(milliseconds: 400);
+const passengerHomeLocationRecoveryCopy =
+    'Location access is off.\n'
+    'Tap to enable in Settings → ALANTEH → Location';
 
 class PassengerPickupSelection {
   const PassengerPickupSelection({
@@ -71,6 +74,47 @@ class PlatformPassengerHomeReverseGeocoder
     }
     return parts.join(', ');
   }
+}
+
+enum PassengerHomeLocationPermissionState {
+  granted,
+  denied,
+  deniedForever,
+  servicesDisabled,
+}
+
+abstract interface class PassengerHomeLocationPermissionService {
+  Future<PassengerHomeLocationPermissionState> ensurePermission();
+
+  Future<bool> openAppSettings();
+}
+
+class GeolocatorPassengerHomeLocationPermissionService
+    implements PassengerHomeLocationPermissionService {
+  const GeolocatorPassengerHomeLocationPermissionService();
+
+  @override
+  Future<PassengerHomeLocationPermissionState> ensurePermission() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      return PassengerHomeLocationPermissionState.servicesDisabled;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    return switch (permission) {
+      LocationPermission.whileInUse ||
+      LocationPermission.always => PassengerHomeLocationPermissionState.granted,
+      LocationPermission.deniedForever =>
+        PassengerHomeLocationPermissionState.deniedForever,
+      _ => PassengerHomeLocationPermissionState.denied,
+    };
+  }
+
+  @override
+  Future<bool> openAppSettings() => Geolocator.openAppSettings();
 }
 
 abstract interface class PassengerHomeDeviceLocationService {
@@ -151,6 +195,8 @@ class PassengerHome extends StatefulWidget {
     this.reverseGeocoder = const PlatformPassengerHomeReverseGeocoder(),
     this.deviceLocationService =
         const GeolocatorPassengerHomeDeviceLocationService(),
+    this.locationPermissionService =
+        const GeolocatorPassengerHomeLocationPermissionService(),
     super.key,
   });
 
@@ -173,13 +219,14 @@ class PassengerHome extends StatefulWidget {
   final LatLng initialCenter;
   final PassengerHomeReverseGeocoder reverseGeocoder;
   final PassengerHomeDeviceLocationService deviceLocationService;
+  final PassengerHomeLocationPermissionService locationPermissionService;
 
   @override
   State<PassengerHome> createState() => _PassengerHomeState();
 }
 
 class _PassengerHomeState extends State<PassengerHome>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final MapController _mapController = MapController();
 
   late final AnimationController _recenterAnimationController;
@@ -190,11 +237,13 @@ class _PassengerHomeState extends State<PassengerHome>
   LatLng? _devicePosition;
   late String _address;
   bool _pinLifted = false;
+  bool _locationPermissionDeniedForever = false;
   int _geocodeGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _center = widget.initialCenter;
     final initialDescription = widget.pickupDescription?.trim() ?? '';
     _address = initialDescription.isEmpty
@@ -213,6 +262,7 @@ class _PassengerHomeState extends State<PassengerHome>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _geocodeTimer?.cancel();
     _positionSubscription?.cancel();
     _recenterAnimationController.dispose();
@@ -220,7 +270,39 @@ class _PassengerHomeState extends State<PassengerHome>
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_initializeDevicePosition());
+    }
+  }
+
+  Future<PassengerHomeLocationPermissionState>
+  _refreshLocationPermissionState() async {
+    final permissionState = await widget.locationPermissionService
+        .ensurePermission();
+    if (mounted) {
+      setState(() {
+        _locationPermissionDeniedForever =
+            permissionState ==
+            PassengerHomeLocationPermissionState.deniedForever;
+      });
+    }
+    return permissionState;
+  }
+
   Future<void> _initializeDevicePosition() async {
+    final permissionState = await _refreshLocationPermissionState();
+    if (!mounted) {
+      return;
+    }
+
+    if (permissionState != PassengerHomeLocationPermissionState.granted) {
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
+      return;
+    }
+
     final initialPosition = await widget.deviceLocationService
         .getCurrentDevicePosition();
     if (!mounted) {
@@ -240,6 +322,7 @@ class _PassengerHomeState extends State<PassengerHome>
       _scheduleReverseGeocode(initialPosition);
     }
 
+    await _positionSubscription?.cancel();
     _positionSubscription = widget.deviceLocationService.devicePositionStream
         .listen((position) {
           if (!mounted) {
@@ -330,6 +413,12 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   Future<void> _recenter() async {
+    final permissionState = await _refreshLocationPermissionState();
+    if (!mounted ||
+        permissionState != PassengerHomeLocationPermissionState.granted) {
+      return;
+    }
+
     final devicePosition = await widget.deviceLocationService
         .getCurrentDevicePosition();
     if (!mounted || devicePosition == null) {
@@ -368,6 +457,45 @@ class _PassengerHomeState extends State<PassengerHome>
       });
       _scheduleReverseGeocode(target);
     });
+  }
+
+  Future<void> _openLocationSettings() async {
+    await widget.locationPermissionService.openAppSettings();
+  }
+
+  Widget _buildLocationRecoveryBanner() {
+    return Material(
+      key: const Key('passenger-home-location-recovery'),
+      color: const Color(0xFFFFF4D6),
+      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+      child: InkWell(
+        key: const Key('passenger-home-location-recovery-action'),
+        onTap: _openLocationSettings,
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+        child: const Padding(
+          padding: EdgeInsets.all(AsmSpacing.space12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.location_off_outlined,
+                color: AsmColors.brandDeepGreen,
+              ),
+              SizedBox(width: AsmSpacing.space8),
+              Expanded(
+                child: Text(
+                  passengerHomeLocationRecoveryCopy,
+                  style: TextStyle(
+                    color: AsmColors.brandDeepGreen,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _confirmPickup() {
@@ -454,68 +582,79 @@ class _PassengerHomeState extends State<PassengerHome>
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(AsmSpacing.space16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              key: const Key('passenger-home-safe-top-content'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Container(
-                  key: const Key('passenger-home-floating-logo'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AsmSpacing.space12,
-                    vertical: AsmSpacing.space8,
-                  ),
-                  decoration: _floatingDecoration(),
-                  child: Image.asset(
-                    'assets/brand/alanteh_header_dark.png',
-                    width: 132,
-                    height: 28,
-                    fit: BoxFit.contain,
-                    semanticLabel: 'ALANTEH passenger logo',
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  key: const Key('passenger-home-floating-account'),
-                  width: 44,
-                  height: 44,
-                  decoration: _floatingDecoration(shape: BoxShape.circle),
-                  child: const Icon(Icons.person_outline),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Positioned(
-          left: AsmSpacing.space16,
-          right: AsmSpacing.space16,
-          top: 92,
-          child: Container(
-            key: const Key('passenger-home-solar-banner'),
-            padding: const EdgeInsets.all(AsmSpacing.space12),
-            decoration: BoxDecoration(
-              color: AsmColors.brandDeepGreen,
-              borderRadius: BorderRadius.circular(AsmRadii.radius16),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 18,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.wb_sunny_outlined, color: AsmColors.solarYellow),
-                SizedBox(width: AsmSpacing.space8),
-                Expanded(
-                  child: Text(
-                    "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      height: 1.35,
+                Row(
+                  key: const Key('passenger-home-floating-header'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      key: const Key('passenger-home-floating-logo'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AsmSpacing.space12,
+                        vertical: AsmSpacing.space8,
+                      ),
+                      decoration: _floatingDecoration(),
+                      child: Image.asset(
+                        'assets/brand/alanteh_header_dark.png',
+                        width: 132,
+                        height: 28,
+                        fit: BoxFit.contain,
+                        semanticLabel: 'ALANTEH passenger logo',
+                      ),
                     ),
+                    const Spacer(),
+                    Container(
+                      key: const Key('passenger-home-floating-account'),
+                      width: 44,
+                      height: 44,
+                      decoration: _floatingDecoration(shape: BoxShape.circle),
+                      child: const Icon(Icons.person_outline),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AsmSpacing.space12),
+                Container(
+                  key: const Key('passenger-home-solar-banner'),
+                  padding: const EdgeInsets.all(AsmSpacing.space12),
+                  decoration: BoxDecoration(
+                    color: AsmColors.brandDeepGreen,
+                    borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x33000000),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.wb_sunny_outlined,
+                        color: AsmColors.solarYellow,
+                      ),
+                      SizedBox(width: AsmSpacing.space8),
+                      Expanded(
+                        child: Text(
+                          "Ghana's first solar electric ride service. Clean, quiet, and reliable.",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                if (_locationPermissionDeniedForever) ...[
+                  const SizedBox(height: AsmSpacing.space8),
+                  _buildLocationRecoveryBanner(),
+                ],
               ],
             ),
           ),

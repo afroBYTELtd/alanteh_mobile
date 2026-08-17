@@ -211,6 +211,157 @@ void main() {
     expect(find.byIcon(Icons.my_location), findsOneWidget);
   });
 
+  testWidgets('test_permission_denied_forever_shows_recovery_banner', (
+    tester,
+  ) async {
+    final permissionService = _FakeLocationPermissionService(
+      PassengerHomeLocationPermissionState.deniedForever,
+    );
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      locationPermissionService: permissionService,
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('passenger-home-location-recovery')),
+      findsOneWidget,
+    );
+    expect(find.text(passengerHomeLocationRecoveryCopy), findsOneWidget);
+    expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
+  });
+
+  testWidgets('test_recovery_banner_opens_app_settings', (tester) async {
+    final permissionService = _FakeLocationPermissionService(
+      PassengerHomeLocationPermissionState.deniedForever,
+    );
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      locationPermissionService: permissionService,
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const Key('passenger-home-location-recovery-action')),
+    );
+    await tester.pump();
+
+    expect(permissionService.openAppSettingsCalls, 1);
+  });
+
+  testWidgets('test_recovery_banner_absent_when_permission_granted', (
+    tester,
+  ) async {
+    final permissionService = _FakeLocationPermissionService(
+      PassengerHomeLocationPermissionState.deniedForever,
+    );
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      locationPermissionService: permissionService,
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('passenger-home-location-recovery')),
+      findsOneWidget,
+    );
+
+    permissionService.state = PassengerHomeLocationPermissionState.granted;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('passenger-home-location-recovery')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('test_banner_does_not_overlap_header_on_small_screen', (
+    tester,
+  ) async {
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      mediaSize: const Size(375, 812),
+      mediaPadding: const EdgeInsets.only(top: 50),
+    );
+
+    final headerRect = tester.getRect(
+      find.byKey(const Key('passenger-home-floating-header')),
+    );
+    final bannerRect = tester.getRect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+    );
+
+    expect(headerRect.overlaps(bannerRect), isFalse);
+    expect(bannerRect.top, greaterThanOrEqualTo(headerRect.bottom));
+  });
+
+  testWidgets('test_banner_positioned_below_header_safe_area', (tester) async {
+    const topSafeArea = 50.0;
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      mediaSize: const Size(375, 812),
+      mediaPadding: const EdgeInsets.only(top: topSafeArea),
+    );
+
+    final topContentRect = tester.getRect(
+      find.byKey(const Key('passenger-home-safe-top-content')),
+    );
+    final headerRect = tester.getRect(
+      find.byKey(const Key('passenger-home-floating-header')),
+    );
+    final bannerRect = tester.getRect(
+      find.byKey(const Key('passenger-home-solar-banner')),
+    );
+
+    expect(topContentRect.top, greaterThanOrEqualTo(topSafeArea));
+    expect(headerRect.top, greaterThanOrEqualTo(topSafeArea));
+    expect(bannerRect.top, greaterThan(headerRect.bottom));
+  });
+
+  test('test_launch_screen_image_has_explicit_constraints', () {
+    final storyboard = File(
+      'ios/Runner/Base.lproj/LaunchScreen.storyboard',
+    ).readAsStringSync();
+
+    expect(
+      storyboard,
+      contains('contentMode="scaleAspectFit" image="LaunchImage"'),
+    );
+    expect(
+      storyboard,
+      contains('firstAttribute="width" constant="220" id="launch-width-220"'),
+    );
+    expect(
+      storyboard,
+      contains(
+        'secondAttribute="height" multiplier="3:1" '
+        'id="launch-aspect-3-1"',
+      ),
+    );
+    expect(
+      storyboard,
+      contains(
+        'firstAttribute="centerX" secondItem="Ze5-6b-2t3" '
+        'secondAttribute="centerX"',
+      ),
+    );
+    expect(
+      storyboard,
+      contains(
+        'firstAttribute="centerY" secondItem="Ze5-6b-2t3" '
+        'secondAttribute="centerY"',
+      ),
+    );
+  });
+
   test('test_geolocator_used_only_for_device_position_not_driver_tracking', () {
     final geolocatorFiles = Directory('lib')
         .listSync(recursive: true)
@@ -280,10 +431,27 @@ void main() {
 Future<void> _pumpHome(
   WidgetTester tester, {
   required PassengerHomeReverseGeocoder geocoder,
+  PassengerHomeDeviceLocationService deviceLocationService =
+      const _NoDeviceLocationService(),
+  PassengerHomeLocationPermissionService locationPermissionService =
+      const _GrantedLocationPermissionService(),
+  Size? mediaSize,
+  EdgeInsets mediaPadding = EdgeInsets.zero,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.passenger,
+      builder: (context, child) {
+        final current = MediaQuery.of(context);
+        return MediaQuery(
+          data: current.copyWith(
+            size: mediaSize ?? current.size,
+            padding: mediaPadding,
+            viewPadding: mediaPadding,
+          ),
+          child: child!,
+        );
+      },
       home: Scaffold(
         body: PassengerHome(
           market: AsmAppConfig.localGhana.market,
@@ -303,7 +471,8 @@ Future<void> _pumpHome(
           onOpenPickupSearch: (_) async => null,
           onConfirmPickup: (_) {},
           reverseGeocoder: geocoder,
-          deviceLocationService: const _NoDeviceLocationService(),
+          deviceLocationService: deviceLocationService,
+          locationPermissionService: locationPermissionService,
         ),
       ),
     ),
@@ -343,6 +512,36 @@ class _FakeReverseGeocoder implements PassengerHomeReverseGeocoder {
       throw StateError('Reverse geocoding unavailable.');
     }
     return address;
+  }
+}
+
+class _GrantedLocationPermissionService
+    implements PassengerHomeLocationPermissionService {
+  const _GrantedLocationPermissionService();
+
+  @override
+  Future<PassengerHomeLocationPermissionState> ensurePermission() async =>
+      PassengerHomeLocationPermissionState.granted;
+
+  @override
+  Future<bool> openAppSettings() async => true;
+}
+
+class _FakeLocationPermissionService
+    implements PassengerHomeLocationPermissionService {
+  _FakeLocationPermissionService(this.state);
+
+  PassengerHomeLocationPermissionState state;
+  int openAppSettingsCalls = 0;
+
+  @override
+  Future<PassengerHomeLocationPermissionState> ensurePermission() async =>
+      state;
+
+  @override
+  Future<bool> openAppSettings() async {
+    openAppSettingsCalls += 1;
+    return true;
   }
 }
 
