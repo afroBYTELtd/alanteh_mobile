@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -476,6 +477,156 @@ void main() {
     expect(await tokenStore.readRefreshToken(), isNull);
   });
 
+  testWidgets('test_rate_us_row_visible_in_settings', (tester) async {
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      rateUsPlatform: PassengerRateUsPlatform.ios,
+    );
+
+    expect(
+      find.byKey(const Key('passenger-settings-rate-us')),
+      findsOneWidget,
+    );
+    expect(find.text('Rate Us'), findsOneWidget);
+  });
+
+  testWidgets('test_ios_triggers_in_app_review_when_available', (
+    tester,
+  ) async {
+    final reviewGateway = _RecordingInAppReviewGateway(available: true);
+    final storeLauncher = _RecordingStoreLinkLauncher();
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      rateUsPlatform: PassengerRateUsPlatform.ios,
+      reviewGateway: reviewGateway,
+      storeLauncher: storeLauncher,
+    );
+
+    final rateUsRow = find.byKey(const Key('passenger-settings-rate-us'));
+    await tester.ensureVisible(rateUsRow);
+    await tester.tap(rateUsRow);
+    await tester.pumpAndSettle();
+
+    expect(reviewGateway.isAvailableCalls, 1);
+    expect(reviewGateway.requestReviewCalls, 1);
+    expect(storeLauncher.canLaunchCalls, isEmpty);
+    expect(storeLauncher.launchCalls, isEmpty);
+    expect(
+      find.text(passengerIosRateUsComingSoonMessage),
+      findsNothing,
+    );
+  });
+
+  testWidgets('test_ios_shows_coming_soon_when_review_not_available', (
+    tester,
+  ) async {
+    final reviewGateway = _RecordingInAppReviewGateway(available: false);
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      rateUsPlatform: PassengerRateUsPlatform.ios,
+      reviewGateway: reviewGateway,
+    );
+
+    final rateUsRow = find.byKey(const Key('passenger-settings-rate-us'));
+    await tester.ensureVisible(rateUsRow);
+    await tester.tap(rateUsRow);
+    await tester.pumpAndSettle();
+
+    expect(reviewGateway.isAvailableCalls, 1);
+    expect(reviewGateway.requestReviewCalls, 0);
+    expect(
+      find.text(passengerIosRateUsComingSoonMessage),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('test_android_attempts_market_deep_link', (tester) async {
+    final reviewGateway = _RecordingInAppReviewGateway(available: true);
+    final storeLauncher = _RecordingStoreLinkLauncher(
+      canLaunchResult: true,
+      launchResult: true,
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      rateUsPlatform: PassengerRateUsPlatform.android,
+      reviewGateway: reviewGateway,
+      storeLauncher: storeLauncher,
+    );
+
+    final rateUsRow = find.byKey(const Key('passenger-settings-rate-us'));
+    await tester.ensureVisible(rateUsRow);
+    await tester.tap(rateUsRow);
+    await tester.pumpAndSettle();
+
+    expect(
+      storeLauncher.canLaunchCalls,
+      <Uri>[passengerAndroidRateUsMarketUri],
+    );
+    expect(
+      storeLauncher.launchCalls,
+      <Uri>[passengerAndroidRateUsMarketUri],
+    );
+    expect(
+      passengerAndroidRateUsMarketUri.toString(),
+      'market://details?id=io.alanteh.passenger',
+    );
+    expect(reviewGateway.isAvailableCalls, 0);
+    expect(reviewGateway.requestReviewCalls, 0);
+  });
+
+  testWidgets('test_android_shows_coming_soon_when_store_not_reachable', (
+    tester,
+  ) async {
+    final storeLauncher = _RecordingStoreLinkLauncher(
+      canLaunchResult: true,
+      launchResult: false,
+    );
+
+    await _pumpSettings(
+      tester,
+      store: _MemoryPreferenceStore(),
+      rateUsPlatform: PassengerRateUsPlatform.android,
+      storeLauncher: storeLauncher,
+    );
+
+    final rateUsRow = find.byKey(const Key('passenger-settings-rate-us'));
+    await tester.ensureVisible(rateUsRow);
+    await tester.tap(rateUsRow);
+    await tester.pumpAndSettle();
+
+    expect(
+      storeLauncher.canLaunchCalls,
+      <Uri>[passengerAndroidRateUsMarketUri],
+    );
+    expect(
+      storeLauncher.launchCalls,
+      <Uri>[passengerAndroidRateUsMarketUri],
+    );
+    expect(
+      find.text(passengerAndroidRateUsComingSoonMessage),
+      findsOneWidget,
+    );
+  });
+
+  test('test_platform_detection_at_runtime', () {
+    const provider = PlatformPassengerRateUsPlatformProvider();
+
+    final expected = Platform.isIOS
+        ? PassengerRateUsPlatform.ios
+        : Platform.isAndroid
+        ? PassengerRateUsPlatform.android
+        : PassengerRateUsPlatform.other;
+
+    expect(provider.current, expected);
+  });
+
   testWidgets('test_cancel_dismisses_dialog_without_action', (tester) async {
     final submitter = _RecordingDeleteSubmitter();
 
@@ -510,6 +661,9 @@ Future<void> _pumpSettings(
   PassengerLegalLinkOpener? opener,
   PassengerLegalDocumentFetcher? legalDocumentFetcher,
   PassengerDeleteAccountSubmitter? submitter,
+  PassengerRateUsPlatform? rateUsPlatform,
+  PassengerInAppReviewGateway? reviewGateway,
+  PassengerStoreLinkLauncher? storeLauncher,
   bool deleteAccountLiveEnabled = false,
 }) async {
   await tester.pumpWidget(
@@ -519,6 +673,12 @@ Future<void> _pumpSettings(
         preferenceStore: store,
         legalLinkOpener: opener ?? _RecordingLegalLinkOpener(),
         legalDocumentFetcher: legalDocumentFetcher,
+        rateUsPlatformProvider: _FixedRateUsPlatformProvider(
+          rateUsPlatform ?? PassengerRateUsPlatform.other,
+        ),
+        inAppReviewGateway:
+            reviewGateway ?? _RecordingInAppReviewGateway(available: false),
+        storeLinkLauncher: storeLauncher ?? _RecordingStoreLinkLauncher(),
         deleteAccountSubmitter:
             submitter ?? const UnavailablePassengerDeleteAccountSubmitter(),
         deleteAccountLiveEnabled: deleteAccountLiveEnabled,
@@ -531,6 +691,59 @@ Future<void> _pumpSettings(
 
 bool _switchValue(WidgetTester tester, String key) {
   return tester.widget<SwitchListTile>(find.byKey(Key(key))).value;
+}
+
+final class _FixedRateUsPlatformProvider
+    implements PassengerRateUsPlatformProvider {
+  const _FixedRateUsPlatformProvider(this.current);
+
+  @override
+  final PassengerRateUsPlatform current;
+}
+
+final class _RecordingInAppReviewGateway
+    implements PassengerInAppReviewGateway {
+  _RecordingInAppReviewGateway({required this.available});
+
+  final bool available;
+  int isAvailableCalls = 0;
+  int requestReviewCalls = 0;
+
+  @override
+  Future<bool> isAvailable() async {
+    isAvailableCalls += 1;
+    return available;
+  }
+
+  @override
+  Future<void> requestReview() async {
+    requestReviewCalls += 1;
+  }
+}
+
+final class _RecordingStoreLinkLauncher
+    implements PassengerStoreLinkLauncher {
+  _RecordingStoreLinkLauncher({
+    this.canLaunchResult = false,
+    this.launchResult = false,
+  });
+
+  final bool canLaunchResult;
+  final bool launchResult;
+  final List<Uri> canLaunchCalls = <Uri>[];
+  final List<Uri> launchCalls = <Uri>[];
+
+  @override
+  Future<bool> canLaunch(Uri uri) async {
+    canLaunchCalls.add(uri);
+    return canLaunchResult;
+  }
+
+  @override
+  Future<bool> launch(Uri uri) async {
+    launchCalls.add(uri);
+    return launchResult;
+  }
 }
 
 final class _MemoryPreferenceStore implements PassengerSettingsPreferenceStore {

@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:in_app_review/in_app_review.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../network/ghana_network_resilience.dart';
 import '../ride_requests/ride_request_history.dart';
@@ -20,6 +24,73 @@ const passengerDeleteAccountLiveEnabled = true;
 const passengerDeleteAccountSuccessTitle = 'Account deletion requested.';
 const passengerDeleteAccountSuccessMessage =
     'Your account will be fully removed within 7 days.';
+
+const passengerIosRateUsComingSoonMessage =
+    'Thanks for wanting to rate us.\n'
+    "We'll remind you when ALANTEH is available on the App Store.";
+const passengerAndroidRateUsComingSoonMessage =
+    'Thanks for wanting to rate us.\n'
+    "We'll remind you when ALANTEH is available on the Play Store.";
+final Uri passengerAndroidRateUsMarketUri = Uri.parse(
+  'market://details?id=io.alanteh.passenger',
+);
+
+enum PassengerRateUsPlatform { ios, android, other }
+
+abstract interface class PassengerRateUsPlatformProvider {
+  PassengerRateUsPlatform get current;
+}
+
+final class PlatformPassengerRateUsPlatformProvider
+    implements PassengerRateUsPlatformProvider {
+  const PlatformPassengerRateUsPlatformProvider();
+
+  @override
+  PassengerRateUsPlatform get current {
+    if (Platform.isIOS) {
+      return PassengerRateUsPlatform.ios;
+    }
+    if (Platform.isAndroid) {
+      return PassengerRateUsPlatform.android;
+    }
+    return PassengerRateUsPlatform.other;
+  }
+}
+
+abstract interface class PassengerInAppReviewGateway {
+  Future<bool> isAvailable();
+
+  Future<void> requestReview();
+}
+
+final class PlatformPassengerInAppReviewGateway
+    implements PassengerInAppReviewGateway {
+  const PlatformPassengerInAppReviewGateway();
+
+  @override
+  Future<bool> isAvailable() => InAppReview.instance.isAvailable();
+
+  @override
+  Future<void> requestReview() => InAppReview.instance.requestReview();
+}
+
+abstract interface class PassengerStoreLinkLauncher {
+  Future<bool> canLaunch(Uri uri);
+
+  Future<bool> launch(Uri uri);
+}
+
+final class PlatformPassengerStoreLinkLauncher
+    implements PassengerStoreLinkLauncher {
+  const PlatformPassengerStoreLinkLauncher();
+
+  @override
+  Future<bool> canLaunch(Uri uri) => canLaunchUrl(uri);
+
+  @override
+  Future<bool> launch(Uri uri) =>
+      launchUrl(uri, mode: LaunchMode.externalApplication);
+}
 
 const _settingsChannelName = 'io.alanteh.passenger/settings';
 const _rideUpdatesPreferenceKey = 'ride_updates';
@@ -339,6 +410,10 @@ class PassengerSettingsScreen extends StatefulWidget {
     this.tripHistoryRepository =
         const EmptyPassengerRideRequestHistoryRepository(),
     this.supportMessageSubmitter,
+    this.rateUsPlatformProvider =
+        const PlatformPassengerRateUsPlatformProvider(),
+    this.inAppReviewGateway = const PlatformPassengerInAppReviewGateway(),
+    this.storeLinkLauncher = const PlatformPassengerStoreLinkLauncher(),
     this.deleteAccountSubmitter =
         const UnavailablePassengerDeleteAccountSubmitter(),
     this.deleteAccountLiveEnabled = false,
@@ -352,6 +427,9 @@ class PassengerSettingsScreen extends StatefulWidget {
   final String? passengerName;
   final PassengerRideRequestHistoryRepository tripHistoryRepository;
   final PassengerSupportMessageSubmitter? supportMessageSubmitter;
+  final PassengerRateUsPlatformProvider rateUsPlatformProvider;
+  final PassengerInAppReviewGateway inAppReviewGateway;
+  final PassengerStoreLinkLauncher storeLinkLauncher;
   final PassengerDeleteAccountSubmitter deleteAccountSubmitter;
   final bool deleteAccountLiveEnabled;
   final Future<void> Function() onAccountDeletionRequested;
@@ -461,6 +539,53 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openRateUs() async {
+    switch (widget.rateUsPlatformProvider.current) {
+      case PassengerRateUsPlatform.ios:
+        try {
+          final available = await widget.inAppReviewGateway.isAvailable();
+          if (available) {
+            await widget.inAppReviewGateway.requestReview();
+            return;
+          }
+        } on Object {
+          // Fall through to the approved in-app availability message.
+        }
+        if (mounted) {
+          _showRateUsMessage(passengerIosRateUsComingSoonMessage);
+        }
+        return;
+      case PassengerRateUsPlatform.android:
+        try {
+          final canLaunch = await widget.storeLinkLauncher.canLaunch(
+            passengerAndroidRateUsMarketUri,
+          );
+          if (canLaunch) {
+            final launched = await widget.storeLinkLauncher.launch(
+              passengerAndroidRateUsMarketUri,
+            );
+            if (launched) {
+              return;
+            }
+          }
+        } on Object {
+          // Fall through to the approved in-app availability message.
+        }
+        if (mounted) {
+          _showRateUsMessage(passengerAndroidRateUsComingSoonMessage);
+        }
+        return;
+      case PassengerRateUsPlatform.other:
+        return;
+    }
+  }
+
+  void _showRateUsMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _confirmDeleteAccount() async {
@@ -608,6 +733,14 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                   title: const Text('Lost Item'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _openLostItem,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  key: const Key('passenger-settings-rate-us'),
+                  leading: const Icon(Icons.star_outline),
+                  title: const Text('Rate Us'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openRateUs,
                 ),
               ],
             ),
