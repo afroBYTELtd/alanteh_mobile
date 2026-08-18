@@ -423,6 +423,75 @@ void main() {
       expect(await store.readRefreshToken(), 'refresh-one');
     });
 
+    test('test_phone_persisted_on_login', () async {
+      final store = MemoryAuthTokenStore();
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(
+            account: const <String, Object?>{
+              'id': 'synthetic-passenger',
+              'display_name': 'Synthetic Passenger',
+              'phone': '+233000000000',
+            },
+          ),
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233000000000', '0000');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(await store.readPassengerPhoneNumber(), '+233000000000');
+    });
+
+    test('test_phone_restored_on_session_restoration', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-access',
+          refreshToken: 'stored-refresh',
+        ),
+      );
+      await store.savePassengerPhoneNumber('+233000000000');
+
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: <String, Object?>{'access': 'refreshed-access'},
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.refresh();
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(state.session?.account?['phone'], '+233000000000');
+      expect(await store.readPassengerPhoneNumber(), '+233000000000');
+    });
+
+    test('test_phone_cleared_on_logout', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(
+          accessToken: 'stored-access',
+          refreshToken: 'stored-refresh',
+        ),
+      );
+      await store.savePassengerPhoneNumber('+233000000000');
+
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(responseData: _successLoginResponse()),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.logout();
+
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(await store.readPassengerPhoneNumber(), isNull);
+    });
+
     test('test_display_name_persisted_on_login', () async {
       final store = MemoryAuthTokenStore();
       final service = AuthService(

@@ -1147,6 +1147,63 @@ void main() {
     expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
+  testWidgets('test_account_screen_shows_masked_phone_after_restore', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    await store.savePassengerPhoneNumber('+233000000000');
+
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
+    expect(find.text('+233 00 ****000'), findsOneWidget);
+  });
+
+  testWidgets('test_phone_unavailable_message_absent_when_phone_restored', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 900));
+    final store = MemoryAuthTokenStore();
+    await store.saveTokens(
+      AuthTokens(
+        accessToken: 'stored-passenger-access',
+        refreshToken: 'stored-passenger-refresh',
+      ),
+    );
+    await store.savePassengerPhoneNumber('+233000000000');
+
+    final api = _FakeAuthApiGateway(
+      responseData: const <String, Object?>{
+        'access': 'restored-passenger-access',
+      },
+    );
+
+    await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Phone number unavailable'), findsNothing);
+  });
+
   testWidgets('test_new_message_form_prefills_name_from_restored_session', (
     tester,
   ) async {

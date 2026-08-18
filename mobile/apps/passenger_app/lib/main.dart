@@ -366,6 +366,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         (accountType == null || accountType == AuthAccountType.passenger)) {
       setState(() {
         _signedIn = true;
+        _passengerPhoneNumber = _phoneNumberFromSession(state.session);
         _passengerName = _passengerNameFromSession(state.session);
         _otpRequired = false;
         _isSigningIn = false;

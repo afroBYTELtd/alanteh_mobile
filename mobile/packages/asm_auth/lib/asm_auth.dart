@@ -243,15 +243,28 @@ abstract interface class PassengerDisplayNameStore {
   Future<void> clearPassengerDisplayName();
 }
 
+/// Optional Passenger phone metadata storage used alongside auth tokens.
+abstract interface class PassengerPhoneNumberStore {
+  Future<void> savePassengerPhoneNumber(String phoneNumber);
+
+  Future<String?> readPassengerPhoneNumber();
+
+  Future<void> clearPassengerPhoneNumber();
+}
+
 /// Secure token storage foundation backed by flutter_secure_storage.
 class SecureAuthTokenStore
-    implements AuthTokenStore, PassengerDisplayNameStore {
+    implements
+        AuthTokenStore,
+        PassengerDisplayNameStore,
+        PassengerPhoneNumberStore {
   SecureAuthTokenStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
 
   static const accessTokenKey = 'asm.auth.access_token';
   static const refreshTokenKey = 'asm.auth.refresh_token';
   static const passengerDisplayNameKey = 'passenger_display_name';
+  static const passengerPhoneNumberKey = 'passenger_phone_number';
 
   final FlutterSecureStorage _storage;
 
@@ -290,19 +303,42 @@ class SecureAuthTokenStore
   }
 
   @override
+  Future<void> savePassengerPhoneNumber(String phoneNumber) {
+    return _storage.write(
+      key: passengerPhoneNumberKey,
+      value: phoneNumber.trim(),
+    );
+  }
+
+  @override
+  Future<String?> readPassengerPhoneNumber() {
+    return _storage.read(key: passengerPhoneNumberKey);
+  }
+
+  @override
+  Future<void> clearPassengerPhoneNumber() {
+    return _storage.delete(key: passengerPhoneNumberKey);
+  }
+
+  @override
   Future<void> clearTokens() async {
     await _storage.delete(key: accessTokenKey);
     await _storage.delete(key: refreshTokenKey);
     await clearPassengerDisplayName();
+    await clearPassengerPhoneNumber();
   }
 }
 
 /// In-memory token storage for tests and local non-platform checks only.
 class MemoryAuthTokenStore
-    implements AuthTokenStore, PassengerDisplayNameStore {
+    implements
+        AuthTokenStore,
+        PassengerDisplayNameStore,
+        PassengerPhoneNumberStore {
   String? _accessToken;
   String? _refreshToken;
   String? _passengerDisplayName;
+  String? _passengerPhoneNumber;
 
   @override
   Future<void> saveTokens(AuthTokens tokens) async {
@@ -330,10 +366,24 @@ class MemoryAuthTokenStore
   }
 
   @override
+  Future<void> savePassengerPhoneNumber(String phoneNumber) async {
+    _passengerPhoneNumber = phoneNumber.trim();
+  }
+
+  @override
+  Future<String?> readPassengerPhoneNumber() async => _passengerPhoneNumber;
+
+  @override
+  Future<void> clearPassengerPhoneNumber() async {
+    _passengerPhoneNumber = null;
+  }
+
+  @override
   Future<void> clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
     _passengerDisplayName = null;
+    _passengerPhoneNumber = null;
   }
 }
 
@@ -439,6 +489,7 @@ class AuthService {
       final session = _sessionFromLoginResponse(response.data!);
       await _tokenStore.saveTokens(session.tokens);
       await _persistPassengerDisplayName(session);
+      await _persistPassengerPhoneNumber(session);
       return AuthState.authenticated(session);
     } on Object catch (error) {
       await _tokenStore.clearTokens();
@@ -474,13 +525,13 @@ class AuthService {
       );
       await _tokenStore.saveTokens(tokens);
       final passengerDisplayName = await _readPassengerDisplayName();
+      final passengerPhoneNumber = await _readPassengerPhoneNumber();
+      final account = <String, Object?>{
+        if (passengerDisplayName != null) 'display_name': passengerDisplayName,
+        if (passengerPhoneNumber != null) 'phone': passengerPhoneNumber,
+      };
       return AuthState.authenticated(
-        AuthSession(
-          tokens: tokens,
-          account: passengerDisplayName == null
-              ? null
-              : <String, Object?>{'display_name': passengerDisplayName},
-        ),
+        AuthSession(tokens: tokens, account: account.isEmpty ? null : account),
       );
     } on Object catch (error) {
       await _tokenStore.clearTokens();
@@ -509,13 +560,13 @@ class AuthService {
       refreshToken: refreshToken,
     );
     final passengerDisplayName = await _readPassengerDisplayName();
+    final passengerPhoneNumber = await _readPassengerPhoneNumber();
+    final account = <String, Object?>{
+      if (passengerDisplayName != null) 'display_name': passengerDisplayName,
+      if (passengerPhoneNumber != null) 'phone': passengerPhoneNumber,
+    };
     return AuthState.authenticated(
-      AuthSession(
-        tokens: tokens,
-        account: passengerDisplayName == null
-            ? null
-            : <String, Object?>{'display_name': passengerDisplayName},
-      ),
+      AuthSession(tokens: tokens, account: account.isEmpty ? null : account),
     );
   }
 
@@ -536,6 +587,47 @@ class AuthService {
     } else {
       await displayNameStore.clearPassengerDisplayName();
     }
+  }
+
+  Future<void> _persistPassengerPhoneNumber(AuthSession session) async {
+    if (_appContext != AuthAppContext.passenger) {
+      return;
+    }
+
+    final store = _tokenStore;
+    if (store is! PassengerPhoneNumberStore) {
+      return;
+    }
+    final phoneStore = store as PassengerPhoneNumberStore;
+
+    final value = _passengerPhoneNumberFromAccount(session.account);
+    if (value != null) {
+      await phoneStore.savePassengerPhoneNumber(value);
+    } else {
+      await phoneStore.clearPassengerPhoneNumber();
+    }
+  }
+
+  String? _passengerPhoneNumberFromAccount(Map<String, Object?>? account) {
+    if (account == null) {
+      return null;
+    }
+
+    for (final key in const [
+      'phone',
+      'phone_number',
+      'phoneNumber',
+      'mobile',
+      'mobile_number',
+      'mobileNumber',
+    ]) {
+      final value = account[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    return null;
   }
 
   String? _passengerDisplayNameFromAccount(Map<String, Object?>? account) {
@@ -577,6 +669,21 @@ class AuthService {
     final displayNameStore = store as PassengerDisplayNameStore;
 
     final value = (await displayNameStore.readPassengerDisplayName())?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  Future<String?> _readPassengerPhoneNumber() async {
+    if (_appContext != AuthAppContext.passenger) {
+      return null;
+    }
+
+    final store = _tokenStore;
+    if (store is! PassengerPhoneNumberStore) {
+      return null;
+    }
+    final phoneStore = store as PassengerPhoneNumberStore;
+
+    final value = (await phoneStore.readPassengerPhoneNumber())?.trim();
     return value == null || value.isEmpty ? null : value;
   }
 
