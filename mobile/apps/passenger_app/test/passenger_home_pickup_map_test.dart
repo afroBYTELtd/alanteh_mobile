@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:asm_app_config/asm_app_config.dart';
@@ -324,6 +325,77 @@ void main() {
     expect(topContentRect.top, greaterThanOrEqualTo(topSafeArea));
     expect(headerRect.top, greaterThanOrEqualTo(topSafeArea));
     expect(bannerRect.top, greaterThan(headerRect.bottom));
+  });
+
+  test('test_launch_screen_background_is_brand_green', () {
+    final storyboard = File(
+      'ios/Runner/Base.lproj/LaunchScreen.storyboard',
+    ).readAsStringSync();
+    final colorset =
+        jsonDecode(
+              File(
+                'ios/Runner/Assets.xcassets/'
+                'ALANTEHBrandGreen.colorset/Contents.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+
+    expect(
+      storyboard,
+      contains('<color key="backgroundColor" name="ALANTEHBrandGreen"/>'),
+    );
+    expect(storyboard, contains('<namedColor name="ALANTEHBrandGreen">'));
+
+    final colors = colorset['colors'] as List<dynamic>;
+    expect(colors, hasLength(1));
+    final color =
+        (colors.single as Map<String, dynamic>)['color']
+            as Map<String, dynamic>;
+    expect(color['color-space'], 'srgb');
+
+    final components = color['components'] as Map<String, dynamic>;
+    expect(components['red'], '0.07058823529411765');
+    expect(components['green'], '0.23529411764705882');
+    expect(components['blue'], '0.1607843137254902');
+    expect(components['alpha'], '1.000');
+  });
+
+  test('test_launch_image_asset_unchanged', () {
+    const expectedSha256 = <String, String>{
+      'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png':
+          '388bcfa75150f7212912b03b9602fb7115718f1b73ba6a46194af8e9d060191e',
+      'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png':
+          '98bd946ec42f1b838638c2a07175a8cdb395fee483d06e481e06f90b9f6d0675',
+      'ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png':
+          '4423ec3d5b4af0d42f34ddf0acaccd4c37eea03075152c60b6aee02988a06c87',
+      'ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json':
+          'ccc7950fd5f5b82067c85f667940a9d59189151460761ece8098ca78daa19469',
+    };
+
+    for (final entry in expectedSha256.entries) {
+      final result = Process.runSync('shasum', ['-a', '256', entry.key]);
+      expect(
+        result.exitCode,
+        0,
+        reason: 'Unable to hash ${entry.key}: ${result.stderr}',
+      );
+      final digest = (result.stdout as String)
+          .trim()
+          .split(RegExp(r'\s+'))
+          .first;
+      expect(digest, entry.value, reason: '${entry.key} changed unexpectedly');
+    }
+  });
+
+  test('test_launch_screen_width_constraint_preserved', () {
+    final storyboard = File(
+      'ios/Runner/Base.lproj/LaunchScreen.storyboard',
+    ).readAsStringSync();
+
+    expect(
+      storyboard,
+      contains('firstAttribute="width" constant="220" id="launch-width-220"'),
+    );
   });
 
   test('test_launch_screen_image_has_explicit_constraints', () {
