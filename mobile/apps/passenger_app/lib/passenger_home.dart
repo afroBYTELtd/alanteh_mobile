@@ -310,16 +310,7 @@ class _PassengerHomeState extends State<PassengerHome>
     }
 
     if (initialPosition != null) {
-      setState(() {
-        _devicePosition = initialPosition;
-        _center = initialPosition;
-        _address = _coordinateFallback(initialPosition);
-      });
-      _mapController.move(initialPosition, passengerHomePickupInitialZoom);
-      if (mounted) {
-        setState(() => _pinLifted = false);
-      }
-      _scheduleReverseGeocode(initialPosition);
+      setState(() => _devicePosition = initialPosition);
     }
 
     await _positionSubscription?.cancel();

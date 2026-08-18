@@ -204,6 +204,126 @@ void main() {
     expect(find.byKey(const Key('booking-destination')), findsOneWidget);
   });
 
+  testWidgets(
+    'test_home_map_opens_centred_on_accra_regardless_of_device_location',
+    (tester) async {
+      const farOutsideGhana = LatLng(31.2304, 121.4737);
+      const deviceLocationService = _FixedDeviceLocationService(
+        farOutsideGhana,
+      );
+
+      await _pumpHome(
+        tester,
+        geocoder: _FakeReverseGeocoder(address: 'Accra pickup'),
+        deviceLocationService: deviceLocationService,
+      );
+      await tester.pump();
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+
+      expect(
+        map.mapController!.camera.center.latitude,
+        closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
+      );
+      expect(
+        map.mapController!.camera.center.longitude,
+        closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
+      );
+    },
+  );
+
+  testWidgets('test_blue_dot_shows_device_position_not_map_centre', (
+    tester,
+  ) async {
+    const farOutsideGhana = LatLng(31.2304, 121.4737);
+    const deviceLocationService = _FixedDeviceLocationService(farOutsideGhana);
+
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(address: 'Accra pickup'),
+      deviceLocationService: deviceLocationService,
+    );
+    await tester.pump();
+
+    final map = tester.widget<FlutterMap>(
+      find.byKey(const Key('passenger-home-flutter-map')),
+    );
+    final markerLayer = map.children.whereType<MarkerLayer>().single;
+    final blueDotMarker = markerLayer.markers.singleWhere(
+      (marker) =>
+          marker.child.key == const Key('passenger-home-device-blue-dot'),
+    );
+
+    expect(
+      map.mapController!.camera.center.latitude,
+      closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
+    );
+    expect(
+      map.mapController!.camera.center.longitude,
+      closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
+    );
+    expect(
+      blueDotMarker.point.latitude,
+      closeTo(farOutsideGhana.latitude, 0.000001),
+    );
+    expect(
+      blueDotMarker.point.longitude,
+      closeTo(farOutsideGhana.longitude, 0.000001),
+    );
+  });
+
+  testWidgets('test_recenter_fab_moves_to_device_position', (tester) async {
+    const farOutsideGhana = LatLng(31.2304, 121.4737);
+    const deviceLocationService = _FixedDeviceLocationService(farOutsideGhana);
+
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(address: 'Accra pickup'),
+      deviceLocationService: deviceLocationService,
+    );
+    await tester.pump();
+
+    final mapFinder = find.byKey(const Key('passenger-home-flutter-map'));
+    var map = tester.widget<FlutterMap>(mapFinder);
+
+    expect(
+      map.mapController!.camera.center.latitude,
+      closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
+    );
+    expect(
+      map.mapController!.camera.center.longitude,
+      closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
+    );
+
+    await tester.tap(find.byKey(const Key('passenger-home-recenter')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+
+    map = tester.widget<FlutterMap>(mapFinder);
+    expect(
+      map.mapController!.camera.center.latitude,
+      closeTo(farOutsideGhana.latitude, 0.000001),
+    );
+    expect(
+      map.mapController!.camera.center.longitude,
+      closeTo(farOutsideGhana.longitude, 0.000001),
+    );
+  });
+
+  test('test_initial_centre_is_kotoka_airport_coordinates', () {
+    expect(
+      passengerHomePickupDefaultCenter.latitude,
+      closeTo(5.6050, 0.000001),
+    );
+    expect(
+      passengerHomePickupDefaultCenter.longitude,
+      closeTo(-0.1668, 0.000001),
+    );
+  });
+
   testWidgets('test_recenter_fab_present', (tester) async {
     final geocoder = _FakeReverseGeocoder(address: 'Accra pickup');
     await _pumpHome(tester, geocoder: geocoder);
@@ -615,6 +735,19 @@ class _FakeLocationPermissionService
     openAppSettingsCalls += 1;
     return true;
   }
+}
+
+class _FixedDeviceLocationService
+    implements PassengerHomeDeviceLocationService {
+  const _FixedDeviceLocationService(this.position);
+
+  final LatLng position;
+
+  @override
+  Stream<LatLng> get devicePositionStream => const Stream<LatLng>.empty();
+
+  @override
+  Future<LatLng?> getCurrentDevicePosition() async => position;
 }
 
 class _NoDeviceLocationService implements PassengerHomeDeviceLocationService {
