@@ -8,6 +8,7 @@ import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/concern/driver_concern_page.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
+import 'package:driver_app/network/driver_report_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
@@ -1481,73 +1482,77 @@ void main() {
     },
   );
 
-  testWidgets('validates, reviews, edits, closes, and resets a concern draft', (
+  testWidgets('validates, sends, closes, and resets a concern report', (
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
-    await tester.pumpWidget(const DriverApp());
+    final reportGateway = _WidgetDriverReportGateway();
+
+    await tester.pumpWidget(DriverApp(driverReportGateway: reportGateway));
     await _openDriverLocalDemo(tester);
 
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
+
     expect(find.text('Report an issue'), findsOneWidget);
     expect(find.text('Ghana'), findsOneWidget);
-    expect(
-      find.text(
-        'This report is not sent from the app yet. For emergencies, follow approved local safety procedures.',
-      ),
-      findsOneWidget,
-    );
     expect(
       find.text(
         'If there is immediate danger, do not drive and follow approved local safety procedures.',
       ),
       findsOneWidget,
     );
+    expect(find.text('Continue without sending'), findsNothing);
+    expect(find.text('Review report'), findsNothing);
 
-    await _scrollToConcernReview(tester);
-    await tester.tap(find.byKey(const Key('review-concern')));
+    await _scrollToConcernSend(tester);
+    await tester.tap(find.byKey(const Key('send-concern')));
     await tester.pumpAndSettle();
+
     expect(find.text('Choose what the issue is.'), findsOneWidget);
     expect(find.text('Choose how urgent this is.'), findsOneWidget);
     expect(find.text('Describe the issue.'), findsOneWidget);
 
     await _completeConcernForm(tester, description: '  Loose mirror  ');
-    expect(
-      find.text('This report is not sent from the app yet.'),
-      findsOneWidget,
-    );
-    expect(find.text('Service area'), findsOneWidget);
-    expect(find.byKey(const Key('concern-market')), findsOneWidget);
-    expect(find.text('Vehicle'), findsOneWidget);
-    expect(find.text('Urgent'), findsOneWidget);
-    expect(find.text('Loose mirror'), findsOneWidget);
-    _expectNoOperationalActions();
 
-    await tester.tap(find.byKey(const Key('edit-concern')));
-    await tester.pumpAndSettle();
     final descriptionField = tester.widget<TextFormField>(
       find.byKey(const Key('concern-description')),
     );
     expect(descriptionField.controller!.text, '  Loose mirror  ');
+    expect(find.text('Urgent'), findsOneWidget);
+    expect(find.text('Start Shift'), findsNothing);
+    expect(find.text('Go Online'), findsNothing);
+    expect(find.text('Accept Trip'), findsNothing);
+    expect(find.text('Earnings'), findsNothing);
+    expect(find.text('Pay'), findsNothing);
+    expect(find.text('Notify operations'), findsNothing);
+    expect(find.text('Call support'), findsNothing);
+    expect(find.text('Upload'), findsNothing);
 
-    await _scrollToConcernReview(tester);
-    await tester.tap(find.byKey(const Key('review-concern')));
+    await _scrollToConcernSend(tester);
+    await tester.tap(find.byKey(const Key('send-concern')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('close-concern')));
+
+    expect(reportGateway.submitCalls, 1);
+    expect(reportGateway.submittedCategory, 'Vehicle concern');
+    expect(reportGateway.submittedDescription, 'Loose mirror');
+    expect(reportGateway.submittedUrgency, 'urgent');
+    expect(find.byKey(const Key('concern-submitted')), findsOneWidget);
+    expect(find.text('Your report has been received.'), findsOneWidget);
+    expect(find.text('RPT-WIDGET0001'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('concern-back-home')));
     await tester.pumpAndSettle();
     expect(find.text('Driver app ready'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('open-concern')));
     await tester.pumpAndSettle();
+
     final reopenedField = tester.widget<TextFormField>(
       find.byKey(const Key('concern-description')),
     );
     expect(reopenedField.controller!.text, isEmpty);
-    expect(
-      find.text('This report is not sent from the app yet.'),
-      findsNothing,
-    );
+
     await tester.enterText(
       find.byKey(const Key('concern-description')),
       'x' * 241,
@@ -1559,8 +1564,13 @@ void main() {
     tester,
   ) async {
     _useSurface(tester, const Size(430, 1000));
+    final reportGateway = _WidgetDriverReportGateway();
+
     await tester.pumpWidget(
-      const DriverApp(configuration: _localQaEnabledConfig),
+      DriverApp(
+        configuration: _localQaEnabledConfig,
+        driverReportGateway: reportGateway,
+      ),
     );
     await _openDriverLocalDemo(tester);
 
@@ -1580,8 +1590,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('readiness-open-concern')));
     await tester.pumpAndSettle();
+
     await _completeConcernForm(tester, description: 'Battery warning noted');
-    await tester.tap(find.byKey(const Key('close-concern')));
+    expect(reportGateway.submitCalls, 0);
+
+    await tester.pageBack();
     await tester.pumpAndSettle();
 
     expect(find.text('Shift check'), findsWidgets);
@@ -1775,17 +1788,21 @@ void main() {
           ).copyWith(textScaler: const TextScaler.linear(1.5)),
           child: child!,
         ),
-        home: const DriverConcernPage(market: MarketConfig.ghanaAccra),
+        home: DriverConcernPage(
+          market: MarketConfig.ghanaAccra,
+          gateway: _WidgetDriverReportGateway(),
+        ),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Report an issue'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.byKey(const Key('review-concern')),
+      find.byKey(const Key('send-concern')),
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.byKey(const Key('review-concern')), findsOneWidget);
+    expect(find.byKey(const Key('send-concern')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -3034,7 +3051,7 @@ Future<void> _completeConcernForm(
 }) async {
   await tester.tap(find.byKey(const Key('concern-category')));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Vehicle problem').last);
+  await tester.tap(find.text('Vehicle concern').last);
   await tester.pumpAndSettle();
 
   await tester.tap(find.byKey(const Key('concern-attention')));
@@ -3046,14 +3063,11 @@ Future<void> _completeConcernForm(
     find.byKey(const Key('concern-description')),
     description,
   );
-  await _scrollToConcernReview(tester);
-  await tester.tap(find.byKey(const Key('review-concern')));
-  await tester.pumpAndSettle();
 }
 
-Future<void> _scrollToConcernReview(WidgetTester tester) async {
+Future<void> _scrollToConcernSend(WidgetTester tester) async {
   await tester.scrollUntilVisible(
-    find.byKey(const Key('review-concern')),
+    find.byKey(const Key('send-concern')),
     200,
     scrollable: find.byType(Scrollable).last,
   );
@@ -3074,6 +3088,49 @@ String _readM3aDartSources(String rootPath) {
     }
   }
   return buffer.toString();
+}
+
+final class _WidgetDriverReportGateway implements DriverReportGateway {
+  int categoryCalls = 0;
+  int submitCalls = 0;
+  int clearCalls = 0;
+  String? submittedCategory;
+  String? submittedDescription;
+  String? submittedUrgency;
+
+  @override
+  Future<List<String>> fetchCategories({bool forceRefresh = false}) async {
+    categoryCalls += 1;
+    return const <String>[
+      'Vehicle concern',
+      'Safety issue',
+      'Route issue',
+      'Passenger concern',
+      'Other',
+    ];
+  }
+
+  @override
+  Future<DriverReportReceipt> submit({
+    required String category,
+    required String description,
+    required String urgency,
+  }) async {
+    submitCalls += 1;
+    submittedCategory = category;
+    submittedDescription = description;
+    submittedUrgency = urgency;
+
+    return const DriverReportReceipt(
+      reportReference: 'RPT-WIDGET0001',
+      status: 'received',
+    );
+  }
+
+  @override
+  void clearSessionCache() {
+    clearCalls += 1;
+  }
 }
 
 final class _WidgetPersistentDriverTripActionQueue

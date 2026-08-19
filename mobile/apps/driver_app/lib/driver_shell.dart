@@ -9,6 +9,7 @@ import 'driver_duty_trips.dart';
 import 'driver_home.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_resilience.dart';
+import 'network/driver_report_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'readiness/driver_shift_check_submission.dart';
@@ -65,6 +66,7 @@ class DriverShell extends StatefulWidget {
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
+    this.driverReportGateway,
     this.deviceNow,
     this.onlineTransitionDuration = const Duration(seconds: 2),
     super.key,
@@ -78,6 +80,7 @@ class DriverShell extends StatefulWidget {
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
+  final DriverReportGateway? driverReportGateway;
   final DateTime Function()? deviceNow;
   final Duration onlineTransitionDuration;
 
@@ -330,12 +333,8 @@ class _DriverShellState extends State<DriverShell> {
     _startupGateDiag(
       'open_startup guard_already_considered result=$alreadyConsidered',
     );
-    _startupGateDiag(
-      'open_startup guard_gateway_null result=$gatewayNull',
-    );
-    _startupGateDiag(
-      'open_startup guard_summary_null result=$summaryNull',
-    );
+    _startupGateDiag('open_startup guard_gateway_null result=$gatewayNull');
+    _startupGateDiag('open_startup guard_summary_null result=$summaryNull');
 
     if (_startupShiftCheckConsidered ||
         widget.driverDutyGateway == null ||
@@ -373,9 +372,7 @@ class _DriverShellState extends State<DriverShell> {
     );
 
     if (_dutySummary!.dutyStatus == 'offline' && !_shiftCheckCompletedToday) {
-      _startupGateDiag(
-        'open_startup schedule_readiness=YES skip_reason=none',
-      );
+      _startupGateDiag('open_startup schedule_readiness=YES skip_reason=none');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _startupGateDiag(
           'post_frame_callback entered '
@@ -535,12 +532,13 @@ class _DriverShellState extends State<DriverShell> {
     DriverShiftCheckSubmissionDisposition? disposition;
     try {
       _startupGateDiag('open_readiness navigator_push_about_to_start');
-      final navigation =
-          Navigator.of(context).push<DriverShiftCheckSubmissionDisposition>(
+      final navigation = Navigator.of(context)
+          .push<DriverShiftCheckSubmissionDisposition>(
             MaterialPageRoute<DriverShiftCheckSubmissionDisposition>(
               builder: (_) => DriverReadinessPage(
                 market: widget.configuration.market,
                 submissionController: widget.driverShiftCheckController,
+                driverReportGateway: widget.driverReportGateway,
                 deviceNow: widget.deviceNow,
                 navigationDelay: widget.driverDutyGateway == null
                     ? const Duration(seconds: 2)
@@ -769,7 +767,10 @@ class _DriverShellState extends State<DriverShell> {
   Future<void> _openConcern() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => DriverConcernPage(market: widget.configuration.market),
+        builder: (_) => DriverConcernPage(
+          market: widget.configuration.market,
+          gateway: widget.driverReportGateway,
+        ),
       ),
     );
   }
@@ -794,10 +795,7 @@ class _DriverShellState extends State<DriverShell> {
     setState(() {
       _localChecklistComplete = false;
       _dutySummary = null;
-      _startupGateDiagDutySummary(
-        _dutySummary,
-        reason: 'sign_out',
-      );
+      _startupGateDiagDutySummary(_dutySummary, reason: 'sign_out');
       _dutyError = null;
       _dutyLoading = false;
       _startupGateDiagBoolTransition(

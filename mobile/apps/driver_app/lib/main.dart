@@ -9,6 +9,7 @@ import 'driver_shell.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
+import 'network/driver_report_gateway.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
@@ -212,6 +213,7 @@ Widget buildDriverRoot({
   DriverTripActionControllerFactory? driverTripActionControllerFactory,
   DriverOfferResponseControllerFactory? driverOfferResponseControllerFactory,
   DriverShiftCheckSubmissionController? driverShiftCheckController,
+  DriverReportGateway? driverReportGateway,
   DriverNormalAppBuilder? normalAppBuilder,
 }) {
   Widget buildNormalApp() {
@@ -232,6 +234,7 @@ Widget buildDriverRoot({
       driverOfferResponseControllerFactory:
           driverOfferResponseControllerFactory,
       driverShiftCheckController: driverShiftCheckController,
+      driverReportGateway: driverReportGateway,
     );
   }
 
@@ -364,6 +367,7 @@ class DriverApp extends StatelessWidget {
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
+    this.driverReportGateway,
     super.key,
   });
 
@@ -378,6 +382,7 @@ class DriverApp extends StatelessWidget {
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
+  final DriverReportGateway? driverReportGateway;
 
   @override
   Widget build(BuildContext context) {
@@ -444,6 +449,15 @@ class DriverApp extends StatelessWidget {
                 refreshAccessToken: sessionRefreshController?.refresh,
               )
             : null);
+    final reportGateway =
+        driverReportGateway ??
+        (shouldCreateDefaultDutyGateway
+            ? _driverReportGatewayFor(
+                baseUrl: apiBaseUrl,
+                tokenStore: tokenStore,
+                refreshAccessToken: sessionRefreshController?.refresh,
+              )
+            : null);
 
     final home = showLoginShell
         ? DriverLoginShell(
@@ -456,6 +470,7 @@ class DriverApp extends StatelessWidget {
             driverOfferResponseControllerFactory:
                 offerResponseControllerFactory,
             driverShiftCheckController: shiftCheckController,
+            driverReportGateway: reportGateway,
             accessTokenRefresh: sessionRefreshController?.refresh,
           )
         : DriverShell(
@@ -466,6 +481,7 @@ class DriverApp extends StatelessWidget {
             driverOfferResponseControllerFactory:
                 offerResponseControllerFactory,
             driverShiftCheckController: shiftCheckController,
+            driverReportGateway: reportGateway,
           );
 
     return MaterialApp(
@@ -495,6 +511,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
+    this.driverReportGateway,
     this.accessTokenRefresh,
     super.key,
   });
@@ -508,6 +525,7 @@ class DriverLoginShell extends StatefulWidget {
   final DriverOfferResponseControllerFactory?
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
+  final DriverReportGateway? driverReportGateway;
   final DriverAccessTokenRefresh? accessTokenRefresh;
 
   @override
@@ -554,6 +572,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _handleOfferSessionExpired(String message) async {
+    widget.driverReportGateway?.clearSessionCache();
     try {
       await widget.authTokenStore.clearTokens();
     } on Object {
@@ -784,6 +803,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _signOut() async {
+    widget.driverReportGateway?.clearSessionCache();
     await widget.authTokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -814,6 +834,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
         driverShiftCheckController: widget.driverShiftCheckController,
+        driverReportGateway: widget.driverReportGateway,
       );
     }
 
@@ -1216,6 +1237,24 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       },
     );
   };
+}
+
+DriverReportGateway? _driverReportGatewayFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+  DriverAccessTokenRefresh? refreshAccessToken,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  return ApiDriverReportGateway(
+    apiGateway: AsmDriverReportApiGateway(
+      GhanaResilientApiClient(baseUrl: baseUrl!),
+    ),
+    tokenStore: tokenStore,
+    refreshAccessToken: refreshAccessToken,
+  );
 }
 
 DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({

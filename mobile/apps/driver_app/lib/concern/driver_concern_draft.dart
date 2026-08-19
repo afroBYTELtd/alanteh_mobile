@@ -1,22 +1,14 @@
-enum DriverConcernCategory {
-  vehicleCondition('Vehicle'),
-  batteryOrCharging('Battery'),
-  cabinOrSafetyEquipment('Safety'),
-  shiftDetailsOrDocuments('Documents'),
-  otherConcern('Other');
-
-  const DriverConcernCategory(this.label);
-
-  final String label;
-}
-
 enum DriverConcernAttentionLevel {
-  reviewBeforeDriving('Urgent'),
-  nonUrgentObservation('Not urgent');
+  reviewBeforeDriving(label: 'Urgent', urgency: 'urgent'),
+  nonUrgentObservation(label: 'Not urgent', urgency: 'normal');
 
-  const DriverConcernAttentionLevel(this.label);
+  const DriverConcernAttentionLevel({
+    required this.label,
+    required this.urgency,
+  });
 
   final String label;
+  final String urgency;
 }
 
 final class DriverConcernDraftValidationException implements Exception {
@@ -31,16 +23,22 @@ final class DriverConcernDraftValidationException implements Exception {
 final class DriverConcernDraft {
   factory DriverConcernDraft({
     required String marketCode,
-    required DriverConcernCategory category,
+    required String category,
     required DriverConcernAttentionLevel attentionLevel,
     required String description,
   }) {
     final normalizedMarketCode = marketCode.trim();
+    final normalizedCategory = category.trim();
     final normalizedDescription = description.trim();
 
     if (normalizedMarketCode.isEmpty) {
       throw const DriverConcernDraftValidationException(
         'Market code must not be blank.',
+      );
+    }
+    if (normalizedCategory.isEmpty) {
+      throw const DriverConcernDraftValidationException(
+        'Category must not be blank.',
       );
     }
     if (normalizedDescription.isEmpty) {
@@ -56,7 +54,7 @@ final class DriverConcernDraft {
 
     return DriverConcernDraft._(
       marketCode: normalizedMarketCode,
-      category: category,
+      category: normalizedCategory,
       attentionLevel: attentionLevel,
       description: normalizedDescription,
     );
@@ -70,13 +68,15 @@ final class DriverConcernDraft {
   });
 
   final String marketCode;
-  final DriverConcernCategory category;
+  final String category;
   final DriverConcernAttentionLevel attentionLevel;
   final String description;
 
+  String get urgency => attentionLevel.urgency;
+
   DriverConcernDraft copyWith({
     String? marketCode,
-    DriverConcernCategory? category,
+    String? category,
     DriverConcernAttentionLevel? attentionLevel,
     String? description,
   }) {

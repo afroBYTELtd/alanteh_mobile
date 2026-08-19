@@ -6,25 +6,37 @@ void main() {
     test('creates a valid normalized immutable draft', () {
       final draft = DriverConcernDraft(
         marketCode: '  gh-accra  ',
-        category: DriverConcernCategory.vehicleCondition,
+        category: '  Vehicle concern  ',
         attentionLevel: DriverConcernAttentionLevel.reviewBeforeDriving,
         description: '  Loose exterior mirror  ',
       );
 
       expect(draft.marketCode, 'gh-accra');
+      expect(draft.category, 'Vehicle concern');
       expect(draft.description, 'Loose exterior mirror');
-      expect(draft.category, DriverConcernCategory.vehicleCondition);
       expect(
         draft.attentionLevel,
         DriverConcernAttentionLevel.reviewBeforeDriving,
       );
+      expect(draft.urgency, 'urgent');
     });
 
-    test('rejects blank market codes and descriptions', () {
+    test('maps non-urgent attention to backend normal urgency', () {
+      final draft = DriverConcernDraft(
+        marketCode: 'gh-accra',
+        category: 'Other',
+        attentionLevel: DriverConcernAttentionLevel.nonUrgentObservation,
+        description: 'Minor observation',
+      );
+
+      expect(draft.urgency, 'normal');
+    });
+
+    test('rejects blank market codes, categories, and descriptions', () {
       expect(
         () => DriverConcernDraft(
           marketCode: '  ',
-          category: DriverConcernCategory.otherConcern,
+          category: 'Other',
           attentionLevel: DriverConcernAttentionLevel.nonUrgentObservation,
           description: 'Observation',
         ),
@@ -36,10 +48,27 @@ void main() {
           ),
         ),
       );
+
       expect(
         () => DriverConcernDraft(
           marketCode: 'gh-accra',
-          category: DriverConcernCategory.otherConcern,
+          category: '   ',
+          attentionLevel: DriverConcernAttentionLevel.nonUrgentObservation,
+          description: 'Observation',
+        ),
+        throwsA(
+          isA<DriverConcernDraftValidationException>().having(
+            (error) => error.message,
+            'message',
+            'Category must not be blank.',
+          ),
+        ),
+      );
+
+      expect(
+        () => DriverConcernDraft(
+          marketCode: 'gh-accra',
+          category: 'Other',
           attentionLevel: DriverConcernAttentionLevel.nonUrgentObservation,
           description: '\n  ',
         ),
@@ -57,7 +86,7 @@ void main() {
       expect(
         () => DriverConcernDraft(
           marketCode: 'gh-accra',
-          category: DriverConcernCategory.batteryOrCharging,
+          category: 'Vehicle concern',
           attentionLevel: DriverConcernAttentionLevel.reviewBeforeDriving,
           description: 'x' * 241,
         ),
@@ -74,24 +103,30 @@ void main() {
     test('copyWith preserves the original and validates replacements', () {
       final original = DriverConcernDraft(
         marketCode: 'gh-accra',
-        category: DriverConcernCategory.vehicleCondition,
+        category: 'Vehicle concern',
         attentionLevel: DriverConcernAttentionLevel.reviewBeforeDriving,
         description: 'Loose mirror',
       );
+
       final updated = original.copyWith(
-        category: DriverConcernCategory.cabinOrSafetyEquipment,
+        category: 'Safety issue',
         description: '  Seat belt concern  ',
       );
 
       expect(updated.marketCode, original.marketCode);
       expect(updated.attentionLevel, original.attentionLevel);
-      expect(updated.category, DriverConcernCategory.cabinOrSafetyEquipment);
+      expect(updated.category, 'Safety issue');
       expect(updated.description, 'Seat belt concern');
-      expect(original.category, DriverConcernCategory.vehicleCondition);
+      expect(original.category, 'Vehicle concern');
       expect(original.description, 'Loose mirror');
       expect(identical(original, updated), isFalse);
+
       expect(
         () => original.copyWith(marketCode: ' '),
+        throwsA(isA<DriverConcernDraftValidationException>()),
+      );
+      expect(
+        () => original.copyWith(category: ' '),
         throwsA(isA<DriverConcernDraftValidationException>()),
       );
       expect(

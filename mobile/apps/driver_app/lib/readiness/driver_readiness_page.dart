@@ -2,6 +2,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:flutter/material.dart';
 
 import '../concern/driver_concern_page.dart';
+import '../network/driver_report_gateway.dart';
 import 'driver_readiness_check.dart';
 import 'driver_readiness_content.dart';
 import 'driver_shift_check_submission.dart';
@@ -11,6 +12,7 @@ class DriverReadinessPage extends StatefulWidget {
     required this.market,
     this.initialBatteryNeedsAttention = false,
     this.submissionController,
+    this.driverReportGateway,
     this.deviceNow,
     this.navigationDelay = const Duration(seconds: 2),
     super.key,
@@ -19,16 +21,15 @@ class DriverReadinessPage extends StatefulWidget {
   final MarketConfig market;
   final bool initialBatteryNeedsAttention;
   final DriverShiftCheckSubmissionController? submissionController;
+  final DriverReportGateway? driverReportGateway;
   final DateTime Function()? deviceNow;
   final Duration navigationDelay;
 
   @override
-  State<DriverReadinessPage> createState() =>
-      _DriverReadinessPageState();
+  State<DriverReadinessPage> createState() => _DriverReadinessPageState();
 }
 
-class _DriverReadinessPageState
-    extends State<DriverReadinessPage> {
+class _DriverReadinessPageState extends State<DriverReadinessPage> {
   DriverReadinessCheck _check = DriverReadinessCheck.empty();
   late bool _batteryNeedsAttention;
   late bool _batteryAttentionWasShown;
@@ -38,15 +39,12 @@ class _DriverReadinessPageState
   @override
   void initState() {
     super.initState();
-    _batteryNeedsAttention =
-        widget.initialBatteryNeedsAttention;
-    _batteryAttentionWasShown =
-        widget.initialBatteryNeedsAttention;
+    _batteryNeedsAttention = widget.initialBatteryNeedsAttention;
+    _batteryAttentionWasShown = widget.initialBatteryNeedsAttention;
   }
 
   void _toggle(DriverReadinessItem item) {
-    if (_submissionState !=
-        DriverReadinessSubmissionState.idle) {
+    if (_submissionState != DriverReadinessSubmissionState.idle) {
       return;
     }
 
@@ -59,8 +57,7 @@ class _DriverReadinessPageState
   }
 
   void _reset() {
-    if (_submissionState !=
-        DriverReadinessSubmissionState.idle) {
+    if (_submissionState != DriverReadinessSubmissionState.idle) {
       return;
     }
 
@@ -72,8 +69,7 @@ class _DriverReadinessPageState
   }
 
   void _markBatteryNeedsAttention() {
-    if (_submissionState !=
-        DriverReadinessSubmissionState.idle) {
+    if (_submissionState != DriverReadinessSubmissionState.idle) {
       return;
     }
 
@@ -84,8 +80,7 @@ class _DriverReadinessPageState
   }
 
   void _recheckBattery() {
-    if (_submissionState !=
-        DriverReadinessSubmissionState.idle) {
+    if (_submissionState != DriverReadinessSubmissionState.idle) {
       return;
     }
 
@@ -95,41 +90,34 @@ class _DriverReadinessPageState
   }
 
   Future<void> _submitShiftCheck() async {
-    if (_submissionState !=
-            DriverReadinessSubmissionState.idle ||
+    if (_submissionState != DriverReadinessSubmissionState.idle ||
         !_check.isComplete ||
         _batteryNeedsAttention) {
       return;
     }
 
     setState(() {
-      _submissionState =
-          DriverReadinessSubmissionState.submitting;
+      _submissionState = DriverReadinessSubmissionState.submitting;
     });
 
-    final submittedAt =
-        widget.deviceNow?.call() ?? DateTime.now();
-    final submission =
-        DriverShiftCheckSubmission.fromReadiness(
-          check: _check,
-          batteryNeedsAttention:
-              _batteryAttentionWasShown,
-          submittedAt: submittedAt,
-        );
+    final submittedAt = widget.deviceNow?.call() ?? DateTime.now();
+    final submission = DriverShiftCheckSubmission.fromReadiness(
+      check: _check,
+      batteryNeedsAttention: _batteryAttentionWasShown,
+      submittedAt: submittedAt,
+    );
 
     final controller = widget.submissionController;
     DriverShiftCheckSubmissionDisposition disposition;
 
     if (controller == null) {
-      disposition =
-          DriverShiftCheckSubmissionDisposition.queued;
+      disposition = DriverShiftCheckSubmissionDisposition.queued;
     } else {
       try {
         final result = await controller.submit(submission);
         disposition = result.disposition;
       } on Object {
-        disposition =
-            DriverShiftCheckSubmissionDisposition.queued;
+        disposition = DriverShiftCheckSubmissionDisposition.queued;
       }
     }
 
@@ -138,8 +126,8 @@ class _DriverReadinessPageState
     }
 
     setState(() {
-      _submissionState = disposition ==
-              DriverShiftCheckSubmissionDisposition.submitted
+      _submissionState =
+          disposition == DriverShiftCheckSubmissionDisposition.submitted
           ? DriverReadinessSubmissionState.submitted
           : DriverReadinessSubmissionState.queued;
     });
@@ -156,8 +144,10 @@ class _DriverReadinessPageState
   Future<void> _openConcern() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            DriverConcernPage(market: widget.market),
+        builder: (_) => DriverConcernPage(
+          market: widget.market,
+          gateway: widget.driverReportGateway,
+        ),
       ),
     );
   }
@@ -175,8 +165,7 @@ class _DriverReadinessPageState
         onReset: _reset,
         onReady: _submitShiftCheck,
         onOpenConcern: _openConcern,
-        onBatteryNeedsAttention:
-            _markBatteryNeedsAttention,
+        onBatteryNeedsAttention: _markBatteryNeedsAttention,
         onRecheckBattery: _recheckBattery,
       ),
     );
