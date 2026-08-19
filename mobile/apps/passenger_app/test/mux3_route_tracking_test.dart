@@ -207,6 +207,127 @@ void main() {
   });
 
   testWidgets(
+    'test_under_review_shows_reviewing_your_request_heading',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          status: 'under_review',
+          latestStaffState: 'Trip in progress',
+          controlCenterMessage: 'Your request is being reviewed by staff.',
+        ),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(find.text('Reviewing your request'), findsOneWidget);
+      expect(
+        find.text('Your request is being reviewed by staff.'),
+        findsOneWidget,
+      );
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'test_under_review_does_not_show_trip_in_progress',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          status: 'under_review',
+          latestStaffState: 'Trip in progress',
+          controlCenterMessage: 'Your request is being reviewed by staff.',
+        ),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(find.text('Reviewing your request'), findsOneWidget);
+      expect(find.text('Trip in progress'), findsNothing);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'test_in_progress_still_shows_trip_in_progress',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          status: 'in_progress',
+          controlCenterMessage: 'Your trip is in progress.',
+        ),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
+      expect(find.text('Trip in progress'), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'test_no_pre_trip_status_shows_trip_in_progress',
+    (tester) async {
+      _useSurface(tester);
+
+      final cases = <PassengerRideRequestRecord>[
+        _record(
+          status: 'requested',
+          controlCenterMessage: 'Your ride request was received.',
+        ),
+        _record(
+          status: 'under_review',
+          latestStaffState: 'Trip in progress',
+          controlCenterMessage: 'Your request is being reviewed by staff.',
+        ),
+        _record(
+          status: 'accepted_for_trip',
+          controlCenterMessage: 'Your ride is being prepared.',
+        ),
+      ];
+
+      for (final record in cases) {
+        final repository = _SequenceRepository(<Object>[record]);
+
+        await _pumpTracking(
+          tester,
+          repository,
+          pollInterval: const Duration(hours: 1),
+        );
+
+        expect(
+          find.text('Trip in progress'),
+          findsNothing,
+          reason: 'Pre-trip status ${record.status} must not use trip heading.',
+        );
+
+        await _disposeTracking(tester);
+      }
+    },
+  );
+
+  testWidgets(
     'tracking never creates a vehicle marker without CC5C coordinates',
     (tester) async {
       _useSurface(tester);

@@ -257,6 +257,9 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
     final record = _record!;
     final view = _TrackingView.from(record);
+    final heading = record.status.trim().toLowerCase() == 'under_review'
+        ? 'Reviewing your request'
+        : view.title;
 
     if (view.rejected) {
       return Scaffold(
@@ -345,7 +348,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                   Icon(view.icon, color: view.color, size: 30),
                   const SizedBox(height: 10),
                   Text(
-                    view.title,
+                    heading,
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
