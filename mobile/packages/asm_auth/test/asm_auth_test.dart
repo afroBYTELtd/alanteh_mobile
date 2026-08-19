@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -421,6 +422,126 @@ void main() {
       expect(state.session?.tokens.refreshToken, 'refresh-one');
       expect(await store.readAccessToken(), 'new-access');
       expect(await store.readRefreshToken(), 'refresh-one');
+    });
+
+    test('test_phone_extracted_from_nested_passenger_profile', () async {
+      final store = MemoryAuthTokenStore();
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(
+            account: const <String, Object?>{
+              'passenger_profile': <String, Object?>{
+                'phone_number': '+233000000001',
+              },
+              'phone': '+233000000002',
+            },
+          ),
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233000000001', '0000');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(await store.readPassengerPhoneNumber(), '+233000000001');
+    });
+
+    test('test_phone_persisted_when_at_correct_nested_path', () async {
+      final store = MemoryAuthTokenStore();
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(
+            account: const <String, Object?>{
+              'passenger_profile': <String, Object?>{
+                'phone_number': '+233000000000',
+              },
+            },
+          ),
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233000000000', '0000');
+
+      expect(state.status, AuthStatus.authenticated);
+      expect(await store.readPassengerPhoneNumber(), '+233000000000');
+    });
+
+    test('test_phone_not_found_at_top_level_account_aliases', () async {
+      final store = MemoryAuthTokenStore();
+      final service = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(
+            account: const <String, Object?>{
+              'passenger_profile': <String, Object?>{
+                'phone_number': '+233000000000',
+              },
+            },
+          ),
+        ),
+        tokenStore: store,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final state = await service.login('+233000000000', '0000');
+      final account = state.session?.account;
+
+      expect(state.status, AuthStatus.authenticated);
+      for (final alias in const <String>[
+        'phone',
+        'phone_number',
+        'phoneNumber',
+        'mobile',
+        'mobile_number',
+        'mobileNumber',
+      ]) {
+        expect(account, isNot(contains(alias)));
+      }
+      expect(await store.readPassengerPhoneNumber(), '+233000000000');
+    });
+
+    test('test_cold_restore_provides_phone_after_nested_persist', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+
+      final loginStore = SecureAuthTokenStore();
+      final loginService = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: _successLoginResponse(
+            account: const <String, Object?>{
+              'passenger_profile': <String, Object?>{
+                'phone_number': '+233000000000',
+              },
+            },
+          ),
+        ),
+        tokenStore: loginStore,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final loginState = await loginService.login('+233000000000', '0000');
+
+      expect(loginState.status, AuthStatus.authenticated);
+      expect(await loginStore.readPassengerPhoneNumber(), '+233000000000');
+
+      final restoreStore = SecureAuthTokenStore();
+      expect(identical(loginStore, restoreStore), isFalse);
+
+      final restoreService = AuthService(
+        apiGateway: _MockAuthApiGateway(
+          responseData: const <String, Object?>{
+            'access': 'cold-restored-access',
+          },
+        ),
+        tokenStore: restoreStore,
+        appContext: AuthAppContext.passenger,
+      );
+
+      final restoredState = await restoreService.refresh();
+
+      expect(restoredState.status, AuthStatus.authenticated);
+      expect(restoredState.session?.account?['phone'], '+233000000000');
     });
 
     test('test_phone_persisted_on_login', () async {

@@ -613,6 +613,12 @@ class AuthService {
       return null;
     }
 
+    final passengerProfile = _mapField(account, 'passenger_profile');
+    final nestedPhoneNumber = passengerProfile?['phone_number'];
+    if (nestedPhoneNumber is String && nestedPhoneNumber.trim().isNotEmpty) {
+      return nestedPhoneNumber.trim();
+    }
+
     for (final key in const [
       'phone',
       'phone_number',

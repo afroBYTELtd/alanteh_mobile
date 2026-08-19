@@ -1147,6 +1147,69 @@ void main() {
     expect(find.text('Please sign in again to continue.'), findsNothing);
   });
 
+  testWidgets(
+    'test_account_screen_shows_masked_phone_after_true_cold_restore',
+    (tester) async {
+      _useSurface(tester, const Size(430, 900));
+
+      final storage = <String, String>{};
+
+      final loginStore = _RecreatedStorageBackedAuthTokenStore(storage);
+      final loginApi = _FakeAuthApiGateway(
+        responseData: const <String, Object?>{
+          'access': 'nested-login-access',
+          'refresh': 'nested-login-refresh',
+          'account_type': 'passenger',
+          'account': <String, Object?>{
+            'passenger_profile': <String, Object?>{
+              'phone_number': '+233000000000',
+            },
+          },
+        },
+      );
+
+      await tester.pumpWidget(_loginTestApp(api: loginApi, store: loginStore));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-phone-field')),
+        '+233000000000',
+      );
+      await tester.enterText(
+        find.byKey(const Key('passenger-pin-field')),
+        '0000',
+      );
+      await tester.tap(find.byKey(const Key('passenger-sign-in')));
+      await tester.pumpAndSettle();
+
+      expect(await loginStore.readPassengerPhoneNumber(), '+233000000000');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+
+      final restoreStore = _RecreatedStorageBackedAuthTokenStore(storage);
+      expect(identical(loginStore, restoreStore), isFalse);
+
+      final restoreApi = _FakeAuthApiGateway(
+        responseData: const <String, Object?>{'access': 'cold-restored-access'},
+      );
+
+      await tester.pumpWidget(
+        _loginTestApp(api: restoreApi, store: restoreStore),
+      );
+      await tester.pumpAndSettle();
+
+      expect(restoreApi.paths, <String>[AuthService.refreshPath]);
+
+      await tester.tap(find.text('Account'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('passenger-account-screen')), findsOneWidget);
+      expect(find.text('+233 00 ****000'), findsOneWidget);
+      expect(find.text('Phone number unavailable'), findsNothing);
+    },
+  );
+
   testWidgets('test_account_screen_shows_masked_phone_after_restore', (
     tester,
   ) async {
@@ -1532,6 +1595,49 @@ Map<String, Object?> _loginResponse({
   }
 
   return response;
+}
+
+class _RecreatedStorageBackedAuthTokenStore
+    implements AuthTokenStore, PassengerPhoneNumberStore {
+  _RecreatedStorageBackedAuthTokenStore(this.storage);
+
+  static const _accessKey = 'access';
+  static const _refreshKey = 'refresh';
+  static const _phoneKey = 'passenger_phone_number';
+
+  final Map<String, String> storage;
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) async {
+    storage[_accessKey] = tokens.accessToken;
+    storage[_refreshKey] = tokens.refreshToken;
+  }
+
+  @override
+  Future<String?> readAccessToken() async => storage[_accessKey];
+
+  @override
+  Future<String?> readRefreshToken() async => storage[_refreshKey];
+
+  @override
+  Future<void> savePassengerPhoneNumber(String phoneNumber) async {
+    storage[_phoneKey] = phoneNumber.trim();
+  }
+
+  @override
+  Future<String?> readPassengerPhoneNumber() async => storage[_phoneKey];
+
+  @override
+  Future<void> clearPassengerPhoneNumber() async {
+    storage.remove(_phoneKey);
+  }
+
+  @override
+  Future<void> clearTokens() async {
+    storage.remove(_accessKey);
+    storage.remove(_refreshKey);
+    storage.remove(_phoneKey);
+  }
 }
 
 class _AccessOnlyAuthTokenStore implements AuthTokenStore {
