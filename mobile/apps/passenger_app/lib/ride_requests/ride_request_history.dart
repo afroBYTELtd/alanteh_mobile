@@ -1203,32 +1203,91 @@ class _RideRequestCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AsmSpacing.space12),
-              Wrap(
-                spacing: AsmSpacing.space8,
-                runSpacing: AsmSpacing.space4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  FilledButton(
-                    key: const Key('history-card-book-again'),
-                    onPressed: onBookAgain == null
-                        ? null
-                        : () => onBookAgain!(record),
-                    child: const Text('Book again'),
-                  ),
-                  if (completed && onReturn != null)
-                    OutlinedButton(
-                      key: const Key('history-card-return'),
-                      onPressed: () => onReturn!(record),
-                      child: const Text('Return'),
+              if (completed && onReturn != null)
+                Row(
+                  key: const Key('history-card-completed-actions'),
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        key: const Key('history-card-return'),
+                        onPressed: () => onReturn!(record),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Return trip', maxLines: 1),
+                        ),
+                      ),
                     ),
-                  TextButton.icon(
-                    key: const Key('history-card-view-details'),
-                    onPressed: onTap,
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('View details'),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: AsmSpacing.space4),
+                    Expanded(
+                      child: FilledButton(
+                        key: const Key('history-card-book-again'),
+                        onPressed: onBookAgain == null
+                            ? null
+                            : () => onBookAgain!(record),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Book again', maxLines: 1),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AsmSpacing.space4),
+                    Expanded(
+                      child: TextButton(
+                        key: const Key('history-card-view-details'),
+                        onPressed: onTap,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('View details', maxLines: 1),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                Wrap(
+                  spacing: AsmSpacing.space8,
+                  runSpacing: AsmSpacing.space4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    FilledButton(
+                      key: const Key('history-card-book-again'),
+                      onPressed: onBookAgain == null
+                          ? null
+                          : () => onBookAgain!(record),
+                      child: const Text('Book again'),
+                    ),
+                    TextButton.icon(
+                      key: const Key('history-card-view-details'),
+                      onPressed: onTap,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('View details'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

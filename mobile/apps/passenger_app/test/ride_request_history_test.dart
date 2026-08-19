@@ -751,6 +751,132 @@ void main() {
     expect(find.byKey(const Key('history-card-return')), findsOneWidget);
   });
 
+  testWidgets('completed trip actions are inline labeled and ordered', (
+    tester,
+  ) async {
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-COMPLETED-ACTIONS',
+            status: 'completed_confirmed',
+          ),
+        ],
+      ),
+      onBookAgain: (_) {},
+      onReturn: (_) {},
+    );
+    await tester.pumpAndSettle();
+
+    final actions = find.byKey(const Key('history-card-completed-actions'));
+    final returnAction = find.byKey(const Key('history-card-return'));
+    final bookAgainAction = find.byKey(const Key('history-card-book-again'));
+    final viewDetailsAction = find.byKey(
+      const Key('history-card-view-details'),
+    );
+
+    expect(actions, findsOneWidget);
+    expect(find.text('Return trip'), findsOneWidget);
+    expect(find.text('Return'), findsNothing);
+    expect(find.text('Book again'), findsOneWidget);
+    expect(find.text('View details'), findsOneWidget);
+
+    final returnRect = tester.getRect(returnAction);
+    final bookAgainRect = tester.getRect(bookAgainAction);
+    final viewDetailsRect = tester.getRect(viewDetailsAction);
+
+    expect(returnRect.left, lessThan(bookAgainRect.left));
+    expect(bookAgainRect.left, lessThan(viewDetailsRect.left));
+    expect(returnRect.center.dy, closeTo(bookAgainRect.center.dy, 0.1));
+    expect(bookAgainRect.center.dy, closeTo(viewDetailsRect.center.dy, 0.1));
+  });
+
+  testWidgets(
+    'completed trip actions fit iPhone 12 Mini width without overflow',
+    (tester) async {
+      await _pumpHistory(
+        tester,
+        _FakeRepository(
+          listLoader: () async => <PassengerRideRequestRecord>[
+            _record(
+              reference: 'RR-COMPLETED-MINI',
+              pickup: 'Kotoka International Airport',
+              destination: 'University of Ghana',
+              status: 'completed_confirmed',
+            ),
+          ],
+        ),
+        onBookAgain: (_) {},
+        onReturn: (_) {},
+        surfaceSize: const Size(375, 812),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+
+      final actions = find.byKey(const Key('history-card-completed-actions'));
+      final returnAction = find.byKey(const Key('history-card-return'));
+      final bookAgainAction = find.byKey(const Key('history-card-book-again'));
+      final viewDetailsAction = find.byKey(
+        const Key('history-card-view-details'),
+      );
+      final card = find.byKey(
+        const ValueKey<String>('ride-request-RR-COMPLETED-MINI'),
+      );
+
+      expect(actions, findsOneWidget);
+
+      final actionsRect = tester.getRect(actions);
+      final cardRect = tester.getRect(card);
+
+      for (final action in <Finder>[
+        returnAction,
+        bookAgainAction,
+        viewDetailsAction,
+      ]) {
+        final rect = tester.getRect(action);
+        expect(rect.height, greaterThanOrEqualTo(48));
+        expect(rect.left, greaterThanOrEqualTo(actionsRect.left));
+        expect(rect.right, lessThanOrEqualTo(actionsRect.right));
+        expect(rect.left, greaterThanOrEqualTo(cardRect.left));
+        expect(rect.right, lessThanOrEqualTo(cardRect.right));
+        expect(rect.center.dy, closeTo(actionsRect.center.dy, 0.1));
+      }
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('View details action opens the existing trip detail view', (
+    tester,
+  ) async {
+    final record = _record(
+      reference: 'RR-COMPLETED-VIEW-DETAILS',
+      pickup: 'Accra Mall',
+      destination: 'Kotoka International Airport',
+      status: 'completed_confirmed',
+    );
+
+    await _pumpHistory(
+      tester,
+      _FakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[record],
+        detailLoader: (_) async => record,
+      ),
+      onReturn: (_) {},
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('history-card-view-details')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('ride-request-detail-loaded')), findsOneWidget);
+    expect(find.text('Trip details'), findsOneWidget);
+    expect(find.text('Accra Mall'), findsOneWidget);
+    expect(find.text('Kotoka International Airport'), findsOneWidget);
+  });
+
   testWidgets('test_tab_filter_all_shows_everything', (tester) async {
     await _pumpHistory(
       tester,
@@ -1100,8 +1226,9 @@ Future<void> _pumpHistory(
   ValueChanged<PassengerRideRequestRecord>? onBookAgain,
   ValueChanged<PassengerRideRequestRecord>? onReturn,
   VoidCallback? onBookRide,
+  Size surfaceSize = const Size(430, 900),
 }) async {
-  tester.view.physicalSize = const Size(430, 900);
+  tester.view.physicalSize = surfaceSize;
   tester.view.devicePixelRatio = 1;
 
   addTearDown(tester.view.resetPhysicalSize);
