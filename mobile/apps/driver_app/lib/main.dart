@@ -854,14 +854,20 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Image.asset(
-                'assets/brand/alanteh_header_white.png',
-                key: const Key('driver-login-brand-logo'),
+              Container(
                 width: 176,
                 height: 56,
-                fit: BoxFit.contain,
                 alignment: Alignment.centerLeft,
-                semanticLabel: 'ALANTEH driver logo',
+                color: AsmColors.brandWhite,
+                child: Image.asset(
+                  'assets/brand/alanteh-master-logo.png',
+                  key: const Key('driver-login-brand-logo'),
+                  width: 176,
+                  height: 56,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                  semanticLabel: 'ALANTEH driver logo',
+                ),
               ),
               const SizedBox(height: AsmSpacing.space16),
               Container(
