@@ -590,9 +590,9 @@ class _PassengerHomeState extends State<PassengerHome>
                       ),
                       decoration: _floatingDecoration(),
                       child: Image.asset(
-                        'assets/brand/alanteh_header_dark.png',
-                        width: 132,
-                        height: 28,
+                        'assets/brand/alanteh-master-logo.png',
+                        width: 168,
+                        height: 35,
                         fit: BoxFit.contain,
                         semanticLabel: 'ALANTEH passenger logo',
                       ),

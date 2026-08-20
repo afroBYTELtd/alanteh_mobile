@@ -190,7 +190,7 @@ class PassengerSplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       key: const Key('passenger-splash-screen'),
-      backgroundColor: AsmColors.brandDeepGreen,
+      backgroundColor: AsmColors.brandWhite,
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -199,7 +199,7 @@ class PassengerSplashScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
-                  'assets/brand/alanteh_header_white.png',
+                  'assets/brand/alanteh-master-logo.png',
                   key: const Key('passenger-splash-logo'),
                   width: 220,
                   fit: BoxFit.contain,
@@ -211,7 +211,7 @@ class PassengerSplashScreen extends StatelessWidget {
                   key: Key('passenger-splash-tagline'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AsmColors.brandDeepGreen,
                     fontSize: 18,
                     height: 1.4,
                     fontWeight: FontWeight.w800,
@@ -822,7 +822,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Image.asset(
-                'assets/brand/alanteh_header_dark.png',
+                'assets/brand/alanteh-master-logo.png',
                 key: const Key('passenger-login-brand-logo'),
                 width: 176,
                 height: 56,
