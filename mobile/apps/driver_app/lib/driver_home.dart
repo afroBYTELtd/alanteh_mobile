@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'driver_duty_trips.dart';
 import 'foundation/driver_foundation_widgets.dart';
 
-String _driverGreeting() {
-  final hour = DateTime.now().hour;
+String _driverGreeting({DateTime Function()? now}) {
+  final hour = (now?.call() ?? DateTime.now()).hour;
 
   if (hour < 12) {
     return 'Good morning, Driver';
@@ -33,6 +33,7 @@ class DriverHome extends StatelessWidget {
     required this.onOpenAssignedTrips,
     required this.onOpenShiftSummary,
     this.onSignOut,
+    this.greetingNow,
     super.key,
   });
 
@@ -50,6 +51,7 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onOpenAssignedTrips;
   final VoidCallback onOpenShiftSummary;
   final VoidCallback? onSignOut;
+  final DateTime Function()? greetingNow;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +85,7 @@ class DriverHome extends StatelessWidget {
           ),
           const SizedBox(height: AsmSpacing.space8),
           Text(
-            _driverGreeting(),
+            _driverGreeting(now: greetingNow),
             key: const Key('driver-home-greeting'),
             style: const TextStyle(
               fontSize: 30,

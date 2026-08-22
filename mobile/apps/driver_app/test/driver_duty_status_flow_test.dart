@@ -615,7 +615,89 @@ void main() {
       reason: 'No deferred queue or later duty delivery may remain.',
     );
   });
+  testWidgets('test_greeting_before_noon_is_good_morning', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        DriverHome(
+          market: MarketConfig.ghanaAccra,
+          isOnShift: false,
+          shiftCheckCompletedToday: false,
+          dutyActionInFlight: false,
+          onOpenReadiness: () {},
+          onGoOnline: null,
+          onGoOffline: null,
+          onRecordConcern: () {},
+          onPreviewIncomingRequest: () {},
+          localQaEnabled: false,
+          dutyGateway: null,
+          onOpenAssignedTrips: () {},
+          onOpenShiftSummary: () {},
+          greetingNow: () => DateTime(2026, 8, 7, 8),
+        ),
+      ),
+    );
+
+    expect(find.text('Good morning, Driver'), findsOneWidget);
+  });
+
+  testWidgets('test_greeting_noon_to_1759_is_good_afternoon', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        DriverHome(
+          market: MarketConfig.ghanaAccra,
+          isOnShift: false,
+          shiftCheckCompletedToday: false,
+          dutyActionInFlight: false,
+          onOpenReadiness: () {},
+          onGoOnline: null,
+          onGoOffline: null,
+          onRecordConcern: () {},
+          onPreviewIncomingRequest: () {},
+          localQaEnabled: false,
+          dutyGateway: null,
+          onOpenAssignedTrips: () {},
+          onOpenShiftSummary: () {},
+          greetingNow: () => DateTime(2026, 8, 7, 12),
+        ),
+      ),
+    );
+
+    expect(find.text('Good afternoon, Driver'), findsOneWidget);
+  });
+
+  testWidgets('test_greeting_1800_and_after_is_good_evening', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        DriverHome(
+          market: MarketConfig.ghanaAccra,
+          isOnShift: false,
+          shiftCheckCompletedToday: false,
+          dutyActionInFlight: false,
+          onOpenReadiness: () {},
+          onGoOnline: null,
+          onGoOffline: null,
+          onRecordConcern: () {},
+          onPreviewIncomingRequest: () {},
+          localQaEnabled: false,
+          dutyGateway: null,
+          onOpenAssignedTrips: () {},
+          onOpenShiftSummary: () {},
+          greetingNow: () => DateTime(2026, 8, 7, 18),
+        ),
+      ),
+    );
+
+    expect(find.text('Good evening, Driver'), findsOneWidget);
+  });
+
 }
+
 
 Widget _testApp(Widget home) {
   return MaterialApp(theme: AsmThemes.driver, home: home);
