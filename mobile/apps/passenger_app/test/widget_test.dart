@@ -832,7 +832,7 @@ void main() {
       ),
     );
 
-    expect(passengerHomeLogo.width, 132);
+    expect(passengerHomeLogo.width, 168);
     expect(passengerHomeLogo.fit, BoxFit.contain);
     expect(passengerHomeLogo.semanticLabel, contains('ALANTEH'));
 

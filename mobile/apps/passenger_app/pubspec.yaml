@@ -81,6 +81,7 @@ flutter:
     - assets/brand/alanteh_header_white.png
     - assets/brand/alanteh_icon_mark.png
     - assets/brand/alanteh_header_dark.png
+    - assets/brand/alanteh-master-logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

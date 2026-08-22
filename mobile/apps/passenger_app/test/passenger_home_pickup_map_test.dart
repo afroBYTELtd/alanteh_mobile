@@ -447,37 +447,17 @@ void main() {
     expect(bannerRect.top, greaterThan(headerRect.bottom));
   });
 
-  test('test_launch_screen_background_is_brand_green', () {
+  test('test_launch_screen_background_is_white_with_master_logo', () {
     final storyboard = File(
       'ios/Runner/Base.lproj/LaunchScreen.storyboard',
     ).readAsStringSync();
-    final colorset =
-        jsonDecode(
-              File(
-                'ios/Runner/Assets.xcassets/'
-                'ALANTEHBrandGreen.colorset/Contents.json',
-              ).readAsStringSync(),
-            )
-            as Map<String, dynamic>;
 
     expect(
       storyboard,
-      contains('<color key="backgroundColor" name="ALANTEHBrandGreen"/>'),
+      contains('backgroundColor" white="1"'),
     );
-    expect(storyboard, contains('<namedColor name="ALANTEHBrandGreen">'));
+    expect(storyboard, contains('image="LaunchImage"'));
 
-    final colors = colorset['colors'] as List<dynamic>;
-    expect(colors, hasLength(1));
-    final color =
-        (colors.single as Map<String, dynamic>)['color']
-            as Map<String, dynamic>;
-    expect(color['color-space'], 'srgb');
-
-    final components = color['components'] as Map<String, dynamic>;
-    expect(components['red'], '0.07058823529411765');
-    expect(components['green'], '0.23529411764705882');
-    expect(components['blue'], '0.1607843137254902');
-    expect(components['alpha'], '1.000');
   });
 
   test('test_launch_image_asset_unchanged', () {
