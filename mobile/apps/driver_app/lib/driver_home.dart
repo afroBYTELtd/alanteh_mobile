@@ -5,6 +5,18 @@ import 'package:flutter/material.dart';
 import 'driver_duty_trips.dart';
 import 'foundation/driver_foundation_widgets.dart';
 
+String _driverGreeting() {
+  final hour = DateTime.now().hour;
+
+  if (hour < 12) {
+    return 'Good morning, Driver';
+  } else if (hour < 18) {
+    return 'Good afternoon, Driver';
+  } else {
+    return 'Good evening, Driver';
+  }
+}
+
 class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
@@ -70,10 +82,10 @@ class DriverHome extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AsmSpacing.space8),
-          const Text(
-            'Good morning, Driver',
-            key: Key('driver-home-greeting'),
-            style: TextStyle(
+          Text(
+            _driverGreeting(),
+            key: const Key('driver-home-greeting'),
+            style: const TextStyle(
               fontSize: 30,
               fontWeight: FontWeight.w900,
               height: 1.05,
@@ -310,14 +322,25 @@ class _DriverHomeBrandHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Image.asset(
-            'assets/brand/alanteh_header_white.png',
-            key: const Key('driver-home-brand-logo'),
-            width: 176,
-            height: 48,
-            fit: BoxFit.contain,
+          child: Align(
             alignment: Alignment.centerLeft,
-            semanticLabel: 'ALANTEH driver logo',
+            child: Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: AsmColors.brandWhite,
+                borderRadius: BorderRadius.circular(AsmRadii.radius16),
+              ),
+              child: Image.asset(
+                'assets/brand/alanteh-master-logo.png',
+                key: const Key('driver-home-brand-logo'),
+                width: 176,
+                height: 48,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+                semanticLabel: 'ALANTEH driver logo',
+              ),
+            ),
           ),
         ),
         if (onSignOut != null) ...[
