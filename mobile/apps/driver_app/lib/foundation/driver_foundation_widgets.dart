@@ -58,49 +58,17 @@ class DriverSplashScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       key: const Key('driver-splash-screen'),
-      backgroundColor: AsmColors.driverVisualSurface,
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(AsmSpacing.space32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 118,
-                  height: 118,
-                  padding: const EdgeInsets.all(AsmSpacing.space20),
-                  decoration: BoxDecoration(
-                    color: AsmColors.driverCard,
-                    borderRadius: BorderRadius.circular(AsmRadii.radius28),
-                    border: Border.all(color: AsmColors.driverLine),
-                  ),
-                  child: Image.asset(
-                    'assets/brand/alanteh_header_white.png',
-                    key: const Key('driver-splash-logo'),
-                    fit: BoxFit.contain,
-                    semanticLabel: 'ALANTEH Driver',
-                  ),
-                ),
-                const SizedBox(height: AsmSpacing.space24),
-                const Text(
-                  'ALANTEH Driver',
-                  style: TextStyle(
-                    fontSize: 29,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-                const Text(
-                  'Safe, reliable electric mobility',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AsmColors.driverTextSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+            child: Image.asset(
+              'assets/brand/alanteh-master-logo.png',
+              key: const Key('driver-splash-logo'),
+              width: 240,
+              fit: BoxFit.contain,
+              semanticLabel: 'ALANTEH',
             ),
           ),
         ),

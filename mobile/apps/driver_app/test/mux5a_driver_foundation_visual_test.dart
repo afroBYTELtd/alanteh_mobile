@@ -15,8 +15,8 @@ void main() {
 
     expect(find.byKey(const Key('driver-splash-screen')), findsOneWidget);
     expect(find.byKey(const Key('driver-splash-logo')), findsOneWidget);
-    expect(find.text('ALANTEH Driver'), findsOneWidget);
-    expect(find.text('Safe, reliable electric mobility'), findsOneWidget);
+    expect(find.text('ALANTEH Driver'), findsNothing);
+    expect(find.text('Safe, reliable electric mobility'), findsNothing);
   });
 
   testWidgets('Driver phone and PIN login includes safe error treatment', (
@@ -73,7 +73,7 @@ void main() {
       await tester.pumpWidget(const DriverApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Good morning, Driver'), findsOneWidget);
+      expect(find.byKey(const Key('driver-home-greeting')), findsOneWidget);
       expect(find.text("You're offline"), findsOneWidget);
       expect(find.byKey(const Key('driver-start-readiness')), findsOneWidget);
 
