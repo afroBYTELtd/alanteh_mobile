@@ -213,7 +213,7 @@ final class DriverShiftCheckSubmissionController {
         idempotencyKey: event.idempotencyKey,
       );
 
-      if (response.isSuccess) {
+      if (response.isSuccess || response.statusCode == 409) {
         await queue.markSynced(event.id);
         return DriverShiftCheckSubmissionResult(
           disposition: DriverShiftCheckSubmissionDisposition.submitted,
@@ -311,7 +311,7 @@ final class DriverShiftCheckSubmissionController {
           idempotencyKey: event.idempotencyKey,
         );
 
-        if (response.isSuccess) {
+        if (response.isSuccess || response.statusCode == 409) {
           await _markSyncedExactlyOnce(event.id);
         } else {
           await _markInitialFailureExactlyOnce(event.id);

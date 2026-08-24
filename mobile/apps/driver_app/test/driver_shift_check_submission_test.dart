@@ -717,6 +717,30 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pump();
   });
+
+  test('test_409_idempotency_conflict_is_treated_as_submitted', () async {
+    final queue = _MemoryShiftCheckQueue();
+    final gateway = _RecordingShiftCheckGateway.conflict();
+    final retryDelay = _ControlledRetryDelay();
+
+    final controller = DriverShiftCheckSubmissionController(
+      queue: queue,
+      gateway: gateway,
+      isOnline: () async => true,
+      retryDelay: retryDelay.call,
+    );
+
+    final result = await controller.submit(
+      _testShiftCheckSubmission(DateTime(2026, 8, 5, 8)),
+    );
+
+    expect(result.submitted, isTrue);
+    expect(result.queued, isFalse);
+    expect(queue.syncedIds, <String>[result.event.id]);
+    expect(await queue.pendingEvents(), isEmpty);
+    expect(retryDelay.scheduled, isEmpty);
+  });
+
 }
 
 DriverShiftCheckSubmission _testShiftCheckSubmission(DateTime submittedAt) {
@@ -944,6 +968,15 @@ final class _RecordingShiftCheckGateway implements DriverShiftCheckGateway {
           type: AsmApiExceptionType.server,
           message: 'Temporary failure.',
           statusCode: 503,
+        ),
+      );
+
+  _RecordingShiftCheckGateway.conflict()
+    : response = ApiResponse.apiFailure(
+        const AsmApiException(
+          type: AsmApiExceptionType.server,
+          message: 'Already accepted.',
+          statusCode: 409,
         ),
       );
 

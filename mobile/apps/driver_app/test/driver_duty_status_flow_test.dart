@@ -302,6 +302,84 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
+
+  testWidgets('test_409_triggers_duty_refresh_not_error_display', (
+    tester,
+  ) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'offline',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _ConflictShiftCheckGateway(),
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(dutyGateway.dutyCalls, greaterThanOrEqualTo(1));
+    expect(find.textContaining('error'), findsNothing);
+  });
+
+  testWidgets('test_duty_online_after_409_navigates_to_online_home', (
+    tester,
+  ) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'online',
+        dutySince: now,
+        shiftCheckToday: true,
+      ),
+    );
+
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _ConflictShiftCheckGateway(),
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text("You're online"), findsOneWidget);
+  });
+
   testWidgets('test_shift_check_today_true_skips_shift_check_screen', (
     tester,
   ) async {
@@ -775,6 +853,26 @@ final class _MutableDutyGateway
 
     current = current.withDutyTransition(transition);
     return transition;
+  }
+}
+
+
+final class _ConflictShiftCheckGateway implements DriverShiftCheckGateway {
+  int calls = 0;
+
+  @override
+  Future<ApiResponse<Object?>> submit({
+    required Map<String, Object?> body,
+    required String idempotencyKey,
+  }) async {
+    calls += 1;
+    return ApiResponse.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.server,
+        message: 'Already submitted today.',
+        statusCode: 409,
+      ),
+    );
   }
 }
 
