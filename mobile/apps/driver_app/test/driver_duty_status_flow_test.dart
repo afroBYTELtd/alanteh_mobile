@@ -747,6 +747,60 @@ void main() {
     expect(find.text('Good afternoon, Driver'), findsOneWidget);
   });
 
+  testWidgets('test_greeting_1759_is_good_afternoon', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        DriverHome(
+          market: MarketConfig.ghanaAccra,
+          isOnShift: false,
+          shiftCheckCompletedToday: false,
+          dutyActionInFlight: false,
+          onOpenReadiness: () {},
+          onGoOnline: null,
+          onGoOffline: null,
+          onRecordConcern: () {},
+          onPreviewIncomingRequest: () {},
+          localQaEnabled: false,
+          dutyGateway: null,
+          onOpenAssignedTrips: () {},
+          onOpenShiftSummary: () {},
+          greetingNow: () => DateTime(2026, 8, 7, 17, 59),
+        ),
+      ),
+    );
+
+    expect(find.text('Good afternoon, Driver'), findsOneWidget);
+  });
+
+  testWidgets('test_greeting_2359_is_good_evening', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(
+        DriverHome(
+          market: MarketConfig.ghanaAccra,
+          isOnShift: false,
+          shiftCheckCompletedToday: false,
+          dutyActionInFlight: false,
+          onOpenReadiness: () {},
+          onGoOnline: null,
+          onGoOffline: null,
+          onRecordConcern: () {},
+          onPreviewIncomingRequest: () {},
+          localQaEnabled: false,
+          dutyGateway: null,
+          onOpenAssignedTrips: () {},
+          onOpenShiftSummary: () {},
+          greetingNow: () => DateTime(2026, 8, 7, 23, 59),
+        ),
+      ),
+    );
+
+    expect(find.text('Good evening, Driver'), findsOneWidget);
+  });
+
   testWidgets('test_greeting_1800_and_after_is_good_evening', (
     tester,
   ) async {
