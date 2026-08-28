@@ -119,9 +119,14 @@ class PassengerRideRequestRecord {
 
   bool get isTerminal =>
       passengerState == PassengerRideState.arrived ||
+      passengerState == PassengerRideState.cancelledByOperations ||
       passengerState == PassengerRideState.rejected;
 
   String get safeMessage {
+    if (passengerState == PassengerRideState.cancelledByOperations) {
+      return passengerState.defaultMessage;
+    }
+
     final preferred = controlCenterMessage?.trim();
     if (preferred != null &&
         preferred.isNotEmpty &&
@@ -277,7 +282,8 @@ final class PassengerTripRecord {
 
   bool get isTerminal =>
       normalizedStatus == 'completed_pending_review' ||
-      normalizedStatus == 'completed_confirmed';
+      normalizedStatus == 'completed_confirmed' ||
+      normalizedStatus == 'cancelled_by_operations';
 
   PassengerRideState get passengerState =>
       PassengerRideState.fromStatus(status, message: controlCenterMessage);
@@ -351,6 +357,7 @@ enum PassengerRideState {
   inProgress,
   arrived,
   reassigned,
+  cancelledByOperations,
   rejected;
 
   factory PassengerRideState.fromStatus(
@@ -365,6 +372,7 @@ enum PassengerRideState {
       'driver_accepted' => PassengerRideState.vehicleEnRoute,
       'arrived_at_pickup' => PassengerRideState.driverArrived,
       'in_progress' => PassengerRideState.inProgress,
+      'cancelled_by_operations' => PassengerRideState.cancelledByOperations,
       'completed_pending_review' ||
       'completed_confirmed' => PassengerRideState.arrived,
       _ => null,
@@ -419,6 +427,8 @@ enum PassengerRideState {
     PassengerRideState.inProgress => 'Enjoy your quiet solar-electric ride.',
     PassengerRideState.arrived => 'Thank you for riding with ALANTEH.',
     PassengerRideState.reassigned => 'A new vehicle is now handling your ride.',
+    PassengerRideState.cancelledByOperations =>
+      'Your trip was cancelled by ALANTEH support.',
     PassengerRideState.rejected =>
       'Please try booking again or contact support.',
   };
@@ -710,6 +720,15 @@ bool _isCompletedTripStatus(String status) {
   };
 }
 
+bool _isCompletedHistoryStatus(String status) {
+  return switch (status.trim().toLowerCase()) {
+    'completed_confirmed' ||
+    'completed_pending_review' ||
+    'cancelled_by_operations' => true,
+    _ => false,
+  };
+}
+
 class PassengerRideRequestHistoryPage extends StatefulWidget {
   const PassengerRideRequestHistoryPage({
     required this.repository,
@@ -752,7 +771,7 @@ class _PassengerRideRequestHistoryPageState
             .toList(growable: false),
       _TripsFilter.completed =>
         _records
-            .where((record) => _isCompletedTripStatus(record.status))
+            .where((record) => _isCompletedHistoryStatus(record.status))
             .toList(growable: false),
     };
   }
@@ -1639,6 +1658,10 @@ String _historyStatusMessage(PassengerRideRequestRecord record) {
 }
 
 String _safeStatusMessage(String status, {String? preferredMessage}) {
+  if (status.trim().toLowerCase() == 'cancelled_by_operations') {
+    return PassengerRideState.cancelledByOperations.defaultMessage;
+  }
+
   final safePreferredMessage = preferredMessage?.trim();
   if (safePreferredMessage != null && safePreferredMessage.isNotEmpty) {
     final lower = safePreferredMessage.toLowerCase();
@@ -1674,6 +1697,8 @@ String _safeStatusMessage(String status, {String? preferredMessage}) {
     'completed_confirmed' ||
     'completed_pending_review' => PassengerRideState.arrived.defaultMessage,
     'rejected' || 'declined' => 'Could not be accepted.',
+    'cancelled_by_operations' =>
+      PassengerRideState.cancelledByOperations.defaultMessage,
     'cancelled' || 'canceled' => 'Cancelled.',
     'trip_created' => 'Trip record created.',
     _ => 'Request update available.',
@@ -1691,6 +1716,7 @@ String _statusLabel(String status) {
     'arrived_at_pickup' ||
     'in_progress' => 'Active',
     'rejected' || 'declined' => 'Could not be accepted',
+    'cancelled_by_operations' => 'Cancelled',
     'cancelled' || 'canceled' => 'Cancelled',
     'trip_created' => 'Trip record created',
     'completed_confirmed' || 'completed_pending_review' => 'Completed',

@@ -385,7 +385,15 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       label: const Text('Payment and rating'),
                     ),
                   ],
-                  if (view.rejected) ...[
+                  if (record.passengerState ==
+                      PassengerRideState.cancelledByOperations) ...[
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      key: const Key('cancelled-by-operations-book-again'),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Book again'),
+                    ),
+                  ] else if (view.rejected) ...[
                     const SizedBox(height: 18),
                     FilledButton(
                       key: const Key('rejected-book-again'),
@@ -651,6 +659,16 @@ class _TrackingView {
           vehicle: vehicle,
           vehicleEnRoute: true,
           reassigned: true,
+        );
+
+      case PassengerRideState.cancelledByOperations:
+        return _TrackingView(
+          key: 'trip-cancelled-state',
+          title: 'Trip cancelled',
+          message: message,
+          icon: Icons.cancel_outlined,
+          color: Colors.redAccent,
+          route: const <LatLng>[],
         );
 
       case PassengerRideState.rejected:

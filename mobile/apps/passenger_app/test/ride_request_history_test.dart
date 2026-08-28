@@ -85,6 +85,40 @@ void main() {
     },
   );
 
+  test('test_cancelled_by_operations_is_terminal', () {
+    const trip = PassengerTripRecord(
+      tripReference: 'TRIP-CANCELLED-OPS-TERMINAL',
+      status: 'cancelled_by_operations',
+      controlCenterMessage: 'Your driver is on the way.',
+    );
+
+    final request = PassengerRideRequestRecord(
+      requestReference: 'RR-CANCELLED-OPS-TERMINAL',
+      status: 'cancelled_by_operations',
+      pickupLocation: 'Pickup',
+      destination: 'Destination',
+      passengerCount: 1,
+      createdAt: null,
+      updatedAt: null,
+      hasMobileReceipt: true,
+      tripCreated: true,
+      latestStaffState: 'driver assigned',
+      controlCenterMessage: 'Your driver is on the way.',
+      tripReference: 'TRIP-CANCELLED-OPS-TERMINAL',
+    );
+
+    expect(trip.isTerminal, isTrue);
+    expect(
+      trip.passengerState,
+      PassengerRideState.cancelledByOperations,
+    );
+    expect(request.isTerminal, isTrue);
+    expect(
+      request.passengerState,
+      PassengerRideState.cancelledByOperations,
+    );
+  });
+
   testWidgets('request history shows loading state', (tester) async {
     final pending = Completer<List<PassengerRideRequestRecord>>();
 
@@ -606,6 +640,113 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'test_cancelled_by_operations_appears_in_correct_history_tab',
+    (tester) async {
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-CANCELLED-OPS-HISTORY',
+            status: 'converted',
+            tripCreated: true,
+            tripReference: 'TRIP-CANCELLED-OPS-HISTORY',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'cancelled_by_operations',
+        ),
+      );
+
+      await _pumpHistory(tester, repository, onBookAgain: (_) {});
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'ride-request-status-cancelled_by_operations',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Cancelled'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-RR-CANCELLED-OPS-HISTORY'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('trip-filter-active')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-RR-CANCELLED-OPS-HISTORY'),
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const Key('trip-filter-completed')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-RR-CANCELLED-OPS-HISTORY'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Cancelled'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'test_cancelled_by_operations_book_again_available',
+    (tester) async {
+      PassengerRideRequestRecord? selectedRecord;
+
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-CANCELLED-OPS-BOOK-AGAIN',
+            status: 'converted',
+            tripCreated: true,
+            tripReference: 'TRIP-CANCELLED-OPS-BOOK-AGAIN',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'cancelled_by_operations',
+        ),
+      );
+
+      await _pumpHistory(
+        tester,
+        repository,
+        onBookAgain: (record) {
+          selectedRecord = record;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('history-card-book-again')),
+        findsOneWidget,
+      );
+      expect(find.text('Book again'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('history-card-book-again')));
+      await tester.pump();
+
+      expect(selectedRecord, isNotNull);
+      expect(selectedRecord!.status, 'cancelled_by_operations');
+      expect(
+        selectedRecord!.tripReference,
+        'TRIP-CANCELLED-OPS-BOOK-AGAIN',
+      );
+    },
+  );
 
   testWidgets('test_book_again_preserved_on_completed_card', (tester) async {
     PassengerRideRequestRecord? selectedRecord;

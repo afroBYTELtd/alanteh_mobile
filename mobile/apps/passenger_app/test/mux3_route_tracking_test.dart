@@ -556,6 +556,121 @@ void main() {
   });
 
   testWidgets(
+    'test_cancelled_by_operations_stops_polling',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(
+          status: 'converted',
+          tripReference: 'TRIP-CANCELLED-OPS-POLLING',
+        ),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'cancelled_by_operations'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(milliseconds: 10),
+      );
+
+      expect(
+        find.byKey(const Key('trip-cancelled-state')),
+        findsOneWidget,
+      );
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
+
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(requestRepository.detailCalls, 1);
+      expect(tripRepository.tripCalls, 1);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'test_cancelled_by_operations_shows_correct_message',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(
+          status: 'converted',
+          tripReference: 'TRIP-CANCELLED-OPS-MESSAGE',
+        ),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(
+          status: 'cancelled_by_operations',
+          message: 'Your driver is on the way.',
+        ),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(find.text('Trip cancelled'), findsOneWidget);
+      expect(
+        find.text('Your trip was cancelled by ALANTEH support.'),
+        findsOneWidget,
+      );
+      expect(find.text('Looking for a driver'), findsNothing);
+      expect(find.text('Your driver is on the way.'), findsNothing);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'test_cancelled_by_operations_cancel_request_action_absent',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(
+          status: 'converted',
+          tripReference: 'TRIP-CANCELLED-OPS-ACTIONS',
+        ),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'cancelled_by_operations'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(
+        find.byKey(const Key('trip-cancelled-state')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('open-cancel-confirmation')),
+        findsNothing,
+      );
+      expect(find.text('Cancel request'), findsNothing);
+      expect(
+        find.byKey(const Key('cancelled-by-operations-book-again')),
+        findsOneWidget,
+      );
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
     'completed pending review stops trip polling and not request polling',
     (tester) async {
       _useSurface(tester);
