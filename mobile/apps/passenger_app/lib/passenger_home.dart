@@ -236,7 +236,9 @@ class _PassengerHomeState extends State<PassengerHome>
   late LatLng _center;
   LatLng? _devicePosition;
   late String _address;
+  LatLng? _addressCoordinates;
   bool _pinLifted = false;
+  bool _mapPinConfirmationRequired = false;
   bool _locationPermissionDeniedForever = false;
   int _geocodeGeneration = 0;
 
@@ -249,6 +251,8 @@ class _PassengerHomeState extends State<PassengerHome>
     _address = initialDescription.isEmpty
         ? _coordinateFallback(_center)
         : initialDescription;
+    _addressCoordinates = initialDescription.isEmpty ? _center : null;
+    _mapPinConfirmationRequired = initialDescription.isNotEmpty;
     _recenterAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -323,6 +327,30 @@ class _PassengerHomeState extends State<PassengerHome>
         });
   }
 
+  bool get _canConfirmPickup =>
+      !_pinLifted && !_mapPinConfirmationRequired;
+
+  bool _coordinatesMatch(LatLng first, LatLng second) {
+    return first.latitude == second.latitude &&
+        first.longitude == second.longitude;
+  }
+
+  bool get _addressMatchesCurrentCenter {
+    final coordinates = _addressCoordinates;
+    return coordinates != null && _coordinatesMatch(coordinates, _center);
+  }
+
+  void _invalidateCurrentAddress() {
+    _geocodeTimer?.cancel();
+    _geocodeGeneration++;
+    _addressCoordinates = null;
+  }
+
+  void _useCoordinateFallback(LatLng coordinates) {
+    _address = _coordinateFallback(coordinates);
+    _addressCoordinates = coordinates;
+  }
+
   void _handleMapEvent(MapEvent event) {
     if (event is MapEventMoveStart ||
         event is MapEventMove ||
@@ -330,9 +358,11 @@ class _PassengerHomeState extends State<PassengerHome>
       if (!mounted) {
         return;
       }
+      _invalidateCurrentAddress();
       setState(() {
         _center = event.camera.center;
         _pinLifted = true;
+        _mapPinConfirmationRequired = true;
       });
       return;
     }
@@ -342,9 +372,12 @@ class _PassengerHomeState extends State<PassengerHome>
         return;
       }
       final nextCenter = event.camera.center;
+      _invalidateCurrentAddress();
       setState(() {
         _center = nextCenter;
         _pinLifted = false;
+        _mapPinConfirmationRequired = false;
+        _useCoordinateFallback(nextCenter);
       });
       _scheduleReverseGeocode(nextCenter);
     }
@@ -359,19 +392,24 @@ class _PassengerHomeState extends State<PassengerHome>
         final resolved = (await widget.reverseGeocoder.reverseGeocode(
           coordinates,
         )).trim();
-        if (!mounted || generation != _geocodeGeneration) {
+        if (!mounted ||
+            generation != _geocodeGeneration ||
+            !_coordinatesMatch(coordinates, _center)) {
           return;
         }
         setState(() {
           _address = resolved.isEmpty
               ? _coordinateFallback(coordinates)
               : resolved;
+          _addressCoordinates = coordinates;
         });
       } on Object {
-        if (!mounted || generation != _geocodeGeneration) {
+        if (!mounted ||
+            generation != _geocodeGeneration ||
+            !_coordinatesMatch(coordinates, _center)) {
           return;
         }
-        setState(() => _address = _coordinateFallback(coordinates));
+        setState(() => _useCoordinateFallback(coordinates));
       }
     });
   }
@@ -381,7 +419,13 @@ class _PassengerHomeState extends State<PassengerHome>
     if (!mounted || selected == null || selected.trim().isEmpty) {
       return;
     }
-    setState(() => _address = selected.trim());
+
+    _invalidateCurrentAddress();
+    setState(() {
+      _address = selected.trim();
+      _addressCoordinates = null;
+      _mapPinConfirmationRequired = true;
+    });
   }
 
   Future<void> _showFullAddress() {
@@ -442,9 +486,12 @@ class _PassengerHomeState extends State<PassengerHome>
       if (!mounted) {
         return;
       }
+      _invalidateCurrentAddress();
       setState(() {
         _center = target;
         _pinLifted = false;
+        _mapPinConfirmationRequired = false;
+        _useCoordinateFallback(target);
       });
       _scheduleReverseGeocode(target);
     });
@@ -490,7 +537,11 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   void _confirmPickup() {
-    final address = _address.trim();
+    if (!_canConfirmPickup) {
+      return;
+    }
+
+    final address = _addressMatchesCurrentCenter ? _address.trim() : '';
     widget.onConfirmPickup(
       PassengerPickupSelection(
         coordinates: _center,
@@ -752,7 +803,7 @@ class _PassengerHomeState extends State<PassengerHome>
                   key: const Key('open-live-request'),
                   child: FilledButton(
                     key: const Key('confirm-pickup'),
-                    onPressed: _confirmPickup,
+                    onPressed: _canConfirmPickup ? _confirmPickup : null,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                     ),

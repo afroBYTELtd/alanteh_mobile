@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
@@ -645,6 +646,338 @@ void main() {
     expect(shellSource, isNot(contains('PickupMapConfirmationPage')));
     expect(shellSource, isNot(contains('_selectingPickupOnMap')));
   });
+  testWidgets(
+    'test_stale_geocode_result_discarded_when_map_moved_since_request',
+    (tester) async {
+      final geocoder = _ControlledReverseGeocoder();
+      await _pumpHome(tester, geocoder: geocoder);
+      await tester.pump(const Duration(milliseconds: 401));
+
+      expect(geocoder.calls, [passengerHomePickupDefaultCenter]);
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+      final oldCamera = map.mapController!.camera;
+      final movedCamera = oldCamera.withPosition(
+        center: const LatLng(5.6100, -0.1700),
+      );
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: oldCamera,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump();
+
+      geocoder.complete(0, 'Old center address');
+      await tester.pump();
+
+      expect(find.text('Old center address'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'test_address_and_coordinate_always_correspond_to_same_center',
+    (tester) async {
+      final geocoder = _ControlledReverseGeocoder();
+      final selections = <PassengerPickupSelection>[];
+
+      await _pumpHome(
+        tester,
+        geocoder: geocoder,
+        onConfirmPickup: selections.add,
+      );
+      await tester.pump(const Duration(milliseconds: 401));
+      geocoder.complete(0, 'Initial center address');
+      await tester.pump();
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+      final oldCamera = map.mapController!.camera;
+      final movedCamera = oldCamera.withPosition(
+        center: const LatLng(5.6110, -0.1710),
+      );
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: oldCamera,
+          camera: movedCamera,
+        ),
+      );
+      map.options.onMapEvent!.call(
+        MapEventMoveEnd(
+          source: MapEventSource.dragEnd,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 401));
+
+      expect(geocoder.calls.last, const LatLng(5.6110, -0.1710));
+      geocoder.complete(1, 'Moved center address');
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pump();
+
+      expect(selections, hasLength(1));
+      expect(
+        selections.single.coordinates.latitude,
+        closeTo(5.6110, 0.000001),
+      );
+      expect(
+        selections.single.coordinates.longitude,
+        closeTo(-0.1710, 0.000001),
+      );
+      expect(selections.single.address, 'Moved center address');
+    },
+  );
+
+  testWidgets(
+    'test_confirm_uses_coordinate_fallback_text_when_address_unresolved',
+    (tester) async {
+      final geocoder = _ControlledReverseGeocoder();
+      final selections = <PassengerPickupSelection>[];
+
+      await _pumpHome(
+        tester,
+        geocoder: geocoder,
+        onConfirmPickup: selections.add,
+      );
+
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pump();
+
+      expect(selections, hasLength(1));
+      expect(
+        selections.single.coordinates.latitude,
+        closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
+      );
+      expect(
+        selections.single.coordinates.longitude,
+        closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
+      );
+      expect(selections.single.address, '5.60500, -0.16680');
+    },
+  );
+
+  testWidgets(
+    'test_confirm_never_submits_mismatched_address_and_coordinate',
+    (tester) async {
+      final geocoder = _ControlledReverseGeocoder();
+      final selections = <PassengerPickupSelection>[];
+
+      await _pumpHome(
+        tester,
+        geocoder: geocoder,
+        onConfirmPickup: selections.add,
+      );
+      await tester.pump(const Duration(milliseconds: 401));
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+      final oldCamera = map.mapController!.camera;
+      final movedCamera = oldCamera.withPosition(
+        center: const LatLng(5.6120, -0.1720),
+      );
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: oldCamera,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump();
+
+      geocoder.complete(0, 'Stale old address');
+      await tester.pump();
+
+      map.options.onMapEvent!.call(
+        MapEventMoveEnd(
+          source: MapEventSource.dragEnd,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pump();
+
+      expect(selections, hasLength(1));
+      expect(
+        selections.single.coordinates.latitude,
+        closeTo(5.6120, 0.000001),
+      );
+      expect(
+        selections.single.coordinates.longitude,
+        closeTo(-0.1720, 0.000001),
+      );
+      expect(selections.single.address, '5.61200, -0.17200');
+      expect(selections.single.address, isNot('Stale old address'));
+    },
+  );
+
+  testWidgets(
+    'test_location_search_selection_requires_map_pin_confirmation',
+    (tester) async {
+      await _pumpHome(
+        tester,
+        geocoder: _FakeReverseGeocoder(),
+        onOpenPickupSearch: (_) async => 'Search-only pickup label',
+      );
+
+      await tester.tap(
+        find.byKey(const Key('passenger-home-pickup-address-row')),
+      );
+      await tester.pump();
+
+      expect(find.text('Search-only pickup label'), findsOneWidget);
+
+      var confirmButton = tester.widget<FilledButton>(
+        find.byKey(const Key('confirm-pickup')),
+      );
+      expect(confirmButton.onPressed, isNull);
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+      final oldCamera = map.mapController!.camera;
+      final movedCamera = oldCamera.withPosition(
+        center: const LatLng(5.6130, -0.1730),
+      );
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: oldCamera,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump();
+
+      confirmButton = tester.widget<FilledButton>(
+        find.byKey(const Key('confirm-pickup')),
+      );
+      expect(confirmButton.onPressed, isNull);
+
+      map.options.onMapEvent!.call(
+        MapEventMoveEnd(
+          source: MapEventSource.dragEnd,
+          camera: movedCamera,
+        ),
+      );
+      await tester.pump();
+
+      confirmButton = tester.widget<FilledButton>(
+        find.byKey(const Key('confirm-pickup')),
+      );
+      expect(confirmButton.onPressed, isNotNull);
+      expect(find.text('5.61300, -0.17300'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'test_location_search_selection_alone_never_produces_pickup_selection',
+    (tester) async {
+      final selections = <PassengerPickupSelection>[];
+
+      await _pumpHome(
+        tester,
+        geocoder: _FakeReverseGeocoder(),
+        onOpenPickupSearch: (_) async => 'Search-only pickup label',
+        onConfirmPickup: selections.add,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('passenger-home-pickup-address-row')),
+      );
+      await tester.pump();
+
+      final confirmButton = tester.widget<FilledButton>(
+        find.byKey(const Key('confirm-pickup')),
+      );
+      expect(confirmButton.onPressed, isNull);
+      confirmButton.onPressed?.call();
+      await tester.pump();
+
+      expect(selections, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'test_rapid_consecutive_map_moves_do_not_produce_stale_address',
+    (tester) async {
+      final geocoder = _ControlledReverseGeocoder();
+
+      await _pumpHome(tester, geocoder: geocoder);
+      await tester.pump(const Duration(milliseconds: 401));
+      geocoder.complete(0, 'Initial address');
+      await tester.pump();
+
+      final map = tester.widget<FlutterMap>(
+        find.byKey(const Key('passenger-home-flutter-map')),
+      );
+      final initialCamera = map.mapController!.camera;
+      final firstCamera = initialCamera.withPosition(
+        center: const LatLng(5.6140, -0.1740),
+      );
+      final secondCamera = initialCamera.withPosition(
+        center: const LatLng(5.6150, -0.1750),
+      );
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: initialCamera,
+          camera: firstCamera,
+        ),
+      );
+      map.options.onMapEvent!.call(
+        MapEventMoveEnd(
+          source: MapEventSource.dragEnd,
+          camera: firstCamera,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 401));
+
+      expect(geocoder.calls.last, const LatLng(5.6140, -0.1740));
+
+      map.options.onMapEvent!.call(
+        MapEventMove(
+          source: MapEventSource.onDrag,
+          oldCamera: firstCamera,
+          camera: secondCamera,
+        ),
+      );
+      await tester.pump();
+
+      geocoder.complete(1, 'Stale first-move address');
+      await tester.pump();
+      expect(find.text('Stale first-move address'), findsNothing);
+
+      map.options.onMapEvent!.call(
+        MapEventMoveEnd(
+          source: MapEventSource.dragEnd,
+          camera: secondCamera,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 401));
+
+      expect(geocoder.calls.last, const LatLng(5.6150, -0.1750));
+      geocoder.complete(2, 'Current second-move address');
+      await tester.pump();
+
+      expect(find.text('Current second-move address'), findsOneWidget);
+      expect(find.text('Stale first-move address'), findsNothing);
+    },
+  );
+
 }
 
 Future<void> _pumpHome(
@@ -654,6 +987,9 @@ Future<void> _pumpHome(
       const _NoDeviceLocationService(),
   PassengerHomeLocationPermissionService locationPermissionService =
       const _GrantedLocationPermissionService(),
+  PassengerHomePickupSearch? onOpenPickupSearch,
+  ValueChanged<PassengerPickupSelection>? onConfirmPickup,
+  String? pickupDescription,
   Size? mediaSize,
   EdgeInsets mediaPadding = EdgeInsets.zero,
 }) async {
@@ -675,7 +1011,7 @@ Future<void> _pumpHome(
         body: PassengerHome(
           market: AsmAppConfig.localGhana.market,
           localQaEnabled: true,
-          pickupDescription: null,
+          pickupDescription: pickupDescription,
           destinationDescription: null,
           canContinue: false,
           locationsMatch: false,
@@ -687,8 +1023,9 @@ Future<void> _pumpHome(
           onOpenRequests: () {},
           onSwap: () {},
           onClear: () {},
-          onOpenPickupSearch: (_) async => null,
-          onConfirmPickup: (_) {},
+          onOpenPickupSearch:
+              onOpenPickupSearch ?? (_) async => null,
+          onConfirmPickup: onConfirmPickup ?? (_) {},
           reverseGeocoder: geocoder,
           deviceLocationService: deviceLocationService,
           locationPermissionService: locationPermissionService,
@@ -768,6 +1105,24 @@ class _RecordingRideRequestSubmitter implements PassengerRideRequestSubmitter {
         message: 'Your ride request was received.',
       ),
     );
+  }
+}
+
+
+class _ControlledReverseGeocoder implements PassengerHomeReverseGeocoder {
+  final List<LatLng> calls = [];
+  final List<Completer<String>> _completers = [];
+
+  @override
+  Future<String> reverseGeocode(LatLng coordinates) {
+    calls.add(coordinates);
+    final completer = Completer<String>();
+    _completers.add(completer);
+    return completer.future;
+  }
+
+  void complete(int index, String address) {
+    _completers[index].complete(address);
   }
 }
 
