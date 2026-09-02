@@ -119,6 +119,8 @@ class _BookingPageState extends State<BookingPage> {
         serviceContext: _internalServiceContext,
         pickupDescription: _pickupController.text,
         destinationDescription: _destinationController.text,
+        pickupLatitude: widget.initialPickupLatitude,
+        pickupLongitude: widget.initialPickupLongitude,
         passengerCount: _passengerCount,
         assistanceNote: _assistanceController.text,
         passengerNote: _passengerNoteController.text,

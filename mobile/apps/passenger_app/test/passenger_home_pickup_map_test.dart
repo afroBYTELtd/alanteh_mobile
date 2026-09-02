@@ -1,13 +1,16 @@
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_page.dart';
+import 'package:passenger_app/booking/booking_review.dart';
+import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/location/location_search_page.dart';
 import 'package:passenger_app/passenger_home.dart';
 import 'package:passenger_app/passenger_shell.dart';
@@ -189,10 +192,11 @@ void main() {
     expect(source, isNot(contains('UnderlineInputBorder')));
   });
 
-  testWidgets('test_confirm_pickup_passes_coordinates_downstream', (
+  testWidgets('test_pickup_coordinates_included_when_available_from_map_pin', (
     tester,
   ) async {
-    await _pumpShell(tester);
+    final submitter = _RecordingRideRequestSubmitter();
+    await _pumpShell(tester, submitter: submitter);
 
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
@@ -201,7 +205,50 @@ void main() {
     expect(booking.initialPickupDescription, isNotEmpty);
     expect(booking.initialPickupLatitude, closeTo(5.6050, 0.000001));
     expect(booking.initialPickupLongitude, closeTo(-0.1668, 0.000001));
-    expect(find.byKey(const Key('booking-destination')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      'Kotoka International Airport',
+    );
+
+    final pickupField = tester.widget<TextFormField>(
+      find.byKey(const Key('booking-pickup')),
+    );
+    final destinationField = tester.widget<TextFormField>(
+      find.byKey(const Key('booking-destination')),
+    );
+    expect(pickupField.controller!.text.trim(), isNotEmpty);
+    expect(
+      destinationField.controller!.text.trim(),
+      'Kotoka International Airport',
+    );
+
+    await _tapVisible(tester, const Key('request-ride'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Please enter your pickup location.'), findsNothing);
+    expect(find.text('Please enter your destination.'), findsNothing);
+    expect(find.text('Drop-off cannot be the same as pickup.'), findsNothing);
+    expect(find.text('Passenger count must be between 1 and 6.'), findsNothing);
+    expect(find.text('Confirm your ride'), findsWidgets);
+
+    final review = tester.widget<BookingReview>(find.byType(BookingReview));
+    review.onConfirm();
+    await tester.pump();
+
+    expect(submitter.submissions, hasLength(1));
+    expect(
+      submitter.submissions.single.pickupLatitude,
+      closeTo(5.6050, 0.000001),
+    );
+    expect(
+      submitter.submissions.single.pickupLongitude,
+      closeTo(-0.1668, 0.000001),
+    );
+    expect(
+      submitter.submissions.single.destinationDescription.value,
+      'Kotoka International Airport',
+    );
   });
 
   testWidgets(
@@ -652,17 +699,76 @@ Future<void> _pumpHome(
   await tester.pump();
 }
 
-Future<void> _pumpShell(WidgetTester tester) async {
+Future<void> _pumpShell(
+  WidgetTester tester, {
+  PassengerRideRequestSubmitter? submitter,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.passenger,
-      home: const PassengerShell(
+      home: PassengerShell(
         configuration: AsmAppConfig.localGhana,
         localQaEnabled: true,
+        rideRequestSubmitter: submitter,
       ),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<void> _scrollUntilKey(WidgetTester tester, Key key) async {
+  final finder = find.byKey(key);
+
+  for (var attempt = 0; attempt < 15; attempt += 1) {
+    if (finder.evaluate().isNotEmpty) {
+      await tester.ensureVisible(finder);
+      await tester.pump(const Duration(milliseconds: 120));
+      return;
+    }
+
+    final listViews = find.byType(ListView);
+    if (listViews.evaluate().isNotEmpty) {
+      await tester.drag(listViews.last, const Offset(0, -220));
+    } else {
+      final scrollables = find.byType(Scrollable);
+      if (scrollables.evaluate().isNotEmpty) {
+        await tester.drag(scrollables.first, const Offset(0, -220));
+      }
+    }
+
+    await tester.pump(const Duration(milliseconds: 120));
+  }
+
+  throw StateError('Widget with key $key was not found after scrolling.');
+}
+
+Future<void> _tapVisible(WidgetTester tester, Key key) async {
+  final finder = find.byKey(key);
+
+  await _scrollUntilKey(tester, key);
+  await tester.ensureVisible(finder);
+  await tester.pump(const Duration(milliseconds: 120));
+  await tester.tap(finder, warnIfMissed: false);
+  await tester.pump();
+}
+
+class _RecordingRideRequestSubmitter implements PassengerRideRequestSubmitter {
+  final submissions = <BookingDraft>[];
+
+  @override
+  Future<PassengerRideRequestResult> submit(
+    BookingDraft draft, {
+    required String idempotencyKey,
+  }) {
+    submissions.add(draft);
+    return Future<PassengerRideRequestResult>.value(
+      const PassengerRideRequestResult(
+        requestReference: 'RR-APP-3A9F1C2B4E5D',
+        status: 'requested',
+        message: 'Your ride request was received.',
+      ),
+    );
+  }
 }
 
 class _FakeReverseGeocoder implements PassengerHomeReverseGeocoder {

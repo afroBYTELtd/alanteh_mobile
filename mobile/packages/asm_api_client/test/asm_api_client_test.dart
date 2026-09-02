@@ -245,6 +245,42 @@ void main() {
       );
     });
 
+    test('test_pickup_coordinates_included_when_available_from_map_pin', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-pickup-coordinates-present',
+        pickupLocation: 'Accra pickup',
+        pickupLatitude: 5.60365,
+        pickupLongitude: -0.17495,
+        destination: 'Kotoka International Airport',
+        passengerCount: 2,
+      );
+
+      final body = submission.toJson();
+
+      expect(body['pickup_latitude'], 5.60365);
+      expect(body['pickup_longitude'], -0.17495);
+      expect(body['pickup_location'], 'Accra pickup');
+      expect(body['destination'], 'Kotoka International Airport');
+      expect(body['passenger_count'], 2);
+    });
+
+    test('test_pickup_coordinates_omitted_when_unavailable', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-pickup-coordinates-absent',
+        pickupLocation: 'Osu',
+        destination: 'Airport',
+        passengerCount: 1,
+      );
+
+      final body = submission.toJson();
+
+      expect(body.containsKey('pickup_latitude'), isFalse);
+      expect(body.containsKey('pickup_longitude'), isFalse);
+      expect(body['pickup_location'], 'Osu');
+      expect(body['destination'], 'Airport');
+      expect(body['passenger_count'], 1);
+    });
+
     test('test_passenger_note_submitted_with_booking_request', () {
       final submission = PassengerRideRequestSubmission(
         idempotencyKey: 'APP-passenger-note-test',

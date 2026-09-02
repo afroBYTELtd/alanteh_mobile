@@ -132,6 +132,8 @@ class ApiPassengerRideRequestSubmitter
       PassengerRideRequestSubmission(
         idempotencyKey: idempotencyKey,
         pickupLocation: draft.pickupDescription.value,
+        pickupLatitude: draft.pickupLatitude,
+        pickupLongitude: draft.pickupLongitude,
         destination: draft.destinationDescription.value,
         passengerCount: draft.passengerCount.value,
         assistanceNote: draft.assistanceNote?.value,

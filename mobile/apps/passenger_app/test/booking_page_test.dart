@@ -12,6 +12,7 @@ import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_page.dart';
 import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/main.dart';
+import 'package:passenger_app/passenger_home.dart';
 import 'package:passenger_app/passenger_shell.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
 
@@ -618,6 +619,159 @@ void main() {
     });
   }
 
+  testWidgets(
+    'test_continue_to_draft_path_submits_without_coordinates_successfully',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: PassengerShell(
+            configuration: AsmAppConfig.localGhana,
+            localQaEnabled: true,
+            rideRequestSubmitter: submitter,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      tester.widget<PassengerHome>(find.byType(PassengerHome)).onChoosePickup();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('location-description')),
+        'Osu pickup',
+      );
+      await tester.tap(find.byKey(const Key('use-location-description')));
+      await tester.pumpAndSettle();
+
+      tester
+          .widget<PassengerHome>(find.byType(PassengerHome))
+          .onChooseDestination();
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('location-description')),
+        'Kotoka International Airport',
+      );
+      await tester.tap(find.byKey(const Key('use-location-description')));
+      await tester.pumpAndSettle();
+
+      final home = tester.widget<PassengerHome>(find.byType(PassengerHome));
+      expect(home.canContinue, isTrue);
+      home.onContinue();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BookingPage), findsOneWidget);
+
+      await _tapVisible(tester, const Key('request-ride'));
+      await tester.pumpAndSettle();
+
+      await _scrollUntilKey(tester, const Key('confirm-and-request'));
+      await _tapVisible(tester, const Key('confirm-and-request'));
+      await tester.pump();
+
+      expect(submitter.submissions, hasLength(1));
+      expect(submitter.submissions.single.pickupLatitude, isNull);
+      expect(submitter.submissions.single.pickupLongitude, isNull);
+      expect(
+        submitter.submissions.single.pickupDescription.value,
+        'Osu pickup',
+      );
+      expect(
+        submitter.submissions.single.destinationDescription.value,
+        'Kotoka International Airport',
+      );
+    },
+  );
+
+  testWidgets('test_existing_booking_flow_unchanged_when_coordinates_present', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.success();
+    const idempotencyKey = 'APP-coordinate-idempotency-test';
+
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: submitter,
+        idempotencyKeyFactory: () => idempotencyKey,
+        initialPickupLatitude: 5.60365,
+        initialPickupLongitude: -0.17495,
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('booking-pickup')),
+      'Accra pickup',
+    );
+    await tester.enterText(
+      find.byKey(const Key('booking-destination')),
+      'Kotoka International Airport',
+    );
+
+    await _tapVisible(tester, const Key('request-ride'));
+    await tester.pumpAndSettle();
+
+    await _scrollUntilKey(tester, const Key('confirm-and-request'));
+    await _tapVisible(tester, const Key('confirm-and-request'));
+    await tester.pump();
+
+    expect(submitter.submissions, hasLength(1));
+    expect(
+      submitter.submissions.single.pickupLatitude,
+      closeTo(5.60365, 0.000001),
+    );
+    expect(
+      submitter.submissions.single.pickupLongitude,
+      closeTo(-0.17495, 0.000001),
+    );
+    expect(submitter.idempotencyKeys, <String>[idempotencyKey]);
+  });
+
+  testWidgets(
+    'test_idempotency_construction_remains_unaffected_by_pickup_coordinates',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success();
+      var factoryCalls = 0;
+      const idempotencyKey = 'APP-coordinate-key-unaffected';
+
+      await tester.pumpWidget(
+        _bookingTestApp(
+          submitter: submitter,
+          idempotencyKeyFactory: () {
+            factoryCalls += 1;
+            return idempotencyKey;
+          },
+          initialPickupLatitude: 5.60365,
+          initialPickupLongitude: -0.17495,
+        ),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('booking-pickup')),
+        'Accra pickup',
+      );
+      await tester.enterText(
+        find.byKey(const Key('booking-destination')),
+        'Airport',
+      );
+
+      await _tapVisible(tester, const Key('request-ride'));
+      await tester.pumpAndSettle();
+
+      await _scrollUntilKey(tester, const Key('confirm-and-request'));
+      await _tapVisible(tester, const Key('confirm-and-request'));
+      await tester.pump();
+
+      expect(factoryCalls, 1);
+      expect(submitter.idempotencyKeys, <String>[idempotencyKey]);
+      expect(submitter.submissions.single.pickupLatitude, isNotNull);
+      expect(submitter.submissions.single.pickupLongitude, isNotNull);
+    },
+  );
+
   test(
     'api submitter sends CC4B request fields and never service context',
     () async {
@@ -635,6 +789,8 @@ void main() {
           marketCode: MarketConfig.ghanaAccra.marketCode,
           serviceContext: RideServiceContextCode.otherApprovedRequest,
           pickupDescription: '  $pickup  ',
+          pickupLatitude: 5.60365,
+          pickupLongitude: -0.17495,
           destinationDescription: '  $destination  ',
           passengerCount: 6,
           assistanceNote: '  $assistance  ',
@@ -644,6 +800,8 @@ void main() {
 
       final body = client.lastSubmission!.toJson();
       expect(body['pickup_location'], pickup);
+      expect(body['pickup_latitude'], 5.60365);
+      expect(body['pickup_longitude'], -0.17495);
       expect(body['destination'], destination);
       expect(body['passenger_count'], 6);
       expect(body['assistance_note'], assistance);
@@ -674,6 +832,8 @@ void main() {
 
       final body = client.lastSubmission!.toJson();
       expect(body['pickup_location'], 'Osu');
+      expect(body.containsKey('pickup_latitude'), isFalse);
+      expect(body.containsKey('pickup_longitude'), isFalse);
       expect(body['destination'], 'Airport');
       expect(body['passenger_count'], 1);
       expect(body.containsKey('assistance_note'), isFalse);
@@ -2151,11 +2311,15 @@ Widget _bookingTestApp({
   PassengerRideRequestSubmitter? submitter,
   String Function()? idempotencyKeyFactory,
   VoidCallback? onSignInRequired,
+  double? initialPickupLatitude,
+  double? initialPickupLongitude,
 }) {
   return MaterialApp(
     theme: AsmThemes.passenger,
     home: BookingPage(
       market: MarketConfig.ghanaAccra,
+      initialPickupLatitude: initialPickupLatitude,
+      initialPickupLongitude: initialPickupLongitude,
       rideRequestSubmitter: submitter,
       idempotencyKeyFactory: idempotencyKeyFactory,
       onSignInRequired: onSignInRequired,

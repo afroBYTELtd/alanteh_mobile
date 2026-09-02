@@ -136,6 +136,8 @@ final class PassengerRideRequestSubmission {
   PassengerRideRequestSubmission({
     required String idempotencyKey,
     required String pickupLocation,
+    double? pickupLatitude,
+    double? pickupLongitude,
     required String destination,
     required int passengerCount,
     String? assistanceNote,
@@ -150,6 +152,8 @@ final class PassengerRideRequestSubmission {
          'pickupLocation',
          maxLength: 240,
        ),
+       pickupLatitude = pickupLatitude,
+       pickupLongitude = pickupLongitude,
        destination = _requiredString(
          destination,
          'destination',
@@ -169,6 +173,8 @@ final class PassengerRideRequestSubmission {
 
   final String idempotencyKey;
   final String pickupLocation;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
   final String destination;
   final int passengerCount;
   final String? assistanceNote;
@@ -177,6 +183,8 @@ final class PassengerRideRequestSubmission {
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'pickup_location': pickupLocation,
+      if (pickupLatitude != null) 'pickup_latitude': pickupLatitude,
+      if (pickupLongitude != null) 'pickup_longitude': pickupLongitude,
       'destination': destination,
       'passenger_count': passengerCount,
       if (assistanceNote != null) 'assistance_note': assistanceNote,

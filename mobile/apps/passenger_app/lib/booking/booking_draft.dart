@@ -23,6 +23,8 @@ class BookingDraft {
     required RideServiceContextCode serviceContext,
     required String pickupDescription,
     required String destinationDescription,
+    double? pickupLatitude,
+    double? pickupLongitude,
     required int passengerCount,
     String? assistanceNote,
     String? passengerNote,
@@ -78,13 +80,22 @@ class BookingDraft {
       normalizedPassengerNote == null || normalizedPassengerNote.isEmpty
           ? null
           : normalizedPassengerNote,
+      pickupLatitude,
+      pickupLongitude,
     );
   }
 
-  const BookingDraft._(this.rideDraft, this.passengerNote);
+  const BookingDraft._(
+    this.rideDraft,
+    this.passengerNote,
+    this.pickupLatitude,
+    this.pickupLongitude,
+  );
 
   final RideDraft rideDraft;
   final String? passengerNote;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
 
   RideDraftIdentity get identity => rideDraft.identity;
   RideLifecycleState get lifecycleState => rideDraft.lifecycleState;
@@ -101,6 +112,8 @@ class BookingDraft {
     RideServiceContextCode? serviceContext,
     String? pickupDescription,
     String? destinationDescription,
+    double? pickupLatitude,
+    double? pickupLongitude,
     int? passengerCount,
     String? assistanceNote,
     bool clearAssistanceNote = false,
@@ -114,6 +127,8 @@ class BookingDraft {
       pickupDescription: pickupDescription ?? this.pickupDescription.value,
       destinationDescription:
           destinationDescription ?? this.destinationDescription.value,
+      pickupLatitude: pickupLatitude ?? this.pickupLatitude,
+      pickupLongitude: pickupLongitude ?? this.pickupLongitude,
       passengerCount: passengerCount ?? this.passengerCount.value,
       assistanceNote: clearAssistanceNote
           ? null
