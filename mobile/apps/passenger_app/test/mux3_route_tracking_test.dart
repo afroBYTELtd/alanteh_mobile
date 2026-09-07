@@ -387,6 +387,217 @@ void main() {
     await _disposeTracking(tester);
   });
 
+  testWidgets('test_driver_name_displayed_when_present', (tester) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(
+        status: 'converted',
+        tripReference: 'TRIP-SWITCH-001',
+      ),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(
+        status: 'driver_accepted',
+        driverName: '  Kwame Mensah  ',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.byKey(const Key('tracking-driver-first-name')), findsOneWidget);
+    expect(find.text('Kwame'), findsOneWidget);
+    expect(find.textContaining('Mensah'), findsNothing);
+
+    final avatar = tester.widget<CircleAvatar>(
+      find.byKey(const Key('tracking-driver-avatar')),
+    );
+    expect(avatar.backgroundColor, AsmColors.brandDeepGreen);
+    expect(find.text('K'), findsOneWidget);
+
+    final driverName = tester.widget<Text>(
+      find.byKey(const Key('tracking-driver-first-name')),
+    );
+    expect(driverName.style?.fontWeight, FontWeight.w900);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_vehicle_info_displayed_when_present', (tester) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.byKey(const Key('tracking-vehicle-info')), findsOneWidget);
+    expect(find.text('Blue · Solar Taxi'), findsOneWidget);
+
+    final vehicleInfo = tester.widget<Text>(
+      find.byKey(const Key('tracking-vehicle-info')),
+    );
+    expect(vehicleInfo.style?.fontWeight, FontWeight.w600);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets(
+    'test_distance_displayed_when_present_with_correct_km_label',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          latestStaffState: 'driver assigned',
+          driverDistanceKm: 2.34,
+        ),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(find.byKey(const Key('tracking-driver-distance')), findsOneWidget);
+      expect(
+        find.byKey(const Key('tracking-driver-distance-icon')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Driver is approximately 2.3 km away'),
+        findsOneWidget,
+      );
+
+      final distanceIcon = tester.widget<Icon>(
+        find.byKey(const Key('tracking-driver-distance-icon')),
+      );
+      expect(distanceIcon.icon, Icons.location_on_outlined);
+      expect(distanceIcon.color, AsmColors.brandDeepGreen);
+      expect(find.textContaining('ETA'), findsNothing);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets('test_distance_row_absent_when_null', (tester) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverDistanceKm: null,
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.byKey(const Key('tracking-driver-distance')), findsNothing);
+    expect(
+      find.byKey(const Key('tracking-driver-distance-icon')),
+      findsNothing,
+    );
+    expect(find.textContaining('Driver is approximately'), findsNothing);
+    expect(find.textContaining('Distance unavailable'), findsNothing);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_no_phone_number_ever_rendered', (tester) async {
+    _useSurface(tester);
+
+    final parsedTrip = PassengerTripRecord.fromJson(
+      <String, Object?>{
+        'trip_reference': 'TRIP-SWITCH-001',
+        'trip_status': 'driver_accepted',
+        'driver_name': 'Kwame Mensah',
+        'driver_phone': '+233 00 000 0000',
+        'driver_phone_number': '+233 11 111 1111',
+        'phone_number': '+233 22 222 2222',
+      },
+      expectedTripReference: 'TRIP-SWITCH-001',
+    );
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(
+        status: 'converted',
+        tripReference: 'TRIP-SWITCH-001',
+      ),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[parsedTrip]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.textContaining('+233 00 000 0000'), findsNothing);
+    expect(find.textContaining('+233 11 111 1111'), findsNothing);
+    expect(find.textContaining('+233 22 222 2222'), findsNothing);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_existing_plate_display_unchanged', (tester) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+        plateNumber: 'GT 1234-26',
+        driverDistanceKm: 2.34,
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    final plateFinder = find.byKey(
+      const Key('tracking-safe-plate-number'),
+    );
+
+    expect(plateFinder, findsOneWidget);
+    expect(
+      find.byKey(const Key('tracking-plate-badge')),
+      findsOneWidget,
+    );
+    expect(find.text('GT 1234-26'), findsOneWidget);
+
+    final plate = tester.widget<Text>(plateFinder);
+    expect(plate.data, 'GT 1234-26');
+    expect(plate.style?.fontSize, 24);
+    expect(plate.style?.fontWeight, FontWeight.w900);
+
+    await _disposeTracking(tester);
+  });
+
   testWidgets('tracking polls and moves to the latest CC5C state', (
     tester,
   ) async {
@@ -953,6 +1164,10 @@ PassengerRideRequestRecord _record({
   String destination = 'Accra Airport',
   String? plateNumber,
   LatLng? vehiclePosition,
+  String? driverName,
+  String? vehicleType,
+  String? vehicleColour,
+  double? driverDistanceKm,
 }) {
   return PassengerRideRequestRecord(
     requestReference: 'RR-APP-MUX3-TEST',
@@ -970,6 +1185,10 @@ PassengerRideRequestRecord _record({
     plateNumber: plateNumber,
     vehicleLatitude: vehiclePosition?.latitude,
     vehicleLongitude: vehiclePosition?.longitude,
+    driverName: driverName,
+    vehicleType: vehicleType,
+    vehicleColour: vehicleColour,
+    driverDistanceKm: driverDistanceKm,
   );
 }
 
@@ -1081,11 +1300,19 @@ class _SequenceRepository implements PassengerRideRequestHistoryRepository {
 PassengerTripRecord _trip({
   required String status,
   String message = 'Passenger-safe trip update.',
+  String? driverName,
+  String? vehicleType,
+  String? vehicleColour,
+  double? driverDistanceKm,
 }) {
   return PassengerTripRecord(
     tripReference: 'TRIP-SWITCH-001',
     status: status,
     controlCenterMessage: message,
+    driverName: driverName,
+    vehicleType: vehicleType,
+    vehicleColour: vehicleColour,
+    driverDistanceKm: driverDistanceKm,
   );
 }
 
@@ -1113,6 +1340,10 @@ class _TripSequenceRepository implements PassengerTripLifecycleRepository {
         plateNumber: result.plateNumber,
         vehicleLatitude: result.vehicleLatitude,
         vehicleLongitude: result.vehicleLongitude,
+        driverName: result.driverName,
+        vehicleType: result.vehicleType,
+        vehicleColour: result.vehicleColour,
+        driverDistanceKm: result.driverDistanceKm,
       );
     }
 

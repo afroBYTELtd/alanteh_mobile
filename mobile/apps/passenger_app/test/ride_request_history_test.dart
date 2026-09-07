@@ -43,6 +43,27 @@ void main() {
     ]);
   });
 
+  test('deployed passenger trip driver fields deserialize', () {
+    final trip = PassengerTripRecord.fromJson(
+      <String, Object?>{
+        'trip_reference': 'TRIP-DRIVER-INFO',
+        'trip_status': 'driver_accepted',
+        'driver_name': 'Kwame Mensah',
+        'vehicle_type': 'Solar Taxi',
+        'vehicle_colour': 'Blue',
+        'vehicle_plate_number': 'GT 1234-26',
+        'driver_distance_km': 2.34,
+      },
+      expectedTripReference: 'TRIP-DRIVER-INFO',
+    );
+
+    expect(trip.driverName, 'Kwame Mensah');
+    expect(trip.vehicleType, 'Solar Taxi');
+    expect(trip.vehicleColour, 'Blue');
+    expect(trip.plateNumber, 'GT 1234-26');
+    expect(trip.driverDistanceKm, 2.34);
+  });
+
   test(
     'converted request parses trip reference and fetches canonical trip detail',
     () async {

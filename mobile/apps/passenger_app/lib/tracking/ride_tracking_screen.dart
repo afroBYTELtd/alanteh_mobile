@@ -256,6 +256,10 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     }
 
     final record = _record!;
+    final theme = Theme.of(context);
+    final driverFirstName = _driverFirstName(record.driverName);
+    final vehicleInfo = _vehicleInfo(record.vehicleColour, record.vehicleType);
+    final driverDistanceKm = record.driverDistanceKm;
     final view = _TrackingView.from(record);
     final heading = record.status.trim().toLowerCase() == 'under_review'
         ? 'Reviewing your request'
@@ -356,15 +360,118 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(view.message),
-                  if (record.plateNumber != null) ...[
-                    const SizedBox(height: 14),
-                    Text(
-                      record.plateNumber!,
-                      key: const Key('tracking-safe-plate-number'),
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
+                  if (driverFirstName != null ||
+                      vehicleInfo != null ||
+                      record.plateNumber != null) ...[
+                    const SizedBox(height: AsmSpacing.space16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (driverFirstName != null) ...[
+                          CircleAvatar(
+                            key: const Key('tracking-driver-avatar'),
+                            radius: 32,
+                            backgroundColor: AsmColors.brandDeepGreen,
+                            child: Text(
+                              driverFirstName.substring(0, 1).toUpperCase(),
+                              key: const Key('tracking-driver-avatar-initial'),
+                              style: const TextStyle(
+                                color: AsmColors.brandWhite,
+                                fontSize: 25,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AsmSpacing.space16),
+                        ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (driverFirstName != null)
+                                Text(
+                                  driverFirstName,
+                                  key: const Key(
+                                    'tracking-driver-first-name',
+                                  ),
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              if (driverFirstName != null &&
+                                  vehicleInfo != null)
+                                const SizedBox(
+                                  height: AsmSpacing.space4,
+                                ),
+                              if (vehicleInfo != null)
+                                Text(
+                                  vehicleInfo,
+                                  key: const Key('tracking-vehicle-info'),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              if (record.plateNumber != null) ...[
+                                if (driverFirstName != null ||
+                                    vehicleInfo != null)
+                                  const SizedBox(
+                                    height: AsmSpacing.space12,
+                                  ),
+                                Container(
+                                  key: const Key('tracking-plate-badge'),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AsmSpacing.space12,
+                                    vertical: AsmSpacing.space8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AsmColors.passengerSurface,
+                                    borderRadius: BorderRadius.circular(
+                                      AsmRadii.radius16,
+                                    ),
+                                    border: Border.all(
+                                      color: AsmColors.passengerLine,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    record.plateNumber!,
+                                    key: const Key(
+                                      'tracking-safe-plate-number',
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (driverDistanceKm != null) ...[
+                    const SizedBox(height: AsmSpacing.space12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          key: Key('tracking-driver-distance-icon'),
+                          color: AsmColors.brandDeepGreen,
+                        ),
+                        const SizedBox(width: AsmSpacing.space8),
+                        Expanded(
+                          child: Text(
+                            'Driver is approximately ${driverDistanceKm.toStringAsFixed(1)} km away',
+                            key: const Key('tracking-driver-distance'),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                   if (view.reassigned) ...[
@@ -424,6 +531,29 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       ),
     );
   }
+}
+
+String? _driverFirstName(String? value) {
+  final normalized = value?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return null;
+  }
+
+  return normalized.split(RegExp(r'\s+')).first;
+}
+
+String? _vehicleInfo(String? colour, String? type) {
+  final normalizedColour = colour?.trim();
+  final normalizedType = type?.trim();
+
+  final parts = <String>[
+    if (normalizedColour != null && normalizedColour.isNotEmpty)
+      normalizedColour,
+    if (normalizedType != null && normalizedType.isNotEmpty)
+      normalizedType,
+  ];
+
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 class PassengerNoVehiclesAvailableState extends StatelessWidget {

@@ -54,6 +54,10 @@ class PassengerRideRequestRecord {
     this.plateNumber,
     this.vehicleLatitude,
     this.vehicleLongitude,
+    this.driverName,
+    this.vehicleType,
+    this.vehicleColour,
+    this.driverDistanceKm,
   });
 
   final String requestReference;
@@ -74,6 +78,10 @@ class PassengerRideRequestRecord {
   final String? plateNumber;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
+  final String? driverName;
+  final String? vehicleType;
+  final String? vehicleColour;
+  final double? driverDistanceKm;
 
   LatLng? get vehiclePosition {
     final latitude = vehicleLatitude;
@@ -114,6 +122,10 @@ class PassengerRideRequestRecord {
       plateNumber: trip.plateNumber ?? plateNumber,
       vehicleLatitude: trip.vehicleLatitude ?? vehicleLatitude,
       vehicleLongitude: trip.vehicleLongitude ?? vehicleLongitude,
+      driverName: trip.driverName ?? driverName,
+      vehicleType: trip.vehicleType ?? vehicleType,
+      vehicleColour: trip.vehicleColour ?? vehicleColour,
+      driverDistanceKm: trip.driverDistanceKm ?? driverDistanceKm,
     );
   }
 
@@ -269,6 +281,10 @@ final class PassengerTripRecord {
     this.plateNumber,
     this.vehicleLatitude,
     this.vehicleLongitude,
+    this.driverName,
+    this.vehicleType,
+    this.vehicleColour,
+    this.driverDistanceKm,
   });
 
   final String tripReference;
@@ -277,6 +293,10 @@ final class PassengerTripRecord {
   final String? plateNumber;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
+  final String? driverName;
+  final String? vehicleType;
+  final String? vehicleColour;
+  final double? driverDistanceKm;
 
   String get normalizedStatus => status.trim().toLowerCase();
 
@@ -322,6 +342,10 @@ final class PassengerTripRecord {
       vehicleLongitude:
           _optionalDouble(map, 'vehicle_longitude') ??
           _optionalDouble(map, 'last_known_vehicle_longitude'),
+      driverName: _optionalString(map, 'driver_name'),
+      vehicleType: _optionalString(map, 'vehicle_type'),
+      vehicleColour: _optionalString(map, 'vehicle_colour'),
+      driverDistanceKm: _optionalDouble(map, 'driver_distance_km'),
     );
   }
 
