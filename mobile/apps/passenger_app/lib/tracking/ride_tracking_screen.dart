@@ -9,6 +9,7 @@ import '../map/passenger_map.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
+import '../safety/passenger_trip_safety.dart';
 
 class RideTrackingScreen extends StatefulWidget {
   const RideTrackingScreen({
@@ -18,6 +19,9 @@ class RideTrackingScreen extends StatefulWidget {
     this.tripRepository,
     this.pollInterval = const Duration(seconds: 10),
     this.paymentRatingRepository,
+    this.trustedContactRepository,
+    this.safetyUriLauncher = const PlatformPassengerSafetyUriLauncher(),
+    this.safetyShareGateway = const PlatformPassengerSafetyShareGateway(),
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.onSignInRequired,
@@ -30,6 +34,9 @@ class RideTrackingScreen extends StatefulWidget {
   final PassengerTripLifecycleRepository? tripRepository;
   final Duration pollInterval;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
+  final PassengerTrustedContactRepository? trustedContactRepository;
+  final PassengerSafetyUriLauncher safetyUriLauncher;
+  final PassengerSafetyShareGateway safetyShareGateway;
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final VoidCallback? onSignInRequired;
@@ -206,6 +213,81 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     if (terminal) return;
     _timer = Timer(widget.pollInterval, _load);
   }
+
+  PassengerTripSafetySummary _buildSafetySummary(
+    PassengerRideRequestRecord record,
+  ) {
+    return PassengerTripSafetySummary(
+      tripReference: record.requestReference,
+      tripStatus: record.status,
+      driverFirstName: _driverFirstName(record.driverName),
+      vehicleType: record.vehicleType,
+      vehicleColour: record.vehicleColour,
+      plate: record.plateNumber,
+      pickup: record.pickupLocation,
+      destination: record.destination,
+    );
+  }
+
+  Future<void> _openEmergency191() async {
+    final canLaunch = await widget.safetyUriLauncher.canLaunch(
+      passengerEmergency191Uri,
+    );
+
+    if (!canLaunch) {
+      return;
+    }
+
+    await widget.safetyUriLauncher.launch(
+      passengerEmergency191Uri,
+    );
+  }
+
+  Future<void> _shareTripSafety() async {
+    final record = _record;
+
+    if (record == null) {
+      return;
+    }
+
+    await widget.safetyShareGateway.shareText(
+      _buildSafetySummary(record).build(),
+    );
+  }
+
+  Future<void> _messageTrustedContact() async {
+    final repository = widget.trustedContactRepository;
+
+    if (repository == null) {
+      return;
+    }
+
+    final record = _record;
+
+    if (record == null) {
+      return;
+    }
+
+    final contact = await repository.fetch();
+
+    if (!contact.isConfigured) {
+      return;
+    }
+
+    final uri = buildTrustedContactSmsUri(
+      phone: contact.phone,
+      summary: _buildSafetySummary(record).build(),
+    );
+
+    final canLaunch = await widget.safetyUriLauncher.canLaunch(uri);
+
+    if (!canLaunch) {
+      return;
+    }
+
+    await widget.safetyUriLauncher.launch(uri);
+  }
+
 
   Future<void> _openPaymentRating() {
     final repository = widget.paymentRatingRepository;
@@ -491,6 +573,63 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       ],
                     ),
                   ],
+                  const SizedBox(height: AsmSpacing.space16),
+
+                  Container(
+                    key: const Key('tracking-safety-card'),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AsmSpacing.space16),
+                    decoration: BoxDecoration(
+                      color: AsmColors.passengerCard,
+                      borderRadius: BorderRadius.circular(
+                        AsmRadii.radius20,
+                      ),
+                      border: Border.all(
+                        color: AsmColors.passengerLine,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Safety',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: AsmSpacing.space12),
+                        OutlinedButton.icon(
+                          key: const Key('tracking-safety-emergency'),
+                          onPressed: _openEmergency191,
+                          icon: const Icon(Icons.emergency_outlined),
+                          label: const Text('Emergency 191'),
+                        ),
+                        const SizedBox(height: AsmSpacing.space8),
+                        OutlinedButton.icon(
+                          key: const Key('tracking-safety-share'),
+                          onPressed: _shareTripSafety,
+                          icon: const Icon(Icons.share_outlined),
+                          label: const Text('Share trip'),
+                        ),
+                        if (widget.trustedContactRepository != null) ...[
+                          const SizedBox(height: AsmSpacing.space8),
+                          OutlinedButton.icon(
+                            key: const Key(
+                              'tracking-safety-message-contact',
+                            ),
+                            onPressed: _messageTrustedContact,
+                            icon: const Icon(Icons.sms_outlined),
+                            label: const Text(
+                              'Message trusted contact',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+
                   if (driverDistanceKm != null) ...[
                     const SizedBox(height: AsmSpacing.space12),
                     Row(

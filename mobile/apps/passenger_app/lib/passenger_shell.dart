@@ -13,6 +13,7 @@ import 'location/session_location_history.dart';
 import 'passenger_home.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
+import 'safety/passenger_trip_safety.dart';
 import 'tracking/ride_tracking_screen.dart';
 
 class PassengerShell extends StatefulWidget {
@@ -23,6 +24,7 @@ class PassengerShell extends StatefulWidget {
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
     this.fareEstimateRepository,
+    this.trustedContactRepository,
     this.phoneNumber,
     this.passengerName,
     this.onSignInRequired,
@@ -41,6 +43,7 @@ class PassengerShell extends StatefulWidget {
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
+  final PassengerTrustedContactRepository? trustedContactRepository;
   final String? phoneNumber;
   final String? passengerName;
   final VoidCallback? onSignInRequired;
@@ -184,6 +187,7 @@ class _PassengerShellState extends State<PassengerShell> {
           tripHistoryRepository:
               widget.rideRequestHistoryRepository ??
               const EmptyPassengerRideRequestHistoryRepository(),
+          trustedContactRepository: widget.trustedContactRepository,
           deleteAccountSubmitter:
               widget.deleteAccountSubmitter ??
               const UnavailablePassengerDeleteAccountSubmitter(),
@@ -224,6 +228,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,
@@ -260,6 +265,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,
@@ -289,6 +295,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,
@@ -308,6 +315,7 @@ class _PassengerShellState extends State<PassengerShell> {
           onSignInRequired: widget.onSignInRequired,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           fareEstimateRepository: widget.fareEstimateRepository,

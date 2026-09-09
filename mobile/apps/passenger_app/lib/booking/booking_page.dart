@@ -12,6 +12,8 @@ import 'booking_review.dart';
 import 'booking_submission.dart';
 import 'passenger_fare_estimate.dart';
 import '../ride_requests/ride_request_history.dart';
+import '../safety/passenger_trip_safety.dart';
+
 import '../tracking/ride_tracking_screen.dart';
 
 class BookingPage extends StatefulWidget {
@@ -27,6 +29,7 @@ class BookingPage extends StatefulWidget {
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
     this.fareEstimateRepository,
+    this.trustedContactRepository,
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.routeService = const OsrmPassengerRouteService(),
@@ -44,6 +47,7 @@ class BookingPage extends StatefulWidget {
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
+  final PassengerTrustedContactRepository? trustedContactRepository;
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final PassengerRouteService routeService;
@@ -244,6 +248,7 @@ class _BookingPageState extends State<BookingPage> {
               repository: repository,
               requestReference: reference,
               paymentRatingRepository: widget.paymentRatingRepository,
+              trustedContactRepository: widget.trustedContactRepository,
               phoneNumber: widget.phoneNumber,
               initialPaymentNetwork: widget.initialPaymentNetwork,
               onSignInRequired: widget.onSignInRequired,

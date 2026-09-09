@@ -16,6 +16,7 @@ import 'network/ghana_network_resilience.dart';
 import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
+import 'safety/passenger_trip_safety.dart';
 
 void main() {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
@@ -93,6 +94,12 @@ class PassengerApp extends StatelessWidget {
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
+    final resolvedTrustedContactRepository =
+        ApiPassengerTrustedContactRepository.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
+
     final resolvedAuthService =
         authService ??
         _authServiceFor(
@@ -113,6 +120,7 @@ class PassengerApp extends StatelessWidget {
             rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
+            trustedContactRepository: resolvedTrustedContactRepository,
             localQaEnabled: configuration.localQaEnabled,
           )
         : PassengerShell(
@@ -122,6 +130,7 @@ class PassengerApp extends StatelessWidget {
             rideRequestHistoryRepository: resolvedRideRequestHistoryRepository,
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
+            trustedContactRepository: resolvedTrustedContactRepository,
           );
 
     return MaterialApp(
@@ -238,6 +247,7 @@ class PassengerLoginShell extends StatefulWidget {
     required this.rideRequestHistoryRepository,
     required this.paymentRatingRepository,
     this.fareEstimateRepository,
+    this.trustedContactRepository,
     this.localQaEnabled = false,
     super.key,
   });
@@ -251,6 +261,7 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerRideRequestHistoryRepository rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
+  final PassengerTrustedContactRepository? trustedContactRepository;
   final bool localQaEnabled;
 
   @override
@@ -792,6 +803,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
         paymentRatingRepository: widget.paymentRatingRepository,
         fareEstimateRepository: widget.fareEstimateRepository,
+        trustedContactRepository: widget.trustedContactRepository,
         phoneNumber: _passengerPhoneNumber,
         passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,
