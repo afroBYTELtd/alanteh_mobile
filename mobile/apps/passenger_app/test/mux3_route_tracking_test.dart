@@ -206,18 +206,102 @@ void main() {
     await _disposeTracking(tester);
   });
 
-  testWidgets(
-    'test_under_review_shows_reviewing_your_request_heading',
-    (tester) async {
-      _useSurface(tester);
+  testWidgets('test_under_review_shows_reviewing_your_request_heading', (
+    tester,
+  ) async {
+    _useSurface(tester);
 
-      final repository = _SequenceRepository(<Object>[
-        _record(
-          status: 'under_review',
-          latestStaffState: 'Trip in progress',
-          controlCenterMessage: 'Your request is being reviewed by staff.',
-        ),
-      ]);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'under_review',
+        latestStaffState: 'Trip in progress',
+        controlCenterMessage: 'Your request is being reviewed by staff.',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.text('Reviewing your request'), findsOneWidget);
+    expect(
+      find.text('Your request is being reviewed by staff.'),
+      findsOneWidget,
+    );
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_under_review_does_not_show_trip_in_progress', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'under_review',
+        latestStaffState: 'Trip in progress',
+        controlCenterMessage: 'Your request is being reviewed by staff.',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.text('Reviewing your request'), findsOneWidget);
+    expect(find.text('Trip in progress'), findsNothing);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_in_progress_still_shows_trip_in_progress', (tester) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'in_progress',
+        controlCenterMessage: 'Your trip is in progress.',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
+    expect(find.text('Trip in progress'), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_no_pre_trip_status_shows_trip_in_progress', (tester) async {
+    _useSurface(tester);
+
+    final cases = <PassengerRideRequestRecord>[
+      _record(
+        status: 'requested',
+        controlCenterMessage: 'Your ride request was received.',
+      ),
+      _record(
+        status: 'under_review',
+        latestStaffState: 'Trip in progress',
+        controlCenterMessage: 'Your request is being reviewed by staff.',
+      ),
+      _record(
+        status: 'accepted_for_trip',
+        controlCenterMessage: 'Your ride is being prepared.',
+      ),
+    ];
+
+    for (final record in cases) {
+      final repository = _SequenceRepository(<Object>[record]);
 
       await _pumpTracking(
         tester,
@@ -225,107 +309,15 @@ void main() {
         pollInterval: const Duration(hours: 1),
       );
 
-      expect(find.text('Reviewing your request'), findsOneWidget);
       expect(
-        find.text('Your request is being reviewed by staff.'),
-        findsOneWidget,
+        find.text('Trip in progress'),
+        findsNothing,
+        reason: 'Pre-trip status ${record.status} must not use trip heading.',
       );
 
       await _disposeTracking(tester);
-    },
-  );
-
-  testWidgets(
-    'test_under_review_does_not_show_trip_in_progress',
-    (tester) async {
-      _useSurface(tester);
-
-      final repository = _SequenceRepository(<Object>[
-        _record(
-          status: 'under_review',
-          latestStaffState: 'Trip in progress',
-          controlCenterMessage: 'Your request is being reviewed by staff.',
-        ),
-      ]);
-
-      await _pumpTracking(
-        tester,
-        repository,
-        pollInterval: const Duration(hours: 1),
-      );
-
-      expect(find.text('Reviewing your request'), findsOneWidget);
-      expect(find.text('Trip in progress'), findsNothing);
-
-      await _disposeTracking(tester);
-    },
-  );
-
-  testWidgets(
-    'test_in_progress_still_shows_trip_in_progress',
-    (tester) async {
-      _useSurface(tester);
-
-      final repository = _SequenceRepository(<Object>[
-        _record(
-          status: 'in_progress',
-          controlCenterMessage: 'Your trip is in progress.',
-        ),
-      ]);
-
-      await _pumpTracking(
-        tester,
-        repository,
-        pollInterval: const Duration(hours: 1),
-      );
-
-      expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
-      expect(find.text('Trip in progress'), findsOneWidget);
-
-      await _disposeTracking(tester);
-    },
-  );
-
-  testWidgets(
-    'test_no_pre_trip_status_shows_trip_in_progress',
-    (tester) async {
-      _useSurface(tester);
-
-      final cases = <PassengerRideRequestRecord>[
-        _record(
-          status: 'requested',
-          controlCenterMessage: 'Your ride request was received.',
-        ),
-        _record(
-          status: 'under_review',
-          latestStaffState: 'Trip in progress',
-          controlCenterMessage: 'Your request is being reviewed by staff.',
-        ),
-        _record(
-          status: 'accepted_for_trip',
-          controlCenterMessage: 'Your ride is being prepared.',
-        ),
-      ];
-
-      for (final record in cases) {
-        final repository = _SequenceRepository(<Object>[record]);
-
-        await _pumpTracking(
-          tester,
-          repository,
-          pollInterval: const Duration(hours: 1),
-        );
-
-        expect(
-          find.text('Trip in progress'),
-          findsNothing,
-          reason: 'Pre-trip status ${record.status} must not use trip heading.',
-        );
-
-        await _disposeTracking(tester);
-      }
-    },
-  );
+    }
+  });
 
   testWidgets(
     'tracking never creates a vehicle marker without CC5C coordinates',
@@ -391,16 +383,10 @@ void main() {
     _useSurface(tester);
 
     final requestRepository = _SequenceRepository(<Object>[
-      _record(
-        status: 'converted',
-        tripReference: 'TRIP-SWITCH-001',
-      ),
+      _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
     ]);
     final tripRepository = _TripSequenceRepository(<Object>[
-      _trip(
-        status: 'driver_accepted',
-        driverName: '  Kwame Mensah  ',
-      ),
+      _trip(status: 'driver_accepted', driverName: '  Kwame Mensah  '),
     ]);
 
     await _pumpTracking(
@@ -456,53 +442,43 @@ void main() {
     await _disposeTracking(tester);
   });
 
-  testWidgets(
-    'test_distance_displayed_when_present_with_correct_km_label',
-    (tester) async {
-      _useSurface(tester);
+  testWidgets('test_distance_displayed_when_present_with_correct_km_label', (
+    tester,
+  ) async {
+    _useSurface(tester);
 
-      final repository = _SequenceRepository(<Object>[
-        _record(
-          latestStaffState: 'driver assigned',
-          driverDistanceKm: 2.34,
-        ),
-      ]);
+    final repository = _SequenceRepository(<Object>[
+      _record(latestStaffState: 'driver assigned', driverDistanceKm: 2.34),
+    ]);
 
-      await _pumpTracking(
-        tester,
-        repository,
-        pollInterval: const Duration(hours: 1),
-      );
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
 
-      expect(find.byKey(const Key('tracking-driver-distance')), findsOneWidget);
-      expect(
-        find.byKey(const Key('tracking-driver-distance-icon')),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Driver is approximately 2.3 km away'),
-        findsOneWidget,
-      );
+    expect(find.byKey(const Key('tracking-driver-distance')), findsOneWidget);
+    expect(
+      find.byKey(const Key('tracking-driver-distance-icon')),
+      findsOneWidget,
+    );
+    expect(find.text('Driver is approximately 2.3 km away'), findsOneWidget);
 
-      final distanceIcon = tester.widget<Icon>(
-        find.byKey(const Key('tracking-driver-distance-icon')),
-      );
-      expect(distanceIcon.icon, Icons.location_on_outlined);
-      expect(distanceIcon.color, AsmColors.brandDeepGreen);
-      expect(find.textContaining('ETA'), findsNothing);
+    final distanceIcon = tester.widget<Icon>(
+      find.byKey(const Key('tracking-driver-distance-icon')),
+    );
+    expect(distanceIcon.icon, Icons.location_on_outlined);
+    expect(distanceIcon.color, AsmColors.brandDeepGreen);
+    expect(find.textContaining('ETA'), findsNothing);
 
-      await _disposeTracking(tester);
-    },
-  );
+    await _disposeTracking(tester);
+  });
 
   testWidgets('test_distance_row_absent_when_null', (tester) async {
     _useSurface(tester);
 
     final repository = _SequenceRepository(<Object>[
-      _record(
-        latestStaffState: 'driver assigned',
-        driverDistanceKm: null,
-      ),
+      _record(latestStaffState: 'driver assigned', driverDistanceKm: null),
     ]);
 
     await _pumpTracking(
@@ -525,23 +501,17 @@ void main() {
   testWidgets('test_no_phone_number_ever_rendered', (tester) async {
     _useSurface(tester);
 
-    final parsedTrip = PassengerTripRecord.fromJson(
-      <String, Object?>{
-        'trip_reference': 'TRIP-SWITCH-001',
-        'trip_status': 'driver_accepted',
-        'driver_name': 'Kwame Mensah',
-        'driver_phone': '+233 00 000 0000',
-        'driver_phone_number': '+233 11 111 1111',
-        'phone_number': '+233 22 222 2222',
-      },
-      expectedTripReference: 'TRIP-SWITCH-001',
-    );
+    final parsedTrip = PassengerTripRecord.fromJson(<String, Object?>{
+      'trip_reference': 'TRIP-SWITCH-001',
+      'trip_status': 'driver_accepted',
+      'driver_name': 'Kwame Mensah',
+      'driver_phone': '+233 00 000 0000',
+      'driver_phone_number': '+233 11 111 1111',
+      'phone_number': '+233 22 222 2222',
+    }, expectedTripReference: 'TRIP-SWITCH-001');
 
     final requestRepository = _SequenceRepository(<Object>[
-      _record(
-        status: 'converted',
-        tripReference: 'TRIP-SWITCH-001',
-      ),
+      _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
     ]);
     final tripRepository = _TripSequenceRepository(<Object>[parsedTrip]);
 
@@ -579,15 +549,10 @@ void main() {
       pollInterval: const Duration(hours: 1),
     );
 
-    final plateFinder = find.byKey(
-      const Key('tracking-safe-plate-number'),
-    );
+    final plateFinder = find.byKey(const Key('tracking-safe-plate-number'));
 
     expect(plateFinder, findsOneWidget);
-    expect(
-      find.byKey(const Key('tracking-plate-badge')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('tracking-plate-badge')), findsOneWidget);
     expect(find.text('GT 1234-26'), findsOneWidget);
 
     final plate = tester.widget<Text>(plateFinder);
@@ -704,7 +669,7 @@ void main() {
   );
 
   testWidgets(
-    'trip switch failure retries trip without returning to request polling',
+    'trip switch failure auto-recovers trip without returning to request polling',
     (tester) async {
       _useSurface(tester);
 
@@ -720,24 +685,268 @@ void main() {
         tester,
         requestRepository,
         tripRepository: tripRepository,
-        pollInterval: const Duration(hours: 1),
+        pollInterval: const Duration(milliseconds: 100),
       );
 
       expect(requestRepository.detailCalls, 1);
       expect(tripRepository.tripCalls, 1);
-      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('Reconnecting…'), findsOneWidget);
+      expect(find.byKey(const Key('tracking-connection-retry')), findsNothing);
 
-      await tester.tap(find.text('Retry'));
+      await tester.pump(const Duration(milliseconds: 110));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 20));
 
       expect(requestRepository.detailCalls, 1);
       expect(tripRepository.tripCalls, 2);
       expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+      expect(find.text('Reconnecting…'), findsNothing);
 
       await _disposeTracking(tester);
     },
   );
+
+  testWidgets(
+    'test_poll_failure_after_request_retries_shows_reconnecting_not_manual_retry_immediately',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-RECOVER-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'driver_accepted'),
+        const PassengerRideRequestHistoryException.network(),
+        _trip(status: 'arrived_at_pickup'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(milliseconds: 100),
+      );
+
+      expect(tripRepository.tripCalls, 1);
+
+      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump();
+
+      expect(tripRepository.tripCalls, 2);
+      expect(
+        find.byKey(const Key('tracking-reconnecting-banner')),
+        findsOneWidget,
+      );
+      expect(find.text('Reconnecting…'), findsOneWidget);
+      expect(find.byKey(const Key('tracking-connection-retry')), findsNothing);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets('test_reconnecting_state_preserves_last_safe_trip_data', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-RECOVER-002'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(
+        status: 'driver_accepted',
+        message: 'Your driver is on the way.',
+        driverName: 'Kwame',
+        vehicleType: 'SUV',
+      ),
+      const PassengerRideRequestHistoryException.network(),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(milliseconds: 100),
+    );
+
+    expect(find.byKey(const Key('vehicle-en-route-state')), findsOneWidget);
+    expect(find.text('Your driver is on the way.'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 2);
+    expect(
+      find.byKey(const Key('tracking-reconnecting-banner')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('vehicle-en-route-state')), findsOneWidget);
+    expect(find.text('Your driver is on the way.'), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_successful_recovery_poll_resumes_normal_10s_interval', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-RECOVER-003'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(status: 'driver_accepted'),
+      const PassengerRideRequestHistoryException.network(),
+      _trip(status: 'arrived_at_pickup'),
+      _trip(status: 'in_progress'),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(seconds: 10),
+    );
+
+    expect(tripRepository.tripCalls, 1);
+
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 2);
+    expect(find.text('Reconnecting…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 9));
+    expect(tripRepository.tripCalls, 2);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 3);
+    expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+    expect(find.text('Reconnecting…'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 9));
+    expect(tripRepository.tripCalls, 3);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 4);
+    expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_second_consecutive_poll_failure_shows_manual_retry', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-RECOVER-004'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(status: 'driver_accepted'),
+      const PassengerRideRequestHistoryException.network(),
+      const PassengerRideRequestHistoryException.network(),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(milliseconds: 100),
+    );
+
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 2);
+    expect(find.text('Reconnecting…'), findsOneWidget);
+    expect(find.byKey(const Key('tracking-connection-retry')), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 3);
+    expect(find.text('Reconnecting…'), findsNothing);
+    expect(
+      find.byKey(const Key('tracking-connection-interrupted-banner')),
+      findsOneWidget,
+    );
+    expect(find.text('Connection interrupted'), findsOneWidget);
+    expect(find.byKey(const Key('tracking-connection-retry')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tripRepository.tripCalls, 3);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_manual_retry_after_exhausted_auto_recovery_still_works', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-RECOVER-005'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(status: 'driver_accepted'),
+      const PassengerRideRequestHistoryException.network(),
+      const PassengerRideRequestHistoryException.network(),
+      _trip(status: 'arrived_at_pickup'),
+      _trip(status: 'in_progress'),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(milliseconds: 100),
+    );
+
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 3);
+    expect(find.byKey(const Key('tracking-connection-retry')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('tracking-connection-retry')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(tripRepository.tripCalls, 4);
+    expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+    expect(
+      find.byKey(const Key('tracking-connection-interrupted-banner')),
+      findsNothing,
+    );
+
+    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump();
+
+    expect(tripRepository.tripCalls, 5);
+    expect(find.byKey(const Key('trip-in-progress-state')), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  test('test_no_stacked_or_duplicate_backoff_introduced_at_screen_level', () {
+    final source = File(
+      'lib/tracking/ride_tracking_screen.dart',
+    ).readAsStringSync();
+
+    expect(source, isNot(contains('Duration(seconds: 2)')));
+    expect(source, isNot(contains('Duration(seconds: 4)')));
+    expect(source, isNot(contains('Duration(seconds: 8)')));
+    expect(source, isNot(contains('GhanaRequestPolicy.retryBackoffs')));
+    expect(source, isNot(contains('GhanaRetryPolicy')));
+    expect(source, contains('_timer = Timer(widget.pollInterval, _load);'));
+    expect(source, contains('this.pollInterval = const Duration(seconds: 10)'));
+  });
 
   testWidgets('offline tracking retries safely', (tester) async {
     _useSurface(tester);
@@ -766,120 +975,97 @@ void main() {
     await _disposeTracking(tester);
   });
 
-  testWidgets(
-    'test_cancelled_by_operations_stops_polling',
-    (tester) async {
-      _useSurface(tester);
+  testWidgets('test_cancelled_by_operations_stops_polling', (tester) async {
+    _useSurface(tester);
 
-      final requestRepository = _SequenceRepository(<Object>[
-        _record(
-          status: 'converted',
-          tripReference: 'TRIP-CANCELLED-OPS-POLLING',
-        ),
-      ]);
-      final tripRepository = _TripSequenceRepository(<Object>[
-        _trip(status: 'cancelled_by_operations'),
-      ]);
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-CANCELLED-OPS-POLLING'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(status: 'cancelled_by_operations'),
+    ]);
 
-      await _pumpTracking(
-        tester,
-        requestRepository,
-        tripRepository: tripRepository,
-        pollInterval: const Duration(milliseconds: 10),
-      );
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(milliseconds: 10),
+    );
 
-      expect(
-        find.byKey(const Key('trip-cancelled-state')),
-        findsOneWidget,
-      );
-      expect(requestRepository.detailCalls, 1);
-      expect(tripRepository.tripCalls, 1);
+    expect(find.byKey(const Key('trip-cancelled-state')), findsOneWidget);
+    expect(requestRepository.detailCalls, 1);
+    expect(tripRepository.tripCalls, 1);
 
-      await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
 
-      expect(requestRepository.detailCalls, 1);
-      expect(tripRepository.tripCalls, 1);
+    expect(requestRepository.detailCalls, 1);
+    expect(tripRepository.tripCalls, 1);
 
-      await _disposeTracking(tester);
-    },
-  );
+    await _disposeTracking(tester);
+  });
 
-  testWidgets(
-    'test_cancelled_by_operations_shows_correct_message',
-    (tester) async {
-      _useSurface(tester);
+  testWidgets('test_cancelled_by_operations_shows_correct_message', (
+    tester,
+  ) async {
+    _useSurface(tester);
 
-      final requestRepository = _SequenceRepository(<Object>[
-        _record(
-          status: 'converted',
-          tripReference: 'TRIP-CANCELLED-OPS-MESSAGE',
-        ),
-      ]);
-      final tripRepository = _TripSequenceRepository(<Object>[
-        _trip(
-          status: 'cancelled_by_operations',
-          message: 'Your driver is on the way.',
-        ),
-      ]);
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-CANCELLED-OPS-MESSAGE'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(
+        status: 'cancelled_by_operations',
+        message: 'Your driver is on the way.',
+      ),
+    ]);
 
-      await _pumpTracking(
-        tester,
-        requestRepository,
-        tripRepository: tripRepository,
-        pollInterval: const Duration(hours: 1),
-      );
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(hours: 1),
+    );
 
-      expect(find.text('Trip cancelled'), findsOneWidget);
-      expect(
-        find.text('Your trip was cancelled by ALANTEH support.'),
-        findsOneWidget,
-      );
-      expect(find.text('Looking for a driver'), findsNothing);
-      expect(find.text('Your driver is on the way.'), findsNothing);
+    expect(find.text('Trip cancelled'), findsOneWidget);
+    expect(
+      find.text('Your trip was cancelled by ALANTEH support.'),
+      findsOneWidget,
+    );
+    expect(find.text('Looking for a driver'), findsNothing);
+    expect(find.text('Your driver is on the way.'), findsNothing);
 
-      await _disposeTracking(tester);
-    },
-  );
+    await _disposeTracking(tester);
+  });
 
-  testWidgets(
-    'test_cancelled_by_operations_cancel_request_action_absent',
-    (tester) async {
-      _useSurface(tester);
+  testWidgets('test_cancelled_by_operations_cancel_request_action_absent', (
+    tester,
+  ) async {
+    _useSurface(tester);
 
-      final requestRepository = _SequenceRepository(<Object>[
-        _record(
-          status: 'converted',
-          tripReference: 'TRIP-CANCELLED-OPS-ACTIONS',
-        ),
-      ]);
-      final tripRepository = _TripSequenceRepository(<Object>[
-        _trip(status: 'cancelled_by_operations'),
-      ]);
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-CANCELLED-OPS-ACTIONS'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(status: 'cancelled_by_operations'),
+    ]);
 
-      await _pumpTracking(
-        tester,
-        requestRepository,
-        tripRepository: tripRepository,
-        pollInterval: const Duration(hours: 1),
-      );
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(hours: 1),
+    );
 
-      expect(
-        find.byKey(const Key('trip-cancelled-state')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('open-cancel-confirmation')),
-        findsNothing,
-      );
-      expect(find.text('Cancel request'), findsNothing);
-      expect(
-        find.byKey(const Key('cancelled-by-operations-book-again')),
-        findsOneWidget,
-      );
+    expect(find.byKey(const Key('trip-cancelled-state')), findsOneWidget);
+    expect(find.byKey(const Key('open-cancel-confirmation')), findsNothing);
+    expect(find.text('Cancel request'), findsNothing);
+    expect(
+      find.byKey(const Key('cancelled-by-operations-book-again')),
+      findsOneWidget,
+    );
 
-      await _disposeTracking(tester);
-    },
-  );
+    await _disposeTracking(tester);
+  });
 
   testWidgets(
     'completed pending review stops trip polling and not request polling',

@@ -45,6 +45,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   bool _tripTerminal = false;
   bool _loading = true;
   bool _offline = false;
+  bool _reconnecting = false;
 
   @override
   void initState() {
@@ -68,6 +69,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       _tripTerminal = false;
       _loading = true;
       _offline = false;
+      _reconnecting = false;
       _load();
       return;
     }
@@ -122,6 +124,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           _tripTerminal = trip.isTerminal;
           _loading = false;
           _offline = false;
+          _reconnecting = false;
         });
         _schedule(record);
         return;
@@ -150,6 +153,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           _tripTerminal = trip.isTerminal;
           _loading = false;
           _offline = false;
+          _reconnecting = false;
         });
         _schedule(record);
         return;
@@ -161,15 +165,39 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         _tripTerminal = false;
         _loading = false;
         _offline = false;
+        _reconnecting = false;
       });
       _schedule(requestRecord);
     } on Object {
       if (!mounted) return;
+
+      final record = _record;
+      if (record != null && !_reconnecting) {
+        setState(() {
+          _loading = false;
+          _offline = false;
+          _reconnecting = true;
+        });
+        _schedule(record);
+        return;
+      }
+
       setState(() {
         _loading = false;
         _offline = true;
+        _reconnecting = false;
       });
     }
+  }
+
+  void _manualRetry() {
+    _timer?.cancel();
+    setState(() {
+      _reconnecting = false;
+      _offline = false;
+      _loading = _record == null;
+    });
+    _load();
   }
 
   void _schedule(PassengerRideRequestRecord record) {
@@ -252,7 +280,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_offline && _record == null) {
-      return Scaffold(body: _OfflineState(onRetry: _load));
+      return Scaffold(body: _OfflineState(onRetry: _manualRetry));
     }
 
     final record = _record!;
@@ -302,12 +330,29 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
               ),
             ),
           ),
-          if (_offline)
+          if (_reconnecting)
             Positioned(
               top: 96,
               left: 16,
               right: 16,
               child: Material(
+                key: const Key('tracking-reconnecting-banner'),
+                borderRadius: BorderRadius.circular(14),
+                color: const Color(0xFFFFF3E0),
+                child: const ListTile(
+                  leading: Icon(Icons.sync_outlined),
+                  title: Text('Reconnecting…'),
+                  subtitle: Text('Showing the last safe update.'),
+                ),
+              ),
+            )
+          else if (_offline)
+            Positioned(
+              top: 96,
+              left: 16,
+              right: 16,
+              child: Material(
+                key: const Key('tracking-connection-interrupted-banner'),
                 borderRadius: BorderRadius.circular(14),
                 color: const Color(0xFFFFF3E0),
                 child: ListTile(
@@ -315,7 +360,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                   title: const Text('Connection interrupted'),
                   subtitle: const Text('Showing the last safe update.'),
                   trailing: TextButton(
-                    onPressed: _load,
+                    key: const Key('tracking-connection-retry'),
+                    onPressed: _manualRetry,
                     child: const Text('Retry'),
                   ),
                 ),
@@ -391,18 +437,14 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                               if (driverFirstName != null)
                                 Text(
                                   driverFirstName,
-                                  key: const Key(
-                                    'tracking-driver-first-name',
-                                  ),
+                                  key: const Key('tracking-driver-first-name'),
                                   style: theme.textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
                               if (driverFirstName != null &&
                                   vehicleInfo != null)
-                                const SizedBox(
-                                  height: AsmSpacing.space4,
-                                ),
+                                const SizedBox(height: AsmSpacing.space4),
                               if (vehicleInfo != null)
                                 Text(
                                   vehicleInfo,
@@ -415,9 +457,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                               if (record.plateNumber != null) ...[
                                 if (driverFirstName != null ||
                                     vehicleInfo != null)
-                                  const SizedBox(
-                                    height: AsmSpacing.space12,
-                                  ),
+                                  const SizedBox(height: AsmSpacing.space12),
                                 Container(
                                   key: const Key('tracking-plate-badge'),
                                   padding: const EdgeInsets.symmetric(
@@ -466,9 +506,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                           child: Text(
                             'Driver is approximately ${driverDistanceKm.toStringAsFixed(1)} km away',
                             key: const Key('tracking-driver-distance'),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       ],
@@ -549,8 +587,7 @@ String? _vehicleInfo(String? colour, String? type) {
   final parts = <String>[
     if (normalizedColour != null && normalizedColour.isNotEmpty)
       normalizedColour,
-    if (normalizedType != null && normalizedType.isNotEmpty)
-      normalizedType,
+    if (normalizedType != null && normalizedType.isNotEmpty) normalizedType,
   ];
 
   return parts.isEmpty ? null : parts.join(' · ');
