@@ -5,6 +5,9 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import 'rating/driver_rating_page.dart';
+import 'network/driver_rating_gateway.dart';
+
 import 'network/driver_access_token_refresh_guard.dart';
 import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
@@ -982,6 +985,7 @@ class DriverAssignedTripsScreen extends StatefulWidget {
     required this.gateway,
     this.actionControllerFactory,
     this.offerResponseControllerFactory,
+    this.ratingGateway,
     this.offerSubmissionTelemetryQaEnabled =
         driverOfferSubmissionTelemetryQaEnabled,
     this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
@@ -991,6 +995,7 @@ class DriverAssignedTripsScreen extends StatefulWidget {
   final DriverDutyGateway? gateway;
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
+  final ApiDriverRatingGateway? ratingGateway;
   final bool offerSubmissionTelemetryQaEnabled;
   final bool tripActionTelemetryQaEnabled;
 
@@ -1127,6 +1132,7 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                                 widget.actionControllerFactory,
                             offerResponseControllerFactory:
                                 widget.offerResponseControllerFactory,
+                            ratingGateway: widget.ratingGateway,
                             offerSubmissionTelemetryQaEnabled:
                                 widget.offerSubmissionTelemetryQaEnabled,
                             tripActionTelemetryQaEnabled:
@@ -1161,6 +1167,7 @@ class DriverTripDetailScreen extends StatefulWidget {
     required this.tripReference,
     this.actionControllerFactory,
     this.offerResponseControllerFactory,
+    this.ratingGateway,
     this.offerSubmissionTelemetryQaEnabled =
         driverOfferSubmissionTelemetryQaEnabled,
     this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
@@ -1170,6 +1177,7 @@ class DriverTripDetailScreen extends StatefulWidget {
 
   final DriverDutyGateway gateway;
   final String tripReference;
+  final ApiDriverRatingGateway? ratingGateway;
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
   final bool offerSubmissionTelemetryQaEnabled;
@@ -1328,6 +1336,20 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
     await widget.onRefreshTripList?.call();
   }
 
+  Future<void> _openRating(DriverAssignedTrip trip) async {
+    final gateway = widget.ratingGateway;
+    if (gateway == null || trip.status != 'completed_confirmed') {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            DriverRatingPage(gateway: gateway, tripReference: trip.reference),
+      ),
+    );
+  }
+
   Future<void> _openLiveActions(DriverAssignedTrip trip) async {
     final factory = widget.actionControllerFactory;
     if (factory == null || _openingLiveActions) {
@@ -1455,6 +1477,11 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                       driverCanOpenLiveTripActions(trip.status)
                   ? () => _openLiveActions(trip)
                   : null,
+              onOpenRating:
+                  widget.ratingGateway != null &&
+                      trip.status == 'completed_confirmed'
+                  ? () => _openRating(trip)
+                  : null,
               openingLiveActions: _openingLiveActions,
               offerPending: driverIsOfferPending(trip.status),
               offerPreparing: _preparingOfferResponse,
@@ -1554,6 +1581,7 @@ class _DriverTripDetailCard extends StatelessWidget {
     required this.trip,
     required this.onRefresh,
     required this.onOpenLiveActions,
+    required this.onOpenRating,
     required this.openingLiveActions,
     required this.offerPending,
     required this.offerPreparing,
@@ -1571,6 +1599,7 @@ class _DriverTripDetailCard extends StatelessWidget {
   final DriverAssignedTrip trip;
   final VoidCallback onRefresh;
   final VoidCallback? onOpenLiveActions;
+  final VoidCallback? onOpenRating;
   final bool openingLiveActions;
   final bool offerPending;
   final bool offerPreparing;
@@ -1611,6 +1640,19 @@ class _DriverTripDetailCard extends StatelessWidget {
             _DriverDetailRow('Review status', driverStatusLabel(trip.status)),
             if (trip.assignmentReleased == true)
               _DriverDetailRow('Assignment', 'Assignment closed'),
+            if (trip.status == 'completed_confirmed' &&
+                onOpenRating != null) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              FilledButton.icon(
+                key: const Key('driver-rate-passenger-button'),
+                onPressed: onOpenRating,
+                icon: const Icon(Icons.star_outline),
+                label: const Text('Rate passenger'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
+            ],
           ] else ...[
             _DriverDetailRow('Trip reference', trip.reference),
             _DriverDetailRow('Status', driverStatusLabel(trip.status)),

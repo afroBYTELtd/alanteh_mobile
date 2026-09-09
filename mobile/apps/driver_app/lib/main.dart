@@ -5,6 +5,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'driver_duty_trips.dart';
+import 'network/driver_rating_gateway.dart';
 import 'driver_shell.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_gateway.dart';
@@ -214,6 +215,7 @@ Widget buildDriverRoot({
   DriverOfferResponseControllerFactory? driverOfferResponseControllerFactory,
   DriverShiftCheckSubmissionController? driverShiftCheckController,
   DriverReportGateway? driverReportGateway,
+  ApiDriverRatingGateway? driverRatingGateway,
   DriverNormalAppBuilder? normalAppBuilder,
 }) {
   Widget buildNormalApp() {
@@ -459,6 +461,11 @@ class DriverApp extends StatelessWidget {
               )
             : null);
 
+    final ratingGateway = _driverRatingGatewayFor(
+      baseUrl: apiBaseUrl,
+      tokenStore: tokenStore,
+    );
+
     final home = showLoginShell
         ? DriverLoginShell(
             configuration: configuration,
@@ -471,6 +478,7 @@ class DriverApp extends StatelessWidget {
                 offerResponseControllerFactory,
             driverShiftCheckController: shiftCheckController,
             driverReportGateway: reportGateway,
+            driverRatingGateway: ratingGateway,
             accessTokenRefresh: sessionRefreshController?.refresh,
           )
         : DriverShell(
@@ -482,6 +490,7 @@ class DriverApp extends StatelessWidget {
                 offerResponseControllerFactory,
             driverShiftCheckController: shiftCheckController,
             driverReportGateway: reportGateway,
+            driverRatingGateway: ratingGateway,
           );
 
     return MaterialApp(
@@ -512,6 +521,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
     this.driverReportGateway,
+    this.driverRatingGateway,
     this.accessTokenRefresh,
     super.key,
   });
@@ -526,6 +536,7 @@ class DriverLoginShell extends StatefulWidget {
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
+  final ApiDriverRatingGateway? driverRatingGateway;
   final DriverAccessTokenRefresh? accessTokenRefresh;
 
   @override
@@ -835,6 +846,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             _sessionAwareOfferResponseControllerFactory,
         driverShiftCheckController: widget.driverShiftCheckController,
         driverReportGateway: widget.driverReportGateway,
+        driverRatingGateway: widget.driverRatingGateway,
       );
     }
 
@@ -1132,6 +1144,24 @@ DriverDutyGateway? _driverDutyGatewayFor({
     ),
     tokenStore: tokenStore,
     refreshAccessToken: refreshAccessToken,
+  );
+}
+
+ApiDriverRatingGateway? _driverRatingGatewayFor({
+  required String? baseUrl,
+  required AuthTokenStore tokenStore,
+}) {
+  if (!AsmApiBaseUrl.isUsable(baseUrl)) {
+    return null;
+  }
+
+  return ApiDriverRatingGateway(
+    apiGateway: AsmDriverRatingApiGateway(
+      GhanaResilientApiClient(
+        baseUrl: baseUrl!,
+        tokenProvider: _StoredAccessTokenProvider(tokenStore),
+      ),
+    ),
   );
 }
 

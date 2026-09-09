@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'concern/driver_concern_page.dart';
 import 'driver_duty_trips.dart';
+import 'network/driver_rating_gateway.dart';
 import 'driver_home.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_resilience.dart';
@@ -67,6 +68,7 @@ class DriverShell extends StatefulWidget {
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
     this.driverReportGateway,
+    this.driverRatingGateway,
     this.deviceNow,
     this.onlineTransitionDuration = const Duration(seconds: 2),
     super.key,
@@ -81,6 +83,7 @@ class DriverShell extends StatefulWidget {
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
+  final ApiDriverRatingGateway? driverRatingGateway;
   final DateTime Function()? deviceNow;
   final Duration onlineTransitionDuration;
 
@@ -870,6 +873,7 @@ class _DriverShellState extends State<DriverShell> {
         actionControllerFactory: widget.driverTripActionControllerFactory,
         offerResponseControllerFactory:
             widget.driverOfferResponseControllerFactory,
+        ratingGateway: widget.driverRatingGateway,
       ),
       _ => _DriverAccountPage(
         currentShift: _currentShift,
