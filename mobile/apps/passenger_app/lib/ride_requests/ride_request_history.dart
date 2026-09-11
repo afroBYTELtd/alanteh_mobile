@@ -732,7 +732,10 @@ enum _TripsFilter { all, active, completed }
 
 bool _isActiveTripStatus(String status) {
   return switch (status.trim().toLowerCase()) {
-    'requested' || 'under_review' || 'accepted_for_trip' => true,
+    'requested' ||
+    'under_review' ||
+    'accepted_for_trip' ||
+    'converted' => true,
     _ => false,
   };
 }
@@ -818,7 +821,7 @@ class _PassengerRideRequestHistoryPageState
       final loadedRecords = List<PassengerRideRequestRecord>.of(
         await widget.repository.fetchRequests(),
       );
-      final records = await _enrichConvertedRecords(loadedRecords);
+      final records = loadedRecords;
       records.sort((left, right) {
         final leftCreatedAt = left.createdAt;
         final rightCreatedAt = right.createdAt;
@@ -868,91 +871,47 @@ class _PassengerRideRequestHistoryPageState
     }
   }
 
-  Future<List<PassengerRideRequestRecord>> _enrichConvertedRecords(
-    List<PassengerRideRequestRecord> records,
-  ) async {
-    final repository = widget.repository;
-    if (repository is! PassengerTripLifecycleRepository) {
-      return records;
-    }
-    final tripRepository = repository as PassengerTripLifecycleRepository;
-
-    final uniqueTripReferences = <String>{};
-
-    for (final record in records) {
-      if (record.status.trim().toLowerCase() != 'converted') {
-        continue;
-      }
-
-      final tripReference = record.normalizedTripReference;
-      if (tripReference != null) {
-        uniqueTripReferences.add(tripReference);
-      }
-    }
-
-    if (uniqueTripReferences.isEmpty) {
-      return records;
-    }
-
-    final tripsByReference = <String, PassengerTripRecord>{};
-
-    for (final tripReference in uniqueTripReferences) {
-      try {
-        tripsByReference[tripReference] = await tripRepository.fetchTrip(
-          tripReference,
-        );
-      } on Object {
-        // History enrichment is deliberately fail-soft. The original
-        // converted Ride Request card remains available to the passenger.
-      }
-    }
-
-    return records
-        .map((record) {
-          if (record.status.trim().toLowerCase() != 'converted') {
-            return record;
-          }
-
-          final tripReference = record.normalizedTripReference;
-          final trip = tripReference == null
-              ? null
-              : tripsByReference[tripReference];
-
-          return trip == null ? record : record.withTrip(trip);
-        })
-        .toList(growable: false);
-  }
-
-  Future<void> _openDetail(PassengerRideRequestRecord record) {
-    final openActiveTracking = widget.onOpenActiveTracking;
-    final isConvertedRequest =
-        record.status.trim().toLowerCase() == 'converted';
-    final isActiveLinkedTrip =
-        record.normalizedTripReference != null && !record.isTerminal;
-
-    if ((isConvertedRequest || isActiveLinkedTrip) &&
-        openActiveTracking != null) {
-      return openActiveTracking(record);
-    }
-
-    return Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => PassengerRideRequestDetailPage(
-          repository: widget.repository,
-          requestReference: record.requestReference,
-          paymentRatingRepository: widget.paymentRatingRepository,
-          onSignInRequired: widget.onSignInRequired,
-        ),
-      ),
-    );
-  }
 
   void _selectFilter(_TripsFilter filter) {
     if (_selectedFilter == filter) {
       return;
     }
-    setState(() => _selectedFilter = filter);
+    setState(() {
+      _selectedFilter = filter;
+    });
   }
+
+  Future<void> _openDetail(
+    PassengerRideRequestRecord record,
+  ) async {
+    final hasActiveTrackingPath =
+        _isActiveTripStatus(record.status) ||
+        (record.status.trim().toLowerCase() == 'converted' &&
+            record.tripReference != null);
+
+    if (hasActiveTrackingPath) {
+      final handler = widget.onOpenActiveTracking;
+      if (handler != null) {
+        await handler(record);
+        return;
+      }
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerRideRequestDetailPage(
+          requestReference: record.requestReference,
+          repository: widget.repository,
+          paymentRatingRepository: widget.paymentRatingRepository,
+        ),
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {

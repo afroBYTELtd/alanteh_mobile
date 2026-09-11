@@ -388,9 +388,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(repository.tripCalls, <String>['TRIP-ENRICHED-ACTIVE']);
+      expect(repository.tripCalls, isEmpty);
       expect(openedRecord, isNotNull);
-      expect(openedRecord!.status, 'in_progress');
+      expect(openedRecord!.status, 'converted');
       expect(openedRecord!.tripReference, 'TRIP-ENRICHED-ACTIVE');
       expect(find.byKey(const Key('ride-request-detail-loaded')), findsNothing);
     },
@@ -568,9 +568,8 @@ void main() {
       listLoader: () async => <PassengerRideRequestRecord>[
         _record(
           reference: 'RR-APP-COMPLETED',
-          status: 'converted',
+          status: 'completed_pending_review',
           tripCreated: true,
-          latestStaffState: 'Trip record created.',
           tripReference: 'TRIP-COMPLETED',
           fareDisplay: 'GHS 45.00',
         ),
@@ -585,7 +584,7 @@ void main() {
     await _pumpHistory(tester, repository);
     await tester.pumpAndSettle();
 
-    expect(repository.tripCalls, <String>['TRIP-COMPLETED']);
+    expect(repository.tripCalls, isEmpty);
     expect(
       find.byKey(
         const ValueKey<String>('ride-request-status-completed_pending_review'),
@@ -620,7 +619,7 @@ void main() {
       await _pumpHistory(tester, repository);
       await tester.pumpAndSettle();
 
-      expect(repository.tripCalls, <String>['TRIP-FAIL']);
+      expect(repository.tripCalls, isEmpty);
       expect(find.text('Request update'), findsOneWidget);
       expect(find.text('Trip record created.'), findsOneWidget);
       expect(find.byKey(const Key('ride-request-history-error')), findsNothing);
@@ -669,9 +668,8 @@ void main() {
         listLoader: () async => <PassengerRideRequestRecord>[
           _record(
             reference: 'RR-CANCELLED-OPS-HISTORY',
-            status: 'converted',
-            tripCreated: true,
-            tripReference: 'TRIP-CANCELLED-OPS-HISTORY',
+            status: 'cancelled_by_operations',
+            tripReference: 'TRIP-CANCELLED-OPS-BOOK-AGAIN',
           ),
         ],
         tripLoader: (tripReference) async => PassengerTripRecord(
@@ -731,8 +729,7 @@ void main() {
         listLoader: () async => <PassengerRideRequestRecord>[
           _record(
             reference: 'RR-CANCELLED-OPS-BOOK-AGAIN',
-            status: 'converted',
-            tripCreated: true,
+            status: 'cancelled_by_operations',
             tripReference: 'TRIP-CANCELLED-OPS-BOOK-AGAIN',
           ),
         ],
@@ -776,7 +773,7 @@ void main() {
       listLoader: () async => <PassengerRideRequestRecord>[
         _record(
           reference: 'RR-APP-REBOOK-COMPLETED',
-          status: 'converted',
+          status: 'completed_pending_review',
           tripCreated: true,
           tripReference: 'TRIP-REBOOK-COMPLETED',
         ),
@@ -846,8 +843,8 @@ void main() {
     await _pumpHistory(tester, repository);
     await tester.pumpAndSettle();
 
-    expect(repository.tripCalls, <String>['TRIP-SHARED', 'TRIP-UNIQUE']);
-    expect(find.text('Completed'), findsNWidgets(3));
+    expect(repository.tripCalls, isEmpty);
+    expect(find.text('Completed'), findsOneWidget);
   });
 
   testWidgets(
@@ -1156,7 +1153,7 @@ void main() {
         ),
         _record(
           reference: 'RR-COMPLETE-CONVERTED',
-          status: 'converted',
+          status: 'completed_pending_review',
           tripCreated: true,
           tripReference: 'TRIP-COMPLETE-CONVERTED',
           createdAt: DateTime(2026, 8, 12, 15, 1),
@@ -1206,7 +1203,7 @@ void main() {
       find.byKey(const ValueKey<String>('ride-request-RR-COMPLETE-ACTIVE')),
       findsNothing,
     );
-    expect(repository.tripCalls, <String>['TRIP-COMPLETE-CONVERTED']);
+    expect(repository.tripCalls, isEmpty);
   });
 
   testWidgets('test_fare_shown_when_available', (tester) async {

@@ -82,6 +82,9 @@ void main() {
 
     expect(fetcher.paths, isEmpty);
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -118,6 +121,9 @@ void main() {
 
     expect(fetcher.paths, isEmpty);
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-terms')),
+    );
     await tester.tap(find.byKey(const Key('passenger-settings-terms')));
     await tester.pump();
 
@@ -154,6 +160,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -184,6 +193,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -212,6 +224,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -241,6 +256,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-terms')),
+    );
     await tester.tap(find.byKey(const Key('passenger-settings-terms')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
@@ -262,6 +280,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -273,6 +294,9 @@ void main() {
     await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-terms')),
+    );
     await tester.tap(find.byKey(const Key('passenger-settings-terms')));
     await tester.pumpAndSettle();
 
@@ -291,6 +315,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
@@ -300,6 +327,9 @@ void main() {
     await tester.tap(find.byKey(const Key('passenger-legal-dialog-ok')));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-terms')),
+    );
     await tester.tap(find.byKey(const Key('passenger-settings-terms')));
     await tester.pumpAndSettle();
     expect(find.text(passengerTermsOfServiceFailureMessage), findsOneWidget);
@@ -330,6 +360,9 @@ void main() {
       legalDocumentFetcher: fetcher,
     );
 
+    await tester.ensureVisible(
+      find.byKey(const Key('passenger-settings-privacy-policy')),
+    );
     await tester.tap(
       find.byKey(const Key('passenger-settings-privacy-policy')),
     );
