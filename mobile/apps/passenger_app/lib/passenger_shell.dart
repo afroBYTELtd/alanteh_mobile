@@ -339,6 +339,7 @@ class _PassengerShellState extends State<PassengerShell> {
               ? repository as PassengerTripLifecycleRepository
               : null,
           paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           onSignInRequired: widget.onSignInRequired,

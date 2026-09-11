@@ -12,10 +12,7 @@ final Uri passengerEmergency191Uri = Uri(
 );
 
 final class PassengerTrustedContact {
-  const PassengerTrustedContact({
-    required this.name,
-    required this.phone,
-  });
+  const PassengerTrustedContact({required this.name, required this.phone});
 
   const PassengerTrustedContact.empty() : name = '', phone = '';
 
@@ -68,10 +65,7 @@ final class AsmPassengerTrustedContactApiGateway
 
   @override
   Future<ApiResponse<Map<String, Object?>>> get(String path) {
-    return client.get<Map<String, Object?>>(
-      path,
-      decoder: _decodeObjectMap,
-    );
+    return client.get<Map<String, Object?>>(path, decoder: _decodeObjectMap);
   }
 
   @override
@@ -235,8 +229,8 @@ final class PassengerTripSafetySummary {
       'Vehicle type: ${_displayValue(vehicleType)}',
       'Vehicle colour: ${_displayValue(vehicleColour)}',
       'Plate: ${_displayValue(plate)}',
-      'Pickup: ${_displayValue(pickup)}',
-      'Destination: ${_displayValue(destination)}',
+      'Pickup: ${_privacySafeLocationValue(pickup)}',
+      'Destination: ${_privacySafeLocationValue(destination)}',
     ].join('\n');
   }
 }
@@ -245,10 +239,8 @@ Uri buildTrustedContactSmsUri({
   required String phone,
   required String summary,
 }) {
-  return Uri(
-    scheme: 'sms',
-    path: phone.trim(),
-    queryParameters: <String, String>{'body': summary},
+  return Uri.parse(
+    'sms:${phone.trim()}?body=${summary.replaceAll(' ', '%20').replaceAll('\n', '%0A')}',
   );
 }
 
@@ -321,5 +313,25 @@ String? _optionalString(Map<String, Object?> map, String key) {
 
 String _displayValue(String? value) {
   final normalized = value?.trim();
-  return normalized == null || normalized.isEmpty ? 'Not available' : normalized;
+  return normalized == null || normalized.isEmpty
+      ? 'Not available'
+      : normalized;
+}
+
+final RegExp _coordinateOnlyLocationPattern = RegExp(
+  r'^[+-]?(?:\d+(?:\.\d+)?|\.\d+)\s*,\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+)$',
+);
+
+String _privacySafeLocationValue(String? value) {
+  final normalized = value?.trim();
+
+  if (normalized == null || normalized.isEmpty) {
+    return 'Not available';
+  }
+
+  if (_coordinateOnlyLocationPattern.hasMatch(normalized)) {
+    return 'Not shared for privacy';
+  }
+
+  return normalized;
 }

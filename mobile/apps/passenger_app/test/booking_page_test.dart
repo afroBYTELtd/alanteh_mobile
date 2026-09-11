@@ -15,6 +15,7 @@ import 'package:passenger_app/main.dart';
 import 'package:passenger_app/passenger_home.dart';
 import 'package:passenger_app/passenger_shell.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
+import 'package:passenger_app/safety/passenger_trip_safety.dart';
 
 void main() {
   testWidgets('renders simplified booking form without service context', (
@@ -1161,6 +1162,74 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Trips active view details propagates trusted contact repository to tracking',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+
+      final record = PassengerRideRequestRecord(
+        requestReference: 'RR-APP-TRIPS-TRUSTED-CONTACT',
+        status: 'accepted_for_trip',
+        pickupLocation: 'Solar Hotel',
+        destination: 'Accra Airport',
+        passengerCount: 1,
+        createdAt: DateTime.utc(2026, 9, 11, 9),
+        updatedAt: DateTime.utc(2026, 9, 11, 9, 5),
+        hasMobileReceipt: true,
+        tripCreated: true,
+        tripReference: 'TRIP-TRUSTED-CONTACT-TEST',
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleType: 'Solar Taxi',
+        vehicleColour: 'Blue',
+        plateNumber: 'GT 1234-26',
+      );
+
+      final repository = _BookAgainHistoryRepository(record);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: PassengerShell(
+            rideRequestHistoryRepository: repository,
+            trustedContactRepository: _MemoryTrustedContactRepository(
+              const PassengerTrustedContact(
+                name: 'Trusted Person',
+                phone: '+233555000111',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final navigationBar = tester.widget<AsmBottomNavigationBar>(
+        find.byType(AsmBottomNavigationBar),
+      );
+
+      navigationBar.onDestinationSelected!.call(1);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('history-card-view-details')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tracking-safety-share')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('tracking-safety-message-contact')),
+        findsOneWidget,
+      );
+
+      final button = tester.widget<ListTile>(
+        find.byKey(const Key('tracking-safety-message-contact')),
+      );
+
+      expect(button.enabled, isTrue);
+    },
+  );
+
   testWidgets('confirm and request shows loading then success', (tester) async {
     _useSurface(tester, const Size(430, 1000));
     final submitter = _FakeRideRequestSubmitter.pending();
@@ -2203,6 +2272,27 @@ class _BookAgainHistoryRepository
     }
 
     return record;
+  }
+}
+
+class _MemoryTrustedContactRepository
+    implements PassengerTrustedContactRepository {
+  _MemoryTrustedContactRepository(this.contact);
+
+  PassengerTrustedContact contact;
+
+  @override
+  Future<PassengerTrustedContact> fetch() async {
+    return contact;
+  }
+
+  @override
+  Future<PassengerTrustedContact> save({
+    required String name,
+    required String phone,
+  }) async {
+    contact = PassengerTrustedContact(name: name, phone: phone);
+    return contact;
   }
 }
 

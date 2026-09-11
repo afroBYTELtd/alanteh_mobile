@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../network/ghana_network_resilience.dart';
 import '../ride_requests/ride_request_history.dart';
+import '../safety/passenger_safety_settings_screen.dart';
+import '../safety/passenger_trip_safety.dart';
 import '../support/new_message_form.dart';
 
 const passengerPrivacyPolicyEndpoint = '/api/content/privacy-policy/';
@@ -414,6 +416,7 @@ class PassengerSettingsScreen extends StatefulWidget {
         const PlatformPassengerRateUsPlatformProvider(),
     this.inAppReviewGateway = const PlatformPassengerInAppReviewGateway(),
     this.storeLinkLauncher = const PlatformPassengerStoreLinkLauncher(),
+    this.trustedContactRepository,
     this.deleteAccountSubmitter =
         const UnavailablePassengerDeleteAccountSubmitter(),
     this.deleteAccountLiveEnabled = false,
@@ -430,6 +433,7 @@ class PassengerSettingsScreen extends StatefulWidget {
   final PassengerRateUsPlatformProvider rateUsPlatformProvider;
   final PassengerInAppReviewGateway inAppReviewGateway;
   final PassengerStoreLinkLauncher storeLinkLauncher;
+  final PassengerTrustedContactRepository? trustedContactRepository;
   final PassengerDeleteAccountSubmitter deleteAccountSubmitter;
   final bool deleteAccountLiveEnabled;
   final Future<void> Function() onAccountDeletionRequested;
@@ -520,6 +524,23 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
         initialTitle: initialTitle,
         failureMessage: failureMessage,
         fetcher: _legalDocumentFetcher,
+      ),
+    );
+  }
+
+  Future<void> _openSafetySettings() {
+    final repository = widget.trustedContactRepository;
+
+    if (repository == null) {
+      _showSettingsError(
+        'Safety settings are unavailable right now. Please try again later.',
+      );
+      return Future<void>.value();
+    }
+
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PassengerSafetySettingsScreen(repository: repository),
       ),
     );
   }
@@ -720,6 +741,20 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
                   title: const Text('Sound alerts'),
                   value: _soundAlerts,
                   onChanged: _isLoading ? null : _setSoundAlerts,
+                ),
+              ],
+            ),
+            const SizedBox(height: AsmSpacing.space12),
+            _sectionTitle('Safety'),
+            _settingsCard(
+              children: [
+                ListTile(
+                  key: const Key('passenger-settings-safety-emergency'),
+                  leading: const Icon(Icons.health_and_safety_outlined),
+                  title: const Text('Safety & emergency'),
+                  subtitle: const Text('Trusted contact and trip safety'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openSafetySettings,
                 ),
               ],
             ),

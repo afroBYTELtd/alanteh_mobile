@@ -10,6 +10,7 @@ import 'package:passenger_app/map/passenger_map.dart';
 import 'package:passenger_app/payment_rating/passenger_payment_rating_contract.dart';
 import 'package:passenger_app/payment_rating/passenger_payment_rating_page.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
+import 'package:passenger_app/safety/passenger_trip_safety.dart';
 import 'package:passenger_app/tracking/ride_tracking_screen.dart';
 
 const _testVehiclePosition = LatLng(5.5980, -0.1795);
@@ -1339,6 +1340,398 @@ void main() {
     expect(source, isNot(contains('StreamBuilder')));
     expect(source, contains('this.pollInterval = const Duration(seconds: 10)'));
   });
+
+  testWidgets('test_emergency_action_opens_tel_191_dialer', (tester) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+      ),
+    ]);
+    final launcher = _RecordingSafetyUriLauncher();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      safetyUriLauncher: launcher,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('tracking-safety-emergency')),
+    );
+    await tester.tap(find.byKey(const Key('tracking-safety-emergency')));
+    await tester.pump();
+
+    expect(launcher.canLaunchUris, <Uri>[passengerEmergency191Uri]);
+    expect(launcher.launchedUris, <Uri>[passengerEmergency191Uri]);
+    expect(launcher.launchedUris.single.toString(), 'tel:191');
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_emergency_action_does_not_place_call_directly', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(latestStaffState: 'driver assigned'),
+    ]);
+    final launcher = _RecordingSafetyUriLauncher();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      safetyUriLauncher: launcher,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const Key('tracking-safety-emergency')),
+    );
+    await tester.tap(find.byKey(const Key('tracking-safety-emergency')));
+    await tester.pump();
+
+    expect(launcher.launchedUris, hasLength(1));
+    expect(launcher.launchedUris.single.scheme, 'tel');
+    expect(launcher.launchedUris.single.path, '191');
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_sms_share_disabled_or_prompts_when_no_trusted_contact_set', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+      ),
+    ]);
+    final contacts = _TrackingTrustedContactRepository(
+      const PassengerTrustedContact.empty(),
+    );
+    final launcher = _RecordingSafetyUriLauncher();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      trustedContactRepository: contacts,
+      safetyUriLauncher: launcher,
+    );
+
+    expect(
+      find.byKey(const Key('tracking-safety-message-contact')),
+      findsNothing,
+    );
+
+    final shareFinder = find.byKey(const Key('tracking-safety-share'));
+    await tester.ensureVisible(shareFinder);
+    await tester.tap(shareFinder);
+    await tester.pumpAndSettle();
+
+    final finder = find.byKey(const Key('tracking-safety-message-contact'));
+    expect(finder, findsOneWidget);
+
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+
+    expect(contacts.fetchCalls, 1);
+    expect(find.byType(SnackBar), findsOneWidget);
+
+    final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(snackBar.content, isA<Text>());
+
+    final guidance = snackBar.content as Text;
+    expect(
+      guidance.data,
+      'Add a trusted contact in Safety & emergency settings to send this trip by message.',
+    );
+
+    expect(launcher.launchedUris, isEmpty);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_os_share_sheet_available_independent_of_trusted_contact', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+        plateNumber: 'GT 1234-26',
+      ),
+    ]);
+    final share = _RecordingSafetyShareGateway();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      safetyShareGateway: share,
+    );
+
+    final finder = find.byKey(const Key('tracking-safety-share'));
+    await tester.ensureVisible(finder);
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+
+    final anotherWay = find.byKey(
+      const Key('tracking-safety-share-another-way'),
+    );
+    expect(anotherWay, findsOneWidget);
+
+    await tester.tap(anotherWay);
+    await tester.pumpAndSettle();
+
+    expect(share.sharedTexts, hasLength(1));
+    expect(share.sharedTexts.single, contains('Driver first name: Kwame'));
+    expect(share.sharedTexts.single, contains('Vehicle type: Solar Taxi'));
+    expect(share.sharedTexts.single, contains('Vehicle colour: Blue'));
+    expect(share.sharedTexts.single, contains('Plate: GT 1234-26'));
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets(
+    'test_shared_summary_uses_actual_trip_reference_not_request_reference',
+    (tester) async {
+      _useSurface(tester);
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          status: 'driver_accepted',
+          tripReference: 'TRIP-MUX3-SAFETY',
+          latestStaffState: 'driver assigned',
+          driverName: 'Kwame Mensah',
+          vehicleColour: 'Blue',
+          vehicleType: 'Solar Taxi',
+          plateNumber: 'GT 1234-26',
+        ),
+      ]);
+      final share = _RecordingSafetyShareGateway();
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+        safetyShareGateway: share,
+      );
+
+      final shareFinder = find.byKey(const Key('tracking-safety-share'));
+      await tester.ensureVisible(shareFinder);
+      await tester.tap(shareFinder);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('tracking-safety-share-another-way')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(share.sharedTexts, hasLength(1));
+      expect(
+        share.sharedTexts.single,
+        contains('Trip reference: TRIP-MUX3-SAFETY'),
+      );
+      expect(
+        share.sharedTexts.single,
+        isNot(contains('Trip reference: RR-APP-MUX3-TEST')),
+      );
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets('test_share_trip_opens_two_choice_surface', (tester) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'driver_accepted',
+        tripReference: 'TRIP-MUX3-SAFETY',
+        latestStaffState: 'driver assigned',
+      ),
+    ]);
+    final contacts = _TrackingTrustedContactRepository(
+      const PassengerTrustedContact(
+        name: 'Trusted Person',
+        phone: '+233555000111',
+      ),
+    );
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      trustedContactRepository: contacts,
+    );
+
+    final shareFinder = find.byKey(const Key('tracking-safety-share'));
+    await tester.ensureVisible(shareFinder);
+    await tester.tap(shareFinder);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('tracking-safety-share-choice-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('tracking-safety-message-contact')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('tracking-safety-share-another-way')),
+      findsOneWidget,
+    );
+    expect(find.text('Message trusted contact'), findsOneWidget);
+    expect(find.text('Share another way'), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets(
+    'test_message_trusted_contact_not_rendered_as_separate_top_level_action',
+    (tester) async {
+      _useSurface(tester);
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          status: 'driver_accepted',
+          tripReference: 'TRIP-MUX3-SAFETY',
+          latestStaffState: 'driver assigned',
+        ),
+      ]);
+      final contacts = _TrackingTrustedContactRepository(
+        const PassengerTrustedContact(
+          name: 'Trusted Person',
+          phone: '+233555000111',
+        ),
+      );
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+        trustedContactRepository: contacts,
+      );
+
+      expect(
+        find.byKey(const Key('tracking-safety-message-contact')),
+        findsNothing,
+      );
+      expect(find.text('Message trusted contact'), findsNothing);
+      expect(find.byKey(const Key('tracking-safety-share')), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets('test_sms_and_os_share_use_same_canonical_summary', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'driver_accepted',
+        tripReference: 'TRIP-MUX3-SAFETY',
+        latestStaffState: 'driver assigned',
+        pickup: '5.60500, -0.16680',
+        destination: 'Ghana Sea Port',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+        plateNumber: 'GT 1234-26',
+      ),
+    ]);
+    final contacts = _TrackingTrustedContactRepository(
+      const PassengerTrustedContact(
+        name: 'Trusted Person',
+        phone: '+233555000111',
+      ),
+    );
+    final launcher = _RecordingSafetyUriLauncher();
+    final share = _RecordingSafetyShareGateway();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      trustedContactRepository: contacts,
+      safetyUriLauncher: launcher,
+      safetyShareGateway: share,
+    );
+
+    final shareFinder = find.byKey(const Key('tracking-safety-share'));
+    await tester.ensureVisible(shareFinder);
+    await tester.tap(shareFinder);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('tracking-safety-message-contact')));
+    await tester.pumpAndSettle();
+
+    expect(launcher.launchedUris, hasLength(1));
+    final smsBody = launcher.launchedUris.single.queryParameters['body'];
+    expect(smsBody, isNotNull);
+    expect(smsBody, contains('Trip reference: TRIP-MUX3-SAFETY'));
+    expect(smsBody, contains('Pickup: Not shared for privacy'));
+    expect(smsBody, isNot(contains('5.60500')));
+    expect(smsBody, isNot(contains('-0.16680')));
+
+    await tester.ensureVisible(shareFinder);
+    await tester.tap(shareFinder);
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const Key('tracking-safety-share-another-way')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(share.sharedTexts, hasLength(1));
+    expect(share.sharedTexts.single, smsBody);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('test_safety_card_visual_placement_after_driver_vehicle_info', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+        plateNumber: 'GT 1234-26',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    final vehicle = find.byKey(const Key('tracking-vehicle-info'));
+    final safety = find.byKey(const Key('tracking-safety-card'));
+
+    expect(vehicle, findsOneWidget);
+    expect(safety, findsOneWidget);
+    expect(
+      tester.getTopLeft(safety).dy,
+      greaterThan(tester.getBottomLeft(vehicle).dy),
+    );
+
+    await _disposeTracking(tester);
+  });
 }
 
 PassengerRideRequestRecord _record({
@@ -1392,6 +1785,11 @@ Future<void> _pumpTracking(
   required Duration pollInterval,
   PassengerTripLifecycleRepository? tripRepository,
   PassengerPaymentRatingRepository? paymentRatingRepository,
+  PassengerTrustedContactRepository? trustedContactRepository,
+  PassengerSafetyUriLauncher safetyUriLauncher =
+      const PlatformPassengerSafetyUriLauncher(),
+  PassengerSafetyShareGateway safetyShareGateway =
+      const PlatformPassengerSafetyShareGateway(),
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -1402,6 +1800,9 @@ Future<void> _pumpTracking(
         tripRepository: tripRepository,
         pollInterval: pollInterval,
         paymentRatingRepository: paymentRatingRepository,
+        trustedContactRepository: trustedContactRepository,
+        safetyUriLauncher: safetyUriLauncher,
+        safetyShareGateway: safetyShareGateway,
       ),
     ),
   );
@@ -1413,6 +1814,55 @@ Future<void> _pumpTracking(
 Future<void> _disposeTracking(WidgetTester tester) async {
   await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
   await tester.pump();
+}
+
+class _RecordingSafetyUriLauncher implements PassengerSafetyUriLauncher {
+  final List<Uri> canLaunchUris = <Uri>[];
+  final List<Uri> launchedUris = <Uri>[];
+
+  @override
+  Future<bool> canLaunch(Uri uri) async {
+    canLaunchUris.add(uri);
+    return true;
+  }
+
+  @override
+  Future<bool> launch(Uri uri) async {
+    launchedUris.add(uri);
+    return true;
+  }
+}
+
+class _RecordingSafetyShareGateway implements PassengerSafetyShareGateway {
+  final List<String> sharedTexts = <String>[];
+
+  @override
+  Future<void> shareText(String text) async {
+    sharedTexts.add(text);
+  }
+}
+
+class _TrackingTrustedContactRepository
+    implements PassengerTrustedContactRepository {
+  _TrackingTrustedContactRepository(this.contact);
+
+  PassengerTrustedContact contact;
+  int fetchCalls = 0;
+
+  @override
+  Future<PassengerTrustedContact> fetch() async {
+    fetchCalls += 1;
+    return contact;
+  }
+
+  @override
+  Future<PassengerTrustedContact> save({
+    required String name,
+    required String phone,
+  }) async {
+    contact = PassengerTrustedContact(name: name, phone: phone);
+    return contact;
+  }
 }
 
 class _FakeRouteService implements PassengerRouteService {

@@ -218,7 +218,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     PassengerRideRequestRecord record,
   ) {
     return PassengerTripSafetySummary(
-      tripReference: record.requestReference,
+      tripReference: record.normalizedTripReference,
       tripStatus: record.status,
       driverFirstName: _driverFirstName(record.driverName),
       vehicleType: record.vehicleType,
@@ -238,9 +238,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       return;
     }
 
-    await widget.safetyUriLauncher.launch(
-      passengerEmergency191Uri,
-    );
+    await widget.safetyUriLauncher.launch(passengerEmergency191Uri);
   }
 
   Future<void> _shareTripSafety() async {
@@ -252,6 +250,47 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
     await widget.safetyShareGateway.shareText(
       _buildSafetySummary(record).build(),
+    );
+  }
+
+  Future<void> _showShareTripChoices() async {
+    if (_record == null) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          key: const Key('tracking-safety-share-choice-surface'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                key: const Key('tracking-safety-message-contact'),
+                enabled: widget.trustedContactRepository != null,
+                leading: const Icon(Icons.sms_outlined),
+                title: const Text('Message trusted contact'),
+                onTap: widget.trustedContactRepository == null
+                    ? null
+                    : () async {
+                        Navigator.of(sheetContext).pop();
+                        await _messageTrustedContact();
+                      },
+              ),
+              ListTile(
+                key: const Key('tracking-safety-share-another-way'),
+                leading: const Icon(Icons.share_outlined),
+                title: const Text('Share another way'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await _shareTripSafety();
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -271,6 +310,18 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     final contact = await repository.fetch();
 
     if (!contact.isConfigured) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Add a trusted contact in Safety & emergency settings to send this trip by message.',
+            ),
+          ),
+        );
       return;
     }
 
@@ -287,7 +338,6 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
     await widget.safetyUriLauncher.launch(uri);
   }
-
 
   Future<void> _openPaymentRating() {
     final repository = widget.paymentRatingRepository;
@@ -581,12 +631,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                     padding: const EdgeInsets.all(AsmSpacing.space16),
                     decoration: BoxDecoration(
                       color: AsmColors.passengerCard,
-                      borderRadius: BorderRadius.circular(
-                        AsmRadii.radius20,
-                      ),
-                      border: Border.all(
-                        color: AsmColors.passengerLine,
-                      ),
+                      borderRadius: BorderRadius.circular(AsmRadii.radius20),
+                      border: Border.all(color: AsmColors.passengerLine),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -608,27 +654,13 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                         const SizedBox(height: AsmSpacing.space8),
                         OutlinedButton.icon(
                           key: const Key('tracking-safety-share'),
-                          onPressed: _shareTripSafety,
+                          onPressed: _showShareTripChoices,
                           icon: const Icon(Icons.share_outlined),
                           label: const Text('Share trip'),
                         ),
-                        if (widget.trustedContactRepository != null) ...[
-                          const SizedBox(height: AsmSpacing.space8),
-                          OutlinedButton.icon(
-                            key: const Key(
-                              'tracking-safety-message-contact',
-                            ),
-                            onPressed: _messageTrustedContact,
-                            icon: const Icon(Icons.sms_outlined),
-                            label: const Text(
-                              'Message trusted contact',
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
-
 
                   if (driverDistanceKm != null) ...[
                     const SizedBox(height: AsmSpacing.space12),
