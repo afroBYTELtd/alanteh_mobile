@@ -395,6 +395,7 @@ class DriverApp extends StatelessWidget {
     this.driverShiftCheckController,
     this.driverReportGateway,
     this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     super.key,
   });
 
@@ -411,6 +412,7 @@ class DriverApp extends StatelessWidget {
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+  final DriverPushMessageSource? pushMessageSource;
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +509,7 @@ class DriverApp extends StatelessWidget {
             driverRatingGateway: ratingGateway,
             accessTokenRefresh: sessionRefreshController?.refresh,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
+            pushMessageSource: pushMessageSource,
           )
         : DriverShell(
             configuration: configuration,
@@ -551,6 +554,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverRatingGateway,
     this.accessTokenRefresh,
     this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     super.key,
   });
 
@@ -567,6 +571,7 @@ class DriverLoginShell extends StatefulWidget {
   final ApiDriverRatingGateway? driverRatingGateway;
   final DriverAccessTokenRefresh? accessTokenRefresh;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+  final DriverPushMessageSource? pushMessageSource;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -849,6 +854,35 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
   }
 
+  Future<void> _handlePushNavigationIntent(
+    DriverPushNavigationIntent intent,
+  ) async {
+    if (!_signedIn ||
+        _localDemoOpened ||
+        !mounted ||
+        intent.eventType != 'driver_assigned') {
+      return;
+    }
+
+    final gateway = widget.driverDutyGateway;
+    if (gateway == null) {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverTripDetailScreen(
+          gateway: gateway,
+          tripReference: intent.tripReference,
+          actionControllerFactory: widget.driverTripActionControllerFactory,
+          offerResponseControllerFactory:
+              _sessionAwareOfferResponseControllerFactory,
+          ratingGateway: widget.driverRatingGateway,
+        ),
+      ),
+    );
+  }
+
   void _clearForm() {
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
@@ -896,7 +930,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
       );
-      return _signedIn ? FirebaseForegroundPushListener(child: shell) : shell;
+      return _signedIn &&
+              (_pushDeviceRegistrar != null || widget.pushMessageSource != null)
+          ? FirebaseForegroundPushListener(
+              onNavigationIntent: _handlePushNavigationIntent,
+              messageSource: widget.pushMessageSource,
+              child: shell,
+            )
+          : shell;
     }
 
     return Scaffold(
