@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "81642574894",
+    "project_id": "alanteh-ba91b",
+    "storage_bucket": "alanteh-ba91b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:81642574894:android:8d1651182234aeb60dbbbf",
+        "android_client_info": {
+          "package_name": "io.alanteh.passenger"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-4K6osU7rdqAMX5LtyX446wkD999PtZ4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

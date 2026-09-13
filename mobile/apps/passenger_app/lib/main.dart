@@ -4,6 +4,9 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'auth/passenger_otp_verification_screen.dart';
@@ -13,19 +16,38 @@ import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'network/ghana_network_resilience.dart';
+import 'notifications/passenger_push_navigation.dart';
+
+import 'notifications/push_device_registration.dart';
+import 'notifications/push_notification_runtime.dart';
 import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
 import 'safety/passenger_trip_safety.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
+  final pushDeviceRegistrarFactory =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+      ? (AuthTokenStore tokenStore) =>
+            FirebasePushDeviceRegistrar.withDefaultClient(
+              tokenStore: tokenStore,
+              baseUrl: AsmApiClient.defaultBaseUrl,
+            )
+      : null;
   runApp(
     PassengerApp(
       configuration: configuration,
       showLoginShell: true,
       showSplash: true,
       enableNetworkResilience: true,
+      pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
     ),
   );
 }
@@ -44,6 +66,7 @@ class PassengerApp extends StatelessWidget {
     this.authTokenStore,
     this.paymentRatingRepository,
     this.fareEstimateRepository,
+    this.pushDeviceRegistrarFactory,
     super.key,
   });
 
@@ -58,6 +81,7 @@ class PassengerApp extends StatelessWidget {
   final AuthTokenStore? authTokenStore;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
+  final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -121,6 +145,7 @@ class PassengerApp extends StatelessWidget {
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
             trustedContactRepository: resolvedTrustedContactRepository,
+            pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             localQaEnabled: configuration.localQaEnabled,
           )
         : PassengerShell(
@@ -248,6 +273,7 @@ class PassengerLoginShell extends StatefulWidget {
     required this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.trustedContactRepository,
+    this.pushDeviceRegistrarFactory,
     this.localQaEnabled = false,
     super.key,
   });
@@ -262,6 +288,7 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerPaymentRatingRepository paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final PassengerTrustedContactRepository? trustedContactRepository;
+  final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final bool localQaEnabled;
 
   @override
@@ -279,6 +306,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   late final AuthService _authService;
   late final PassengerRideRequestSubmitter _rideRequestSubmitter;
   late final PassengerRegistrationSubmitter _registrationSubmitter;
+  late final PushDeviceRegistrar? _pushDeviceRegistrar;
 
   bool _localQaOpened = false;
   bool _registrationOpen = false;
@@ -291,6 +319,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   void initState() {
     super.initState();
     _tokenStore = widget.authTokenStore ?? SecureAuthTokenStore();
+    _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(_tokenStore);
     const apiBaseUrl = AsmApiClient.defaultBaseUrl;
     _authService =
         widget.authService ??
@@ -383,9 +412,11 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         _isSigningIn = false;
         _loginErrorMessage = null;
       });
+      unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
       return;
     }
 
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -402,6 +433,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   @override
   void dispose() {
+    final pushDeviceRegistrar = _pushDeviceRegistrar;
+    if (pushDeviceRegistrar != null) {
+      unawaited(pushDeviceRegistrar.dispose());
+    }
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
@@ -466,6 +501,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           _isSigningIn = false;
           _loginErrorMessage = null;
         });
+        unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
         return;
       }
 
@@ -525,6 +561,41 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
             cause.type == AsmApiExceptionType.timeout);
   }
 
+  Future<void> _handlePushNavigationIntent(
+    PassengerPushNavigationIntent intent,
+  ) async {
+    if (!_signedIn || _localQaOpened || !mounted) {
+      return;
+    }
+
+    PassengerRideRequestRecord? record;
+    try {
+      record = await resolvePassengerPushTripRequest(
+        repository: widget.rideRequestHistoryRepository,
+        tripReference: intent.tripReference,
+      );
+    } on Object {
+      return;
+    }
+
+    if (!mounted || !_signedIn || _localQaOpened || record == null) {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => buildPassengerPushTripDestination(
+          repository: widget.rideRequestHistoryRepository,
+          record: record!,
+          paymentRatingRepository: widget.paymentRatingRepository,
+          trustedContactRepository: widget.trustedContactRepository,
+          phoneNumber: _passengerPhoneNumber,
+          onSignInRequired: _returnToSignIn,
+        ),
+      ),
+    );
+  }
+
   void _completeOtpVerification() {
     if (!_otpRequired) {
       return;
@@ -540,9 +611,11 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _isSigningIn = false;
       _loginErrorMessage = null;
     });
+    unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
   }
 
   Future<void> _useAnotherPhoneNumber() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
 
     if (!mounted) {
@@ -571,6 +644,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _continueLocalQa() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted || _isSigningIn) {
       return;
@@ -588,6 +662,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _returnToSignIn() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -606,6 +681,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _completeAccountDeletion() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -629,6 +705,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _signOut() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -796,7 +873,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     }
 
     if (_localQaOpened || _signedIn) {
-      return PassengerShell(
+      final shell = PassengerShell(
         configuration: widget.configuration,
         localQaEnabled: widget.configuration.localQaEnabled,
         rideRequestSubmitter: _rideRequestSubmitter,
@@ -807,6 +884,9 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         phoneNumber: _passengerPhoneNumber,
         passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,
+        requestNotificationPermission: _signedIn
+            ? _pushDeviceRegistrar?.requestNotificationPermission
+            : null,
         onSignOut: _signOut,
         deleteAccountSubmitter:
             ApiPassengerDeleteAccountSubmitter.withDefaultClient(
@@ -816,6 +896,12 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         deleteAccountLiveEnabled: passengerDeleteAccountLiveEnabled,
         onAccountDeletionRequested: _completeAccountDeletion,
       );
+      return _signedIn && _pushDeviceRegistrar != null
+          ? FirebaseForegroundPushListener(
+              onNavigationIntent: _handlePushNavigationIntent,
+              child: shell,
+            )
+          : shell;
     }
 
     return Scaffold(

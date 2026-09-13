@@ -46,9 +46,7 @@ void main() {
 
   test('test_nested_duty_since_decodes_correctly', () {
     final summary = DriverDutySummary.fromJson(const <String, Object?>{
-      'duty': <String, Object?>{
-        'duty_since': '2026-08-07T23:35:37Z',
-      },
+      'duty': <String, Object?>{'duty_since': '2026-08-07T23:35:37Z'},
     });
 
     expect(summary.dutySince, DateTime.parse('2026-08-07T23:35:37Z'));
@@ -57,9 +55,7 @@ void main() {
   test('test_top_level_duty_status_not_used', () {
     final summary = DriverDutySummary.fromJson(const <String, Object?>{
       'duty_status': 'online',
-      'duty': <String, Object?>{
-        'duty_status': 'offline',
-      },
+      'duty': <String, Object?>{'duty_status': 'offline'},
     });
 
     expect(summary.dutyStatus, 'offline');
@@ -252,12 +248,17 @@ void main() {
       gateway: shiftGateway,
       isOnline: () async => true,
     );
+    var permissionRequests = 0;
 
     await tester.pumpWidget(
       _testApp(
         DriverShell(
           driverDutyGateway: dutyGateway,
           driverShiftCheckController: controller,
+          requestNotificationPermission: () async {
+            permissionRequests += 1;
+            return false;
+          },
           deviceNow: () => now,
         ),
       ),
@@ -265,6 +266,8 @@ void main() {
 
     await tester.pump();
     await tester.pumpAndSettle();
+
+    expect(permissionRequests, 0);
 
     expect(
       find.byKey(const Key('driver-shift-readiness-screen')),
@@ -286,6 +289,7 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 350));
     expect(dutyGateway.dutyCalls, greaterThanOrEqualTo(2));
+    expect(permissionRequests, 0);
 
     expect(find.byKey(const Key('driver-online-transition')), findsOneWidget);
     expect(find.text('Shift check submitted.'), findsOneWidget);
@@ -294,6 +298,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
+    expect(permissionRequests, 1);
     expect(find.text("Today's shift · online now"), findsOneWidget);
     expect(find.text("You're online"), findsOneWidget);
     expect(find.text("Today's shift · offline"), findsNothing);
@@ -302,6 +307,46 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
+  testWidgets('queued readiness does not request notification permission', (
+    tester,
+  ) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'offline',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    var permissionRequests = 0;
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          requestNotificationPermission: () async {
+            permissionRequests += 1;
+            return true;
+          },
+          deviceNow: () => now,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _completeReadiness(tester);
+
+    expect(permissionRequests, 0);
+
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pumpAndSettle();
+
+    expect(permissionRequests, 0);
+    expect(
+      find.byKey(const Key('driver-shift-readiness-screen')),
+      findsNothing,
+    );
+  });
 
   testWidgets('test_409_triggers_duty_refresh_not_error_display', (
     tester,
@@ -693,9 +738,7 @@ void main() {
       reason: 'No deferred queue or later duty delivery may remain.',
     );
   });
-  testWidgets('test_greeting_before_noon_is_good_morning', (
-    tester,
-  ) async {
+  testWidgets('test_greeting_before_noon_is_good_morning', (tester) async {
     await tester.pumpWidget(
       _testApp(
         DriverHome(
@@ -720,9 +763,7 @@ void main() {
     expect(find.text('Good morning, Driver'), findsOneWidget);
   });
 
-  testWidgets('test_greeting_noon_to_1759_is_good_afternoon', (
-    tester,
-  ) async {
+  testWidgets('test_greeting_noon_to_1759_is_good_afternoon', (tester) async {
     await tester.pumpWidget(
       _testApp(
         DriverHome(
@@ -747,9 +788,7 @@ void main() {
     expect(find.text('Good afternoon, Driver'), findsOneWidget);
   });
 
-  testWidgets('test_greeting_1759_is_good_afternoon', (
-    tester,
-  ) async {
+  testWidgets('test_greeting_1759_is_good_afternoon', (tester) async {
     await tester.pumpWidget(
       _testApp(
         DriverHome(
@@ -774,9 +813,7 @@ void main() {
     expect(find.text('Good afternoon, Driver'), findsOneWidget);
   });
 
-  testWidgets('test_greeting_2359_is_good_evening', (
-    tester,
-  ) async {
+  testWidgets('test_greeting_2359_is_good_evening', (tester) async {
     await tester.pumpWidget(
       _testApp(
         DriverHome(
@@ -801,9 +838,7 @@ void main() {
     expect(find.text('Good evening, Driver'), findsOneWidget);
   });
 
-  testWidgets('test_greeting_1800_and_after_is_good_evening', (
-    tester,
-  ) async {
+  testWidgets('test_greeting_1800_and_after_is_good_evening', (tester) async {
     await tester.pumpWidget(
       _testApp(
         DriverHome(
@@ -827,9 +862,7 @@ void main() {
 
     expect(find.text('Good evening, Driver'), findsOneWidget);
   });
-
 }
-
 
 Widget _testApp(Widget home) {
   return MaterialApp(theme: AsmThemes.driver, home: home);
@@ -909,7 +942,6 @@ final class _MutableDutyGateway
     return transition;
   }
 }
-
 
 final class _ConflictShiftCheckGateway implements DriverShiftCheckGateway {
   int calls = 0;
