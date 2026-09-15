@@ -300,6 +300,68 @@ void main() {
     expect(submitter.submissions, isEmpty);
   });
 
+  testWidgets(
+    'notification permission is requested only after successful booking',
+    (tester) async {
+      _useSurface(tester, const Size(430, 1000));
+      final submitter = _FakeRideRequestSubmitter.success();
+      var permissionRequests = 0;
+
+      await tester.pumpWidget(
+        _bookingTestApp(
+          submitter: submitter,
+          requestNotificationPermission: () async {
+            permissionRequests += 1;
+            return false;
+          },
+        ),
+      );
+
+      expect(permissionRequests, 0);
+
+      await _enterValidBooking(tester);
+      await _tapVisible(tester, const Key('request-ride'));
+      await tester.pumpAndSettle();
+
+      expect(permissionRequests, 0);
+
+      await _tapVisible(tester, const Key('confirm-and-request'));
+      await tester.pumpAndSettle();
+
+      expect(submitter.submissions, hasLength(1));
+      expect(permissionRequests, 1);
+      expect(find.byKey(const Key('ride-request-success')), findsOneWidget);
+    },
+  );
+
+  testWidgets('failed booking does not request notification permission', (
+    tester,
+  ) async {
+    _useSurface(tester, const Size(430, 1000));
+    final submitter = _FakeRideRequestSubmitter.failThenSucceed();
+    var permissionRequests = 0;
+
+    await tester.pumpWidget(
+      _bookingTestApp(
+        submitter: submitter,
+        requestNotificationPermission: () async {
+          permissionRequests += 1;
+          return true;
+        },
+      ),
+    );
+
+    await _enterValidBooking(tester);
+    await _tapVisible(tester, const Key('request-ride'));
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, const Key('confirm-and-request'));
+    await tester.pumpAndSettle();
+
+    expect(submitter.submissions, hasLength(1));
+    expect(permissionRequests, 0);
+    expect(find.byKey(const Key('ride-request-success')), findsNothing);
+  });
+
   testWidgets('successful request shows start new request and resets form', (
     tester,
   ) async {
@@ -2401,6 +2463,7 @@ Widget _bookingTestApp({
   PassengerRideRequestSubmitter? submitter,
   String Function()? idempotencyKeyFactory,
   VoidCallback? onSignInRequired,
+  Future<bool> Function()? requestNotificationPermission,
   double? initialPickupLatitude,
   double? initialPickupLongitude,
 }) {
@@ -2413,6 +2476,7 @@ Widget _bookingTestApp({
       rideRequestSubmitter: submitter,
       idempotencyKeyFactory: idempotencyKeyFactory,
       onSignInRequired: onSignInRequired,
+      requestNotificationPermission: requestNotificationPermission,
     ),
   );
 }

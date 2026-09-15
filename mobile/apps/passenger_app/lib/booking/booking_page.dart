@@ -26,6 +26,7 @@ class BookingPage extends StatefulWidget {
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
     this.onSignInRequired,
+    this.requestNotificationPermission,
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
     this.fareEstimateRepository,
@@ -44,6 +45,7 @@ class BookingPage extends StatefulWidget {
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;
   final VoidCallback? onSignInRequired;
+  final Future<bool> Function()? requestNotificationPermission;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
@@ -235,6 +237,16 @@ class _BookingPageState extends State<BookingPage> {
         _submissionResult = result;
         _idempotencyKey = null;
       });
+
+      final requestNotificationPermission =
+          widget.requestNotificationPermission;
+      if (requestNotificationPermission != null) {
+        try {
+          await requestNotificationPermission();
+        } on Object {
+          // Notification permission must never invalidate a booked ride.
+        }
+      }
 
       final reference = result.requestReference?.trim();
       final repository = widget.rideRequestHistoryRepository;
