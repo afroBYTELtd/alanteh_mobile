@@ -527,6 +527,7 @@ void main() {
         authTokenStore: store,
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('driver-login-brand-logo')), findsOneWidget);
     final driverLoginLogo = tester.widget<Image>(
@@ -678,6 +679,7 @@ void main() {
         authTokenStore: store,
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Continue without signing in'), findsOneWidget);
 
@@ -764,6 +766,7 @@ void main() {
           authTokenStore: store,
         ),
       );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
@@ -822,6 +825,7 @@ void main() {
           authTokenStore: store,
         ),
       );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
@@ -860,6 +864,7 @@ void main() {
         authTokenStore: store,
       ),
     );
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('driver-phone-field')),
@@ -1180,6 +1185,7 @@ void main() {
           authTokenStore: store,
         ),
       );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),
@@ -2049,6 +2055,7 @@ void main() {
           authTokenStore: store,
         ),
       );
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('driver-phone-field')),

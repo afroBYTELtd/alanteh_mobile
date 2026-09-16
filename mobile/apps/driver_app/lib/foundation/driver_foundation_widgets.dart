@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 class DriverSplashGate extends StatefulWidget {
   const DriverSplashGate({
     required this.child,
-    this.duration = const Duration(milliseconds: 900),
+    this.duration = Duration.zero,
     super.key,
   });
 
