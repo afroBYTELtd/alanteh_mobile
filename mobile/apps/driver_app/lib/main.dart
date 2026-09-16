@@ -551,6 +551,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   bool _localDemoOpened = false;
   bool _signedIn = false;
   bool _isSigningIn = false;
+  bool _restoringSession = true;
   String? _loginError;
   DriverOfferResponseControllerFactory?
   _sessionAwareOfferResponseControllerFactory;
@@ -629,6 +630,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       setState(() {
         _signedIn = false;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginError = hadStoredSession
             ? 'Please sign in again to continue.'
             : null;
@@ -649,6 +651,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           setState(() {
             _signedIn = true;
             _isSigningIn = false;
+            _restoringSession = false;
             _loginError = null;
           });
           return;
@@ -656,6 +659,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           setState(() {
             _signedIn = false;
             _isSigningIn = false;
+            _restoringSession = false;
             _loginError =
                 'Cannot refresh your session right now. '
                 'Your stored sign-in was kept. Check your connection and retry.';
@@ -669,6 +673,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           setState(() {
             _signedIn = false;
             _isSigningIn = false;
+            _restoringSession = false;
             _loginError = 'Please sign in again to continue.';
           });
           return;
@@ -687,6 +692,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       setState(() {
         _signedIn = false;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginError = 'Please sign in again to continue.';
       });
       return;
@@ -702,6 +708,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       setState(() {
         _signedIn = true;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginError = null;
       });
       return;
@@ -715,6 +722,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() {
       _signedIn = false;
       _isSigningIn = false;
+      _restoringSession = false;
       _loginError = 'Please sign in again to continue.';
     });
   }
@@ -847,6 +855,18 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverShiftCheckController: widget.driverShiftCheckController,
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
+      );
+    }
+
+    if (_restoringSession) {
+      return const Scaffold(
+        key: Key('driver-session-restoring'),
+        backgroundColor: AsmColors.driverVisualSurface,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: AsmColors.driverMintAction,
+          ),
+        ),
       );
     }
 
