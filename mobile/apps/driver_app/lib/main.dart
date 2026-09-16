@@ -870,12 +870,16 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
                 width: 176,
                 height: 56,
                 alignment: Alignment.centerLeft,
-                color: AsmColors.brandWhite,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: AsmColors.brandWhite,
+                  borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                ),
                 child: Image.asset(
                   'assets/brand/alanteh-master-logo.png',
                   key: const Key('driver-login-brand-logo'),
                   width: 176,
-                  height: 56,
+                  height: 48,
                   fit: BoxFit.contain,
                   alignment: Alignment.centerLeft,
                   semanticLabel: 'ALANTEH driver logo',
