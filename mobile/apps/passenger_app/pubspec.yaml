@@ -28,6 +28,8 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.2.10
   flutter:
     sdk: flutter
   asm_app_config:

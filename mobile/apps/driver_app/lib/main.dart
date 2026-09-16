@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'driver_duty_trips.dart';
@@ -14,18 +19,35 @@ import 'network/driver_report_gateway.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
+import 'notifications/push_device_registration.dart';
+import 'notifications/push_notification_runtime.dart';
 import 'readiness/driver_shift_check_submission.dart';
 
 export 'driver_shell.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
+  final pushDeviceRegistrarFactory =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+      ? (AuthTokenStore tokenStore) =>
+            FirebasePushDeviceRegistrar.withDefaultClient(
+              tokenStore: tokenStore,
+              baseUrl: AsmApiClient.defaultBaseUrl,
+            )
+      : null;
   runApp(
     buildDriverRoot(
       configuration: configuration,
       showLoginShell: true,
       showSplash: true,
       enableNetworkResilience: true,
+      pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
     ),
   );
 }
@@ -216,6 +238,7 @@ Widget buildDriverRoot({
   DriverShiftCheckSubmissionController? driverShiftCheckController,
   DriverReportGateway? driverReportGateway,
   ApiDriverRatingGateway? driverRatingGateway,
+  PushDeviceRegistrarFactory? pushDeviceRegistrarFactory,
   DriverNormalAppBuilder? normalAppBuilder,
 }) {
   Widget buildNormalApp() {
@@ -237,6 +260,7 @@ Widget buildDriverRoot({
           driverOfferResponseControllerFactory,
       driverShiftCheckController: driverShiftCheckController,
       driverReportGateway: driverReportGateway,
+      pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
     );
   }
 
@@ -370,6 +394,8 @@ class DriverApp extends StatelessWidget {
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
     this.driverReportGateway,
+    this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     super.key,
   });
 
@@ -385,6 +411,8 @@ class DriverApp extends StatelessWidget {
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
+  final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+  final DriverPushMessageSource? pushMessageSource;
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +508,8 @@ class DriverApp extends StatelessWidget {
             driverReportGateway: reportGateway,
             driverRatingGateway: ratingGateway,
             accessTokenRefresh: sessionRefreshController?.refresh,
+            pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
+            pushMessageSource: pushMessageSource,
           )
         : DriverShell(
             configuration: configuration,
@@ -523,6 +553,8 @@ class DriverLoginShell extends StatefulWidget {
     this.driverReportGateway,
     this.driverRatingGateway,
     this.accessTokenRefresh,
+    this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     super.key,
   });
 
@@ -538,6 +570,8 @@ class DriverLoginShell extends StatefulWidget {
   final DriverReportGateway? driverReportGateway;
   final ApiDriverRatingGateway? driverRatingGateway;
   final DriverAccessTokenRefresh? accessTokenRefresh;
+  final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+  final DriverPushMessageSource? pushMessageSource;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -555,10 +589,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   String? _loginError;
   DriverOfferResponseControllerFactory?
   _sessionAwareOfferResponseControllerFactory;
+  late final PushDeviceRegistrar? _pushDeviceRegistrar;
 
   @override
   void initState() {
     super.initState();
+    _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
+      widget.authTokenStore,
+    );
     _configureSessionAwareOfferResponseFactory();
     _restoreStoredSession();
   }
@@ -584,6 +622,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _handleOfferSessionExpired(String message) async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
     try {
       await widget.authTokenStore.clearTokens();
@@ -654,6 +693,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             _restoringSession = false;
             _loginError = null;
           });
+          unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
           return;
         case DriverTokenRefreshOutcome.temporarilyUnavailable:
           setState(() {
@@ -666,6 +706,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           });
           return;
         case DriverTokenRefreshOutcome.sessionExpired:
+          _pushDeviceRegistrar?.endAuthenticatedSession();
           await widget.authTokenStore.clearTokens();
           if (!mounted) {
             return;
@@ -711,9 +752,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         _restoringSession = false;
         _loginError = null;
       });
+      unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
       return;
     }
 
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     await widget.authTokenStore.clearTokens();
     if (!mounted) {
       return;
@@ -729,12 +772,17 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
   @override
   void dispose() {
+    final pushDeviceRegistrar = _pushDeviceRegistrar;
+    if (pushDeviceRegistrar != null) {
+      unawaited(pushDeviceRegistrar.dispose());
+    }
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
   }
 
   Future<void> _continueLocalDemo() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
     _pinController.clear();
@@ -785,6 +833,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           _isSigningIn = false;
           _signedIn = true;
         });
+        unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
         return;
       }
 
@@ -813,6 +862,35 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
   }
 
+  Future<void> _handlePushNavigationIntent(
+    DriverPushNavigationIntent intent,
+  ) async {
+    if (!_signedIn ||
+        _localDemoOpened ||
+        !mounted ||
+        intent.eventType != 'driver_assigned') {
+      return;
+    }
+
+    final gateway = widget.driverDutyGateway;
+    if (gateway == null) {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverTripDetailScreen(
+          gateway: gateway,
+          tripReference: intent.tripReference,
+          actionControllerFactory: widget.driverTripActionControllerFactory,
+          offerResponseControllerFactory:
+              _sessionAwareOfferResponseControllerFactory,
+          ratingGateway: widget.driverRatingGateway,
+        ),
+      ),
+    );
+  }
+
   void _clearForm() {
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
@@ -822,6 +900,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _signOut() async {
+    _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
     await widget.authTokenStore.clearTokens();
     if (!mounted) {
@@ -843,10 +922,13 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   @override
   Widget build(BuildContext context) {
     if (_localDemoOpened || _signedIn) {
-      return DriverShell(
+      final shell = DriverShell(
         configuration: widget.configuration,
         localQaEnabled: widget.localQaEnabled,
         onSignOut: _signOut,
+        requestNotificationPermission: _signedIn
+            ? _pushDeviceRegistrar?.requestNotificationPermission
+            : null,
         driverDutyGateway: widget.driverDutyGateway,
         driverTripActionControllerFactory:
             widget.driverTripActionControllerFactory,
@@ -856,6 +938,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
       );
+      return _signedIn &&
+              (_pushDeviceRegistrar != null || widget.pushMessageSource != null)
+          ? FirebaseForegroundPushListener(
+              onNavigationIntent: _handlePushNavigationIntent,
+              messageSource: widget.pushMessageSource,
+              child: shell,
+            )
+          : shell;
     }
 
     if (_restoringSession) {

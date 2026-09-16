@@ -28,6 +28,7 @@ class PassengerShell extends StatefulWidget {
     this.phoneNumber,
     this.passengerName,
     this.onSignInRequired,
+    this.requestNotificationPermission,
     this.onSignOut,
     this.settingsPreferenceStore,
     this.legalLinkOpener,
@@ -47,6 +48,7 @@ class PassengerShell extends StatefulWidget {
   final String? phoneNumber;
   final String? passengerName;
   final VoidCallback? onSignInRequired;
+  final Future<bool> Function()? requestNotificationPermission;
   final Future<void> Function()? onSignOut;
   final PassengerSettingsPreferenceStore? settingsPreferenceStore;
   final PassengerLegalLinkOpener? legalLinkOpener;
@@ -226,6 +228,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription!,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,
@@ -263,6 +266,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription ?? '',
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,
@@ -293,6 +297,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: record.destination,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,
@@ -313,6 +318,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: record.pickupLocation,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,

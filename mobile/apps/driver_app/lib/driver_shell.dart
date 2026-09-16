@@ -63,6 +63,7 @@ class DriverShell extends StatefulWidget {
     this.configuration = AsmAppConfig.localGhana,
     this.localQaEnabled = false,
     this.onSignOut,
+    this.requestNotificationPermission,
     this.driverDutyGateway,
     this.driverTripActionControllerFactory,
     this.driverOfferResponseControllerFactory,
@@ -77,6 +78,7 @@ class DriverShell extends StatefulWidget {
   final AsmAppConfig configuration;
   final bool localQaEnabled;
   final Future<void> Function()? onSignOut;
+  final Future<bool> Function()? requestNotificationPermission;
   final DriverDutyGateway? driverDutyGateway;
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
   final DriverOfferResponseControllerFactory?
@@ -612,6 +614,16 @@ class _DriverShellState extends State<DriverShell> {
       'confirm_online_after_shift_check=YES',
     );
     await _confirmOnlineAfterShiftCheck();
+
+    final requestNotificationPermission = widget.requestNotificationPermission;
+    if (requestNotificationPermission != null) {
+      try {
+        await requestNotificationPermission();
+      } on Object {
+        // Notification permission must never invalidate readiness.
+      }
+    }
+
     _startupGateDiag('open_readiness completion=submitted');
   }
 
