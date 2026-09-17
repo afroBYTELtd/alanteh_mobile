@@ -73,6 +73,7 @@ class DriverShell extends StatefulWidget {
     this.driverReportGateway,
     this.driverRatingGateway,
     this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
     this.deviceNow,
     this.onlineTransitionDuration = const Duration(seconds: 2),
     super.key,
@@ -90,6 +91,7 @@ class DriverShell extends StatefulWidget {
   final DriverReportGateway? driverReportGateway;
   final ApiDriverRatingGateway? driverRatingGateway;
   final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final DateTime Function()? deviceNow;
   final Duration onlineTransitionDuration;
 
@@ -903,6 +905,8 @@ class _DriverShellState extends State<DriverShell> {
         offerResponseControllerFactory:
             widget.driverOfferResponseControllerFactory,
         ratingGateway: widget.driverRatingGateway,
+        driverTrustedContactRepository: widget.driverTrustedContactRepository,
+        driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
       ),
       _ => _DriverAccountPage(
         currentShift: _currentShift,

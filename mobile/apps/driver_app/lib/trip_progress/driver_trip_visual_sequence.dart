@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
+import '../safety/driver_trip_safety.dart';
 import 'driver_trip_map.dart';
 import 'driver_trip_route.dart';
 import 'driver_trip_visual_state.dart';
@@ -27,17 +28,23 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   const DriverTripVisualSequencePage({
     this.actionRecorder,
     this.initialStatus,
+    this.tripReference,
     this.pickupLocation,
     this.destination,
     this.passengerCount,
     this.passengerNote,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
+    this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
+    this.locationResolver = const GeolocatorDriverCurrentLocationResolver(),
+    this.safetyUriLauncher = const PlatformDriverSafetyUriLauncher(),
     super.key,
   });
 
   final DriverTripActionResilienceController? actionRecorder;
   final String? initialStatus;
+  final String? tripReference;
   final String? pickupLocation;
   final String? destination;
   final int? passengerCount;
@@ -45,6 +52,10 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
   final bool tripActionTelemetryQaEnabled;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
+  final DriverCurrentLocationResolver locationResolver;
+  final DriverSafetyUriLauncher safetyUriLauncher;
 
   @override
   State<DriverTripVisualSequencePage> createState() =>
@@ -55,6 +66,7 @@ class _DriverTripVisualSequencePageState
     extends State<DriverTripVisualSequencePage> {
   late DriverTripVisualState _state;
   bool _isSubmitting = false;
+  bool _sendingAlert = false;
   final List<DriverTripActionTelemetryEvent> _telemetryEvents = [];
 
   @override
@@ -216,6 +228,115 @@ class _DriverTripVisualSequencePageState
     Navigator.of(context).pop(true);
   }
 
+  Future<void> _openEmergency191() async {
+    final canLaunch = await widget.safetyUriLauncher.canLaunch(
+      driverEmergency191Uri,
+    );
+
+    if (!canLaunch) {
+      return;
+    }
+
+    await widget.safetyUriLauncher.launch(driverEmergency191Uri);
+  }
+
+  Future<void> _messageTrustedContact() async {
+    final repository = widget.driverTrustedContactRepository;
+    if (repository == null) {
+      return;
+    }
+
+    final contact = await repository.fetch();
+
+    if (!contact.isConfigured) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Add a trusted contact in Safety & emergency settings to '
+              'send this trip by message.',
+            ),
+          ),
+        );
+      return;
+    }
+
+    final summary = DriverTripSafetySummary(
+      tripReference: widget.tripReference,
+      tripStatus: _state.stage.name,
+      pickup: widget.pickupLocation,
+      destination: widget.destination,
+      passengerCount: widget.passengerCount,
+    ).build();
+
+    final uri = buildDriverTrustedContactSmsUri(
+      phone: contact.phone,
+      summary: summary,
+    );
+
+    final canLaunch = await widget.safetyUriLauncher.canLaunch(uri);
+    if (!canLaunch) {
+      return;
+    }
+
+    await widget.safetyUriLauncher.launch(uri);
+  }
+
+  Future<void> _sendSafetyAlert() async {
+    final repository = widget.driverSafetyAlertRepository;
+    if (repository == null || _sendingAlert) {
+      return;
+    }
+
+    setState(() => _sendingAlert = true);
+
+    try {
+      final position = await widget.locationResolver.resolveBestEffort();
+      await repository.send(
+        tripReference: widget.tripReference,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+      );
+
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Your alert has been sent to dispatch.'),
+          ),
+        );
+    } on DriverSafetyAlertException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Unable to send your alert. Please try again.'),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _sendingAlert = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final stage = _state.stage;
@@ -321,6 +442,36 @@ class _DriverTripVisualSequencePageState
           onBackToHome: _backToHome,
         ),
       },
+      persistentFooterButtons: [
+        TextButton.icon(
+          key: const Key('driver-trip-safety-emergency'),
+          onPressed: _openEmergency191,
+          icon: const Icon(Icons.local_police_outlined),
+          label: const Text('Emergency 191'),
+        ),
+        TextButton.icon(
+          key: const Key('driver-trip-safety-message-contact'),
+          onPressed: widget.driverTrustedContactRepository == null
+              ? null
+              : _messageTrustedContact,
+          icon: const Icon(Icons.sms_outlined),
+          label: const Text('Message contact'),
+        ),
+        TextButton.icon(
+          key: const Key('driver-trip-safety-alert-dispatch'),
+          onPressed:
+              widget.driverSafetyAlertRepository == null || _sendingAlert
+              ? null
+              : _sendSafetyAlert,
+          icon: _sendingAlert
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.warning_amber_outlined),
+          label: Text(_sendingAlert ? 'Sending…' : 'Alert dispatch'),
+        ),
+      ],
       bottomNavigationBar: widget.tripActionTelemetryQaEnabled
           ? _DriverTripActionTelemetryPanel(
               events: List<DriverTripActionTelemetryEvent>.unmodifiable(

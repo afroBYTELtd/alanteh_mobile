@@ -1,9 +1,11 @@
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const driverProfileEndpoint = '/api/driver/profile/';
+const driverSafetyAlertEndpoint = '/api/driver/safety-alert/';
 const driverGhanaPoliceNumber = '191';
 
 final Uri driverEmergency191Uri = Uri(
@@ -264,6 +266,154 @@ final class PlatformDriverSafetyShareGateway
   @override
   Future<void> shareText(String text) async {
     await SharePlus.instance.share(ShareParams(text: text));
+  }
+}
+
+final class DriverSafetyAlertException implements Exception {
+  const DriverSafetyAlertException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'DriverSafetyAlertException: $message';
+}
+
+abstract interface class DriverSafetyAlertRepository {
+  Future<void> send({String? tripReference, double? latitude, double? longitude});
+}
+
+abstract interface class DriverSafetyAlertApiGateway {
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  });
+}
+
+final class AsmDriverSafetyAlertApiGateway
+    implements DriverSafetyAlertApiGateway {
+  const AsmDriverSafetyAlertApiGateway(this.client);
+
+  final AsmApiClient client;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) {
+    return client.request<Map<String, Object?>>(
+      method: 'POST',
+      path: path,
+      data: data,
+      decoder: _decodeObjectMap,
+    );
+  }
+}
+
+final class ApiDriverSafetyAlertRepository
+    implements DriverSafetyAlertRepository {
+  const ApiDriverSafetyAlertRepository({
+    required this.apiGateway,
+    required this.tokenStore,
+    required this.connectionConfigured,
+  });
+
+  factory ApiDriverSafetyAlertRepository.withDefaultClient({
+    required AuthTokenStore tokenStore,
+    String? baseUrl,
+  }) {
+    final configured = AsmApiBaseUrl.isUsable(baseUrl);
+    final resolvedBaseUrl = configured
+        ? baseUrl!.trim()
+        : 'http://127.0.0.1:8000';
+
+    return ApiDriverSafetyAlertRepository(
+      apiGateway: AsmDriverSafetyAlertApiGateway(
+        AsmApiClient(
+          baseUrl: resolvedBaseUrl,
+          tokenProvider: _DriverSafetyTokenProvider(tokenStore),
+        ),
+      ),
+      tokenStore: tokenStore,
+      connectionConfigured: configured,
+    );
+  }
+
+  final DriverSafetyAlertApiGateway apiGateway;
+  final AuthTokenStore tokenStore;
+  final bool connectionConfigured;
+
+  @override
+  Future<void> send({
+    String? tripReference,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final accessToken = (await tokenStore.readAccessToken())?.trim();
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw const DriverSafetyAlertException(
+        'Please sign in again to continue.',
+      );
+    }
+
+    if (!connectionConfigured) {
+      throw const DriverSafetyAlertException(
+        AsmApiClient.connectionNotConfiguredMessage,
+      );
+    }
+
+    final payload = <String, Object?>{
+      if (tripReference != null && tripReference.trim().isNotEmpty)
+        'trip_reference': tripReference.trim(),
+      if (latitude != null) 'latitude': latitude.toString(),
+      if (longitude != null) 'longitude': longitude.toString(),
+    };
+
+    final response = await apiGateway.post(
+      driverSafetyAlertEndpoint,
+      data: payload,
+    );
+
+    if (response.isSuccess && response.statusCode == 201) {
+      return;
+    }
+
+    throw DriverSafetyAlertException(
+      response.error?.message ?? 'Unable to send your alert.',
+    );
+  }
+}
+
+abstract interface class DriverCurrentLocationResolver {
+  Future<({double latitude, double longitude})?> resolveBestEffort();
+}
+
+final class GeolocatorDriverCurrentLocationResolver
+    implements DriverCurrentLocationResolver {
+  const GeolocatorDriverCurrentLocationResolver();
+
+  @override
+  Future<({double latitude, double longitude})?> resolveBestEffort() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return null;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      return (latitude: position.latitude, longitude: position.longitude);
+    } on Object {
+      return null;
+    }
   }
 }
 
