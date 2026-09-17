@@ -202,6 +202,7 @@ void main() {
     final api = _FakeAuthApiGateway(responseData: _loginResponse());
 
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('passenger-login-brand-logo')), findsOneWidget);
     expect(find.text('Sign in to ride'), findsOneWidget);
@@ -403,6 +404,7 @@ void main() {
         responseData: _loginResponse(accountType: accountType),
       );
       await tester.pumpWidget(_loginTestApp(api: api, store: store));
+      await tester.pumpAndSettle();
 
       await tester.enterText(
         find.byKey(const Key('passenger-phone-field')),
@@ -435,6 +437,7 @@ void main() {
     final store = MemoryAuthTokenStore();
     final api = _FakeAuthApiGateway(statusCode: 401);
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
@@ -462,6 +465,7 @@ void main() {
     final api = _FakeAuthApiGateway(statusCode: 403);
 
     await tester.pumpWidget(_loginTestApp(api: api, store: store));
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),
@@ -1496,6 +1500,7 @@ void main() {
         authTokenStore: store,
       ),
     );
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const Key('passenger-phone-field')),

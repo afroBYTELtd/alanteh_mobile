@@ -178,7 +178,7 @@ class PassengerApp extends StatelessWidget {
 class PassengerSplashGate extends StatefulWidget {
   const PassengerSplashGate({
     required this.child,
-    this.duration = const Duration(milliseconds: 900),
+    this.duration = Duration.zero,
     super.key,
   });
 
@@ -313,6 +313,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   bool _signedIn = false;
   bool _otpRequired = false;
   bool _isSigningIn = false;
+  bool _restoringSession = true;
   String? _loginErrorMessage;
 
   @override
@@ -371,6 +372,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         _passengerPhoneNumber = null;
         _passengerName = null;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginErrorMessage = hadStoredSession
             ? 'Please sign in again to continue.'
             : null;
@@ -392,6 +394,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         _passengerPhoneNumber = null;
         _passengerName = null;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginErrorMessage = 'Please sign in again to continue.';
       });
       return;
@@ -410,6 +413,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         _passengerName = _passengerNameFromSession(state.session);
         _otpRequired = false;
         _isSigningIn = false;
+        _restoringSession = false;
         _loginErrorMessage = null;
       });
       unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
@@ -427,6 +431,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       _passengerPhoneNumber = null;
       _passengerName = null;
       _isSigningIn = false;
+      _restoringSession = false;
       _loginErrorMessage = 'Please sign in again to continue.';
     });
   }
@@ -902,6 +907,18 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
               child: shell,
             )
           : shell;
+    }
+
+    if (_restoringSession) {
+      return const Scaffold(
+        key: Key('passenger-session-restoring'),
+        backgroundColor: AsmColors.passengerSurface,
+        body: Center(
+          child: CircularProgressIndicator(
+            color: AsmColors.brandDeepGreen,
+          ),
+        ),
+      );
     }
 
     return Scaffold(
