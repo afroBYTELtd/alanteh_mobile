@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'auth/passenger_otp_verification_screen.dart';
 import 'auth/passenger_registration.dart';
@@ -162,14 +163,21 @@ class PassengerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Passenger',
       theme: AsmThemes.passenger,
-      builder: enableNetworkResilience
-          ? (context, child) => GhanaNetworkStatusBanner(
-              baseUrl: apiBaseUrl,
-              offlineMessage:
-                  'Poor or no connection. Your screen stays ready while ALANTEH retries safely.',
-              child: child ?? const SizedBox.shrink(),
-            )
-          : null,
+      builder: (context, child) {
+        final content = enableNetworkResilience
+            ? GhanaNetworkStatusBanner(
+                baseUrl: apiBaseUrl,
+                offlineMessage:
+                    'Poor or no connection. Your screen stays ready while ALANTEH retries safely.',
+                child: child ?? const SizedBox.shrink(),
+              )
+            : (child ?? const SizedBox.shrink());
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: AsmSystemChrome.passenger,
+          child: content,
+        );
+      },
       home: showSplash ? PassengerSplashGate(child: home) : home,
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 abstract final class AsmColors {
   static const Color brandGreen = Color(0xFF275C2E);
@@ -195,6 +196,28 @@ abstract final class AsmThemes {
       ),
     );
   }
+}
+
+abstract final class AsmSystemChrome {
+  static const SystemUiOverlayStyle passenger = SystemUiOverlayStyle(
+    statusBarColor: AsmColors.passengerSurface,
+    statusBarBrightness: Brightness.light,
+    statusBarIconBrightness: Brightness.dark,
+    systemNavigationBarColor: AsmColors.passengerSurface,
+    systemNavigationBarIconBrightness: Brightness.dark,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarContrastEnforced: false,
+  );
+
+  static const SystemUiOverlayStyle driver = SystemUiOverlayStyle(
+    statusBarColor: AsmColors.driverVisualSurface,
+    statusBarBrightness: Brightness.dark,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: AsmColors.driverVisualSurface,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarContrastEnforced: false,
+  );
 }
 
 class AsmDemoPlaceholder extends StatelessWidget {
