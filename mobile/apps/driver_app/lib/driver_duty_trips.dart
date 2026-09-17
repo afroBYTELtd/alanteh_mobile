@@ -14,6 +14,7 @@ import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
+import 'safety/driver_trip_safety.dart';
 import 'trip_progress/driver_trip_visual_sequence.dart';
 
 const driverDutyPath = '/api/driver/me/';
@@ -989,6 +990,8 @@ class DriverAssignedTripsScreen extends StatefulWidget {
     this.offerSubmissionTelemetryQaEnabled =
         driverOfferSubmissionTelemetryQaEnabled,
     this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
+    this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
     super.key,
   });
 
@@ -998,6 +1001,8 @@ class DriverAssignedTripsScreen extends StatefulWidget {
   final ApiDriverRatingGateway? ratingGateway;
   final bool offerSubmissionTelemetryQaEnabled;
   final bool tripActionTelemetryQaEnabled;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
 
   @override
   State<DriverAssignedTripsScreen> createState() =>
@@ -1137,6 +1142,10 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                                 widget.offerSubmissionTelemetryQaEnabled,
                             tripActionTelemetryQaEnabled:
                                 widget.tripActionTelemetryQaEnabled,
+                            driverTrustedContactRepository:
+                                widget.driverTrustedContactRepository,
+                            driverSafetyAlertRepository:
+                                widget.driverSafetyAlertRepository,
                             onRefreshTripList: () async {
                               if (mounted) {
                                 _refresh();
@@ -1172,6 +1181,8 @@ class DriverTripDetailScreen extends StatefulWidget {
         driverOfferSubmissionTelemetryQaEnabled,
     this.tripActionTelemetryQaEnabled = driverTripActionTelemetryQaEnabled,
     this.onRefreshTripList,
+    this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
     super.key,
   });
 
@@ -1183,6 +1194,8 @@ class DriverTripDetailScreen extends StatefulWidget {
   final bool offerSubmissionTelemetryQaEnabled;
   final bool tripActionTelemetryQaEnabled;
   final Future<void> Function()? onRefreshTripList;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
 
   @override
   State<DriverTripDetailScreen> createState() => _DriverTripDetailScreenState();
@@ -1387,12 +1400,15 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
         builder: (_) => DriverTripVisualSequencePage(
           actionRecorder: controller,
           initialStatus: trip.status,
+          tripReference: trip.reference,
           pickupLocation: trip.pickupLocation,
           destination: trip.destination,
           passengerCount: trip.passengerCount,
           passengerNote: trip.passengerNote,
           onActionRejected: _handleRejectedAction,
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
+          driverTrustedContactRepository: widget.driverTrustedContactRepository,
+          driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
         ),
       ),
     );

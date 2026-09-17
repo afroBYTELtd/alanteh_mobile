@@ -458,7 +458,9 @@ void main() {
     expect(source, isNot(contains('/api/logout')));
     expect(source, isNot(contains('session/validate')));
     expect(source, isNot(contains('GoogleMap')));
-    expect(source, isNot(contains('geolocator')));
+    // geolocator was banned when the Driver App had no GPS need at all;
+    // DRIVER-APP-SAFETY-FEATURES' Alert Dispatch legitimately captures
+    // best-effort device location for a driver-initiated safety alert.
     expect(source, isNot(contains(['fake', 'token'].join(' '))));
     expect(source, isNot(contains(['fake', 'Token'].join())));
   });

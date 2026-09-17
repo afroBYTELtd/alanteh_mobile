@@ -401,6 +401,7 @@ class DriverApp extends StatelessWidget {
     this.driverShiftCheckController,
     this.driverReportGateway,
     this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
     super.key,
@@ -419,6 +420,7 @@ class DriverApp extends StatelessWidget {
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
   final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
 
@@ -504,6 +506,13 @@ class DriverApp extends StatelessWidget {
           baseUrl: apiBaseUrl,
         );
 
+    final safetyAlertRepository =
+        driverSafetyAlertRepository ??
+        ApiDriverSafetyAlertRepository.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
+
     final ratingGateway = _driverRatingGatewayFor(
       baseUrl: apiBaseUrl,
       tokenStore: tokenStore,
@@ -523,6 +532,7 @@ class DriverApp extends StatelessWidget {
             driverReportGateway: reportGateway,
             driverRatingGateway: ratingGateway,
             driverTrustedContactRepository: trustedContactRepository,
+            driverSafetyAlertRepository: safetyAlertRepository,
             accessTokenRefresh: sessionRefreshController?.refresh,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             pushMessageSource: pushMessageSource,
@@ -538,6 +548,7 @@ class DriverApp extends StatelessWidget {
             driverReportGateway: reportGateway,
             driverRatingGateway: ratingGateway,
             driverTrustedContactRepository: trustedContactRepository,
+            driverSafetyAlertRepository: safetyAlertRepository,
           );
 
     return MaterialApp(
@@ -577,6 +588,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverReportGateway,
     this.driverRatingGateway,
     this.driverTrustedContactRepository,
+    this.driverSafetyAlertRepository,
     this.accessTokenRefresh,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
@@ -595,6 +607,7 @@ class DriverLoginShell extends StatefulWidget {
   final DriverReportGateway? driverReportGateway;
   final ApiDriverRatingGateway? driverRatingGateway;
   final DriverTrustedContactRepository? driverTrustedContactRepository;
+  final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final DriverAccessTokenRefresh? accessTokenRefresh;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
@@ -912,6 +925,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           offerResponseControllerFactory:
               _sessionAwareOfferResponseControllerFactory,
           ratingGateway: widget.driverRatingGateway,
+          driverTrustedContactRepository: widget.driverTrustedContactRepository,
+          driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
         ),
       ),
     );
@@ -964,6 +979,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
         driverTrustedContactRepository: widget.driverTrustedContactRepository,
+        driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
       );
       return _signedIn &&
               (_pushDeviceRegistrar != null || widget.pushMessageSource != null)

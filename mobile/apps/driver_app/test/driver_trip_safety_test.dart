@@ -191,6 +191,70 @@ void main() {
     expect(find.text('+233555000222'), findsWidgets);
     expect(find.text('Trusted contact saved.'), findsOneWidget);
   });
+
+  test('test_safety_alert_sends_all_fields_to_the_correct_endpoint', () async {
+    final gateway = _RecordingSafetyAlertApiGateway();
+    final repository = ApiDriverSafetyAlertRepository(
+      apiGateway: gateway,
+      tokenStore: _MemoryAuthTokenStore('test-access-token'),
+      connectionConfigured: true,
+    );
+
+    await repository.send(
+      tripReference: 'TRIP-ABC123',
+      latitude: 5.605,
+      longitude: -0.1668,
+    );
+
+    expect(gateway.postPaths, <String>[driverSafetyAlertEndpoint]);
+    expect(gateway.postBodies.single, <String, Object?>{
+      'trip_reference': 'TRIP-ABC123',
+      'latitude': '5.605',
+      'longitude': '-0.1668',
+    });
+  });
+
+  test('test_safety_alert_omits_unset_fields', () async {
+    final gateway = _RecordingSafetyAlertApiGateway();
+    final repository = ApiDriverSafetyAlertRepository(
+      apiGateway: gateway,
+      tokenStore: _MemoryAuthTokenStore('test-access-token'),
+      connectionConfigured: true,
+    );
+
+    await repository.send();
+
+    expect(gateway.postBodies.single, <String, Object?>{});
+  });
+
+  test('test_safety_alert_throws_when_api_rejects', () async {
+    final gateway = _RecordingSafetyAlertApiGateway(succeed: false);
+    final repository = ApiDriverSafetyAlertRepository(
+      apiGateway: gateway,
+      tokenStore: _MemoryAuthTokenStore('test-access-token'),
+      connectionConfigured: true,
+    );
+
+    await expectLater(
+      repository.send(tripReference: 'TRIP-ABC123'),
+      throwsA(isA<DriverSafetyAlertException>()),
+    );
+  });
+
+  test('test_safety_alert_requires_sign_in', () async {
+    final gateway = _RecordingSafetyAlertApiGateway();
+    final repository = ApiDriverSafetyAlertRepository(
+      apiGateway: gateway,
+      tokenStore: _MemoryAuthTokenStore(null),
+      connectionConfigured: true,
+    );
+
+    await expectLater(
+      repository.send(),
+      throwsA(isA<DriverSafetyAlertException>()),
+    );
+    expect(gateway.postPaths, isEmpty);
+  });
 }
 
 final class _MemoryTrustedContactRepository
@@ -249,6 +313,38 @@ final class _RecordingTrustedContactApiGateway
     patchPaths.add(path);
     patchBodies.add(Map<String, Object?>.of(data));
     return ApiResponse.success(Map<String, Object?>.of(data), statusCode: 200);
+  }
+}
+
+final class _RecordingSafetyAlertApiGateway
+    implements DriverSafetyAlertApiGateway {
+  _RecordingSafetyAlertApiGateway({this.succeed = true});
+
+  final bool succeed;
+  final List<String> postPaths = <String>[];
+  final List<Map<String, Object?>> postBodies = <Map<String, Object?>>[];
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) async {
+    postPaths.add(path);
+    postBodies.add(Map<String, Object?>.of(data));
+
+    if (!succeed) {
+      return ApiResponse.apiFailure(
+        const AsmApiException(
+          type: AsmApiExceptionType.server,
+          message: 'Unable to send your alert.',
+        ),
+      );
+    }
+
+    return ApiResponse.success(
+      <String, Object?>{'id': 1, 'status': 'received'},
+      statusCode: 201,
+    );
   }
 }
 
