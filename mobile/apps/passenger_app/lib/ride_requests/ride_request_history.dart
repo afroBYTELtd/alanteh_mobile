@@ -1022,17 +1022,22 @@ class _TripsFilterTabs extends StatelessWidget {
   Widget _button(_TripsFilter filter, String label) {
     final selected = selectedFilter == filter;
 
+    final child = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(label, softWrap: false),
+    );
+
     return Expanded(
       child: selected
           ? FilledButton(
               key: Key('trip-filter-${filter.name}'),
               onPressed: () => onSelected(filter),
-              child: Text(label),
+              child: child,
             )
           : OutlinedButton(
               key: Key('trip-filter-${filter.name}'),
               onPressed: () => onSelected(filter),
-              child: Text(label),
+              child: child,
             ),
     );
   }
