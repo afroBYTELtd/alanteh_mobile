@@ -15,6 +15,8 @@ import 'network/driver_trip_action_resilience.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'readiness/driver_shift_check_submission.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
+import 'safety/driver_safety_settings_screen.dart';
+import 'safety/driver_trip_safety.dart';
 import 'shift/driver_shift_history.dart';
 
 void _startupGateDiag(String message) {
@@ -70,6 +72,7 @@ class DriverShell extends StatefulWidget {
     this.driverShiftCheckController,
     this.driverReportGateway,
     this.driverRatingGateway,
+    this.driverTrustedContactRepository,
     this.deviceNow,
     this.onlineTransitionDuration = const Duration(seconds: 2),
     super.key,
@@ -86,6 +89,7 @@ class DriverShell extends StatefulWidget {
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
   final ApiDriverRatingGateway? driverRatingGateway;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
   final DateTime Function()? deviceNow;
   final Duration onlineTransitionDuration;
 
@@ -517,6 +521,19 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
+  Future<void> _openSafetySettings() async {
+    final repository = widget.driverTrustedContactRepository;
+    if (repository == null) {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => DriverSafetySettingsScreen(repository: repository),
+      ),
+    );
+  }
+
   Future<void> _openReadiness() async {
     _startupGateDiag(
       'open_readiness invoked '
@@ -890,6 +907,9 @@ class _DriverShellState extends State<DriverShell> {
       _ => _DriverAccountPage(
         currentShift: _currentShift,
         onOpenShiftHistory: _openShiftHistory,
+        onOpenSafetySettings: widget.driverTrustedContactRepository == null
+            ? null
+            : _openSafetySettings,
         onSignOut: widget.onSignOut == null ? null : _signOut,
       ),
     };
@@ -978,11 +998,13 @@ class _DriverAccountPage extends StatelessWidget {
     required this.currentShift,
     required this.onOpenShiftHistory,
     required this.onSignOut,
+    this.onOpenSafetySettings,
   });
 
   final DriverShiftRecord currentShift;
   final VoidCallback onOpenShiftHistory;
   final Future<void> Function()? onSignOut;
+  final Future<void> Function()? onOpenSafetySettings;
 
   @override
   Widget build(BuildContext context) {
@@ -1091,6 +1113,31 @@ class _DriverAccountPage extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right),
             ),
           ),
+          if (onOpenSafetySettings != null) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            Material(
+              color: AsmColors.driverCard,
+              borderRadius: BorderRadius.circular(AsmRadii.radius24),
+              child: ListTile(
+                key: const Key('driver-account-safety-emergency'),
+                onTap: onOpenSafetySettings,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AsmRadii.radius24),
+                  side: const BorderSide(color: AsmColors.driverLine),
+                ),
+                leading: const Icon(
+                  Icons.health_and_safety_outlined,
+                  color: AsmColors.driverMintAction,
+                ),
+                title: const Text(
+                  'Safety & emergency',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: const Text('Trusted contact and trip safety'),
+                trailing: const Icon(Icons.chevron_right),
+              ),
+            ),
+          ],
           if (onSignOut != null) ...[
             const SizedBox(height: AsmSpacing.space24),
             AsmPrimaryActionButton(
