@@ -51,6 +51,8 @@ dependencies:
   flutter_map: ^8.1.1
   connectivity_plus: ^7.3.0
   latlong2: ^0.9.1
+  url_launcher: ^6.3.2
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

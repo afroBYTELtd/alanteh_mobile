@@ -23,6 +23,7 @@ import 'network/ghana_network_resilience.dart';
 import 'notifications/push_device_registration.dart';
 import 'notifications/push_notification_runtime.dart';
 import 'readiness/driver_shift_check_submission.dart';
+import 'safety/driver_trip_safety.dart';
 
 export 'driver_shell.dart';
 
@@ -399,6 +400,7 @@ class DriverApp extends StatelessWidget {
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
     this.driverReportGateway,
+    this.driverTrustedContactRepository,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
     super.key,
@@ -416,6 +418,7 @@ class DriverApp extends StatelessWidget {
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
 
@@ -494,6 +497,13 @@ class DriverApp extends StatelessWidget {
               )
             : null);
 
+    final trustedContactRepository =
+        driverTrustedContactRepository ??
+        ApiDriverTrustedContactRepository.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
+
     final ratingGateway = _driverRatingGatewayFor(
       baseUrl: apiBaseUrl,
       tokenStore: tokenStore,
@@ -512,6 +522,7 @@ class DriverApp extends StatelessWidget {
             driverShiftCheckController: shiftCheckController,
             driverReportGateway: reportGateway,
             driverRatingGateway: ratingGateway,
+            driverTrustedContactRepository: trustedContactRepository,
             accessTokenRefresh: sessionRefreshController?.refresh,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             pushMessageSource: pushMessageSource,
@@ -526,6 +537,7 @@ class DriverApp extends StatelessWidget {
             driverShiftCheckController: shiftCheckController,
             driverReportGateway: reportGateway,
             driverRatingGateway: ratingGateway,
+            driverTrustedContactRepository: trustedContactRepository,
           );
 
     return MaterialApp(
@@ -564,6 +576,7 @@ class DriverLoginShell extends StatefulWidget {
     this.driverShiftCheckController,
     this.driverReportGateway,
     this.driverRatingGateway,
+    this.driverTrustedContactRepository,
     this.accessTokenRefresh,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
@@ -581,6 +594,7 @@ class DriverLoginShell extends StatefulWidget {
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
   final ApiDriverRatingGateway? driverRatingGateway;
+  final DriverTrustedContactRepository? driverTrustedContactRepository;
   final DriverAccessTokenRefresh? accessTokenRefresh;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
@@ -949,6 +963,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         driverShiftCheckController: widget.driverShiftCheckController,
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
+        driverTrustedContactRepository: widget.driverTrustedContactRepository,
       );
       return _signedIn &&
               (_pushDeviceRegistrar != null || widget.pushMessageSource != null)
