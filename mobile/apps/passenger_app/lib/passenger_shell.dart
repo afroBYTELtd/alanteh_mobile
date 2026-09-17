@@ -413,6 +413,7 @@ class _PassengerShellState extends State<PassengerShell> {
       ),
       _ => PassengerAccountScreen(
         phoneNumber: widget.phoneNumber,
+        passengerName: widget.passengerName,
         paymentMethodLabel: _paymentNetwork.accountLabel,
         onOpenPaymentSetup: _openPaymentSetup,
         onOpenTrips: _openTripsTab,

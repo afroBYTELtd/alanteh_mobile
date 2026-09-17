@@ -22,11 +22,27 @@ String formatPassengerPhoneNumber(String? phoneNumber) {
   return '+${match.group(1)} ${match.group(2)} ****${match.group(4)}';
 }
 
+const _defaultPassengerDisplayName = 'ALANTEH Member';
+const _defaultPassengerAvatarInitial = 'M';
+
+String formatPassengerDisplayName(String? passengerName) {
+  final value = passengerName?.trim();
+  return value == null || value.isEmpty ? _defaultPassengerDisplayName : value;
+}
+
+String formatPassengerAvatarInitial(String? passengerName) {
+  final value = passengerName?.trim();
+  return value == null || value.isEmpty
+      ? _defaultPassengerAvatarInitial
+      : value[0].toUpperCase();
+}
+
 class PassengerAccountScreen extends StatelessWidget {
   const PassengerAccountScreen({
     required this.phoneNumber,
     required this.onOpenTrips,
     required this.onSignOut,
+    this.passengerName,
     this.paymentMethodLabel = 'MTN MoMo',
     this.onOpenPaymentSetup,
     this.onHelp,
@@ -35,6 +51,7 @@ class PassengerAccountScreen extends StatelessWidget {
   });
 
   final String? phoneNumber;
+  final String? passengerName;
   final VoidCallback onOpenTrips;
   final VoidCallback onSignOut;
   final String paymentMethodLabel;
@@ -92,6 +109,8 @@ class PassengerAccountScreen extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final maskedPhoneNumber = formatPassengerPhoneNumber(phoneNumber);
+    final displayName = formatPassengerDisplayName(passengerName);
+    final avatarInitial = formatPassengerAvatarInitial(passengerName);
 
     return AsmScreenSurface(
       key: const Key('passenger-account-screen'),
@@ -125,13 +144,13 @@ class PassengerAccountScreen extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const CircleAvatar(
-                      key: Key('passenger-account-avatar'),
+                    CircleAvatar(
+                      key: const Key('passenger-account-avatar'),
                       radius: 32,
                       backgroundColor: AsmColors.brandDeepGreen,
                       child: Text(
-                        'M',
-                        style: TextStyle(
+                        avatarInitial,
+                        style: const TextStyle(
                           color: AsmColors.brandWhite,
                           fontSize: 25,
                           fontWeight: FontWeight.w900,
@@ -144,7 +163,7 @@ class PassengerAccountScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'ALANTEH Member',
+                            displayName,
                             key: const Key('passenger-account-name'),
                             style: textTheme.titleLarge?.copyWith(
                               color: const Color(0xFF171B12),
