@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'driver_duty_trips.dart';
 import 'network/driver_rating_gateway.dart';
@@ -328,6 +329,10 @@ class DriverOfferTelemetryInitializationGate extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Driver',
       theme: AsmThemes.driver,
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: AsmSystemChrome.driver,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: Scaffold(
         key: const Key('driver-telemetry-initialization-gate'),
         backgroundColor: AsmColors.driverVisualSurface,
@@ -527,14 +532,21 @@ class DriverApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Driver',
       theme: AsmThemes.driver,
-      builder: enableNetworkResilience
-          ? (context, child) => GhanaNetworkStatusBanner(
-              baseUrl: apiBaseUrl,
-              offlineMessage:
-                  'Poor or no connection. Driver data stays visible and safe retries remain bounded.',
-              child: child ?? const SizedBox.shrink(),
-            )
-          : null,
+      builder: (context, child) {
+        final content = enableNetworkResilience
+            ? GhanaNetworkStatusBanner(
+                baseUrl: apiBaseUrl,
+                offlineMessage:
+                    'Poor or no connection. Driver data stays visible and safe retries remain bounded.',
+                child: child ?? const SizedBox.shrink(),
+              )
+            : (child ?? const SizedBox.shrink());
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: AsmSystemChrome.driver,
+          child: content,
+        );
+      },
       home: showSplash ? DriverSplashGate(child: home) : home,
     );
   }
