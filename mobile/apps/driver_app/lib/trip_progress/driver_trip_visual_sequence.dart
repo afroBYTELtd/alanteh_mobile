@@ -358,7 +358,9 @@ class _DriverTripVisualSequencePageState
             'Trip completed — awaiting operations review',
         }),
       ),
-      body: switch (stage) {
+      body: Column(
+        children: [
+          Expanded(child: switch (stage) {
         DriverTripVisualStage.navigatingToPickup => _DriverMapStage(
           key: const Key('driver-navigate-to-pickup'),
           route: safeDriverPickupRouteFallback(),
@@ -441,37 +443,19 @@ class _DriverTripVisualSequencePageState
           passengerCount: passengerCount,
           onBackToHome: _backToHome,
         ),
-      },
-      persistentFooterButtons: [
-        TextButton.icon(
-          key: const Key('driver-trip-safety-emergency'),
-          onPressed: _openEmergency191,
-          icon: const Icon(Icons.local_police_outlined),
-          label: const Text('Emergency 191'),
-        ),
-        TextButton.icon(
-          key: const Key('driver-trip-safety-message-contact'),
-          onPressed: widget.driverTrustedContactRepository == null
-              ? null
-              : _messageTrustedContact,
-          icon: const Icon(Icons.sms_outlined),
-          label: const Text('Message contact'),
-        ),
-        TextButton.icon(
-          key: const Key('driver-trip-safety-alert-dispatch'),
-          onPressed:
-              widget.driverSafetyAlertRepository == null || _sendingAlert
-              ? null
-              : _sendSafetyAlert,
-          icon: _sendingAlert
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.warning_amber_outlined),
-          label: Text(_sendingAlert ? 'Sending…' : 'Alert dispatch'),
-        ),
-      ],
+          }),
+          _DriverTripSafetyActionsBar(
+            onEmergency191: _openEmergency191,
+            onMessageContact: widget.driverTrustedContactRepository == null
+                ? null
+                : _messageTrustedContact,
+            onSendAlert: widget.driverSafetyAlertRepository == null || _sendingAlert
+                ? null
+                : _sendSafetyAlert,
+            sendingAlert: _sendingAlert,
+          ),
+        ],
+      ),
       bottomNavigationBar: widget.tripActionTelemetryQaEnabled
           ? _DriverTripActionTelemetryPanel(
               events: List<DriverTripActionTelemetryEvent>.unmodifiable(
@@ -479,6 +463,112 @@ class _DriverTripVisualSequencePageState
               ),
             )
           : null,
+    );
+  }
+}
+
+class _DriverTripSafetyActionsBar extends StatelessWidget {
+  const _DriverTripSafetyActionsBar({
+    required this.onEmergency191,
+    required this.onMessageContact,
+    required this.onSendAlert,
+    required this.sendingAlert,
+  });
+
+  final VoidCallback onEmergency191;
+  final VoidCallback? onMessageContact;
+  final VoidCallback? onSendAlert;
+  final bool sendingAlert;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AsmColors.driverCard,
+          border: Border(top: BorderSide(color: AsmColors.driverLine)),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space8,
+          vertical: AsmSpacing.space8,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _SafetyActionButton(
+                buttonKey: const Key('driver-trip-safety-emergency'),
+                onPressed: onEmergency191,
+                icon: Icons.local_police_outlined,
+                label: 'Emergency 191',
+              ),
+            ),
+            Expanded(
+              child: _SafetyActionButton(
+                buttonKey: const Key('driver-trip-safety-message-contact'),
+                onPressed: onMessageContact,
+                icon: Icons.sms_outlined,
+                label: 'Message contact',
+              ),
+            ),
+            Expanded(
+              child: _SafetyActionButton(
+                buttonKey: const Key('driver-trip-safety-alert-dispatch'),
+                onPressed: onSendAlert,
+                icon: sendingAlert ? null : Icons.warning_amber_outlined,
+                loading: sendingAlert,
+                label: sendingAlert ? 'Sending…' : 'Alert dispatch',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SafetyActionButton extends StatelessWidget {
+  const _SafetyActionButton({
+    required this.buttonKey,
+    required this.onPressed,
+    required this.label,
+    this.icon,
+    this.loading = false,
+  });
+
+  final Key buttonKey;
+  final VoidCallback? onPressed;
+  final String label;
+  final IconData? icon;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      key: buttonKey,
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space4,
+          vertical: AsmSpacing.space8,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          loading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(icon, size: 20),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label, softWrap: false, style: const TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
     );
   }
 }

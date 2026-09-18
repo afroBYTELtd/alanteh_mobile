@@ -7,6 +7,7 @@ import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
 import 'package:driver_app/trip_progress/driver_trip_route.dart';
 import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
+import 'package:driver_app/safety/driver_trip_safety.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -555,6 +556,71 @@ void main() {
     expect(pickup.points.first, driverPickupStaticPosition);
     expect(destination.points.last, driverDestinationPosition);
   });
+
+  testWidgets(
+    'all three trip safety buttons render with non-zero size',
+    (tester) async {
+      _useSurface(tester);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverTripVisualSequencePage(
+            pickupLocation: _authoritativePickup,
+            destination: _authoritativeDestination,
+            passengerCount: _authoritativePassengerCount,
+            driverTrustedContactRepository: _FakeDriverTrustedContactRepository(),
+            driverSafetyAlertRepository: _FakeDriverSafetyAlertRepository(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      for (final key in const [
+        'driver-trip-safety-emergency',
+        'driver-trip-safety-message-contact',
+        'driver-trip-safety-alert-dispatch',
+      ]) {
+        final finder = find.byKey(Key(key));
+        expect(finder, findsOneWidget, reason: key);
+
+        final size = tester.getSize(finder);
+        expect(
+          size.width,
+          greaterThan(0),
+          reason: '$key should have a non-zero rendered width',
+        );
+        expect(
+          size.height,
+          greaterThan(0),
+          reason: '$key should have a non-zero rendered height',
+        );
+      }
+    },
+  );
+}
+
+final class _FakeDriverTrustedContactRepository
+    implements DriverTrustedContactRepository {
+  @override
+  Future<DriverTrustedContact> fetch() async =>
+      const DriverTrustedContact(name: 'Ama Mensah', phone: '+233555000111');
+
+  @override
+  Future<DriverTrustedContact> save({
+    required String name,
+    required String phone,
+  }) async => DriverTrustedContact(name: name, phone: phone);
+}
+
+final class _FakeDriverSafetyAlertRepository
+    implements DriverSafetyAlertRepository {
+  @override
+  Future<void> send({
+    String? tripReference,
+    double? latitude,
+    double? longitude,
+  }) async {}
 }
 
 Future<void> _openActiveTrip(WidgetTester tester) async {
