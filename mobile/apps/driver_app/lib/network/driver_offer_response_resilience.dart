@@ -4,6 +4,7 @@ import 'driver_offer_response_gateway.dart';
 import 'driver_trip_action_resilience.dart';
 
 const driverOfferAcceptanceEventIdentity = 'driver-offer-accept';
+const driverOfferDeclineEventIdentity = 'driver-offer-decline';
 
 final class DriverOfferVerifiedTrip {
   const DriverOfferVerifiedTrip({
@@ -96,6 +97,10 @@ final class DriverOfferAcceptanceResult {
       disposition == DriverOfferAcceptanceDisposition.accepted ||
       disposition == DriverOfferAcceptanceDisposition.duplicateRecovered;
 
+  /// Same check as [accepted], named for readability at decline() call
+  /// sites where "accepted" would read confusingly.
+  bool get succeeded => accepted;
+
   bool get permitsManualRetry =>
       disposition == DriverOfferAcceptanceDisposition.retryableFailure ||
       error?.permitsManualRetry == true;
@@ -126,6 +131,10 @@ final class DriverOfferResponseResilienceController {
   DriverOfferResponseReceipt? _confirmedReceipt;
   QueuedEvent? _confirmedEvent;
 
+  Future<DriverOfferAcceptanceResult>? _declineInFlight;
+  DriverOfferResponseReceipt? _confirmedDeclineReceipt;
+  QueuedEvent? _confirmedDeclineEvent;
+
   String get _normalizedTripReference {
     final normalized = tripReference.trim();
     if (normalized.isEmpty) {
@@ -154,6 +163,16 @@ final class DriverOfferResponseResilienceController {
       'driver-offer-accept:${_normalizedTripReference.toLowerCase()}';
 
   String get _keyPrefix => 'DRIVER-OFFER-$_normalizedTripReference-';
+
+  String get _declineEventType =>
+      '${driverOfferResponsePath(_normalizedTripReference)}'
+      '$driverOfferDeclineEventIdentity';
+
+  String get _declineRecordId =>
+      'driver-offer-decline:${_normalizedTripReference.toLowerCase()}';
+
+  String get _declineKeyPrefix =>
+      'DRIVER-OFFER-DECLINE-$_normalizedTripReference-';
 
   void attachSubmissionTelemetrySink(
     DriverOfferSubmissionTelemetrySink? telemetrySink,
@@ -276,6 +295,45 @@ final class DriverOfferResponseResilienceController {
     return accept();
   }
 
+  Future<DriverOfferAcceptanceResult> decline({
+    required DriverDeclineReason reason,
+    String? reasonNote,
+  }) {
+    final existing = _declineInFlight;
+    if (existing != null) {
+      return existing;
+    }
+
+    final normalizedNote = reasonNote?.trim() ?? '';
+    final operation = _confirmedDeclineReceipt == null
+        ? _declinePersistedRequest(reason: reason, reasonNote: normalizedNote)
+        : _verifyConfirmedDeclineReceipt();
+    _declineInFlight = operation;
+
+    void clearInFlight() {
+      if (identical(_declineInFlight, operation)) {
+        _declineInFlight = null;
+      }
+    }
+
+    operation.then<void>(
+      (_) {
+        clearInFlight();
+      },
+      onError: (Object _, StackTrace _) {
+        clearInFlight();
+      },
+    );
+    return operation;
+  }
+
+  Future<DriverOfferAcceptanceResult> retryDecline({
+    required DriverDeclineReason reason,
+    String? reasonNote,
+  }) {
+    return decline(reason: reason, reasonNote: reasonNote);
+  }
+
   Future<DriverOfferAcceptanceResult> _acceptPersistedRequest() async {
     var event = await prepareWhenOfferDisplayed();
     event = await _persistFirstTapTimestamp(event);
@@ -367,6 +425,316 @@ final class DriverOfferResponseResilienceController {
         },
         event: event,
         error: error,
+      );
+    }
+  }
+
+  Future<QueuedEvent> _prepareDeclineRecord({
+    required DriverDeclineReason reason,
+    required String reasonNote,
+  }) async {
+    final normalizedTripReference = _normalizedTripReference;
+    final normalizedDriverId = _normalizedDriverId;
+    final recordId = _declineRecordId;
+    final eventType = _declineEventType;
+    final keyPrefix = _declineKeyPrefix;
+
+    QueuedEvent? persisted;
+    List<QueuedEvent> pending;
+
+    try {
+      persisted = await queue.eventById(recordId);
+      pending = await queue.pendingEvents();
+    } on DriverOfferPreparationException {
+      rethrow;
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.persistentQueueOpenOrReadFailed,
+      );
+    }
+
+    final conflictingMatches = pending
+        .where(
+          (event) =>
+              event.id != recordId &&
+              event.tripReference == normalizedTripReference &&
+              event.driverId == normalizedDriverId &&
+              event.eventType == eventType,
+        )
+        .toList(growable: false);
+
+    if (conflictingMatches.isNotEmpty) {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.conflictingOfferRecord,
+      );
+    }
+
+    if (persisted != null) {
+      _validateExistingDeclineEvent(persisted);
+      return persisted;
+    }
+
+    final seed = QueuedEvent(
+      id: recordId,
+      eventType: eventType,
+      tripReference: normalizedTripReference,
+      driverId: normalizedDriverId,
+      payloadJson: <String, Object?>{
+        'response': driverOfferDeclineResponse,
+        'reason': reason.code,
+        if (reason.requiresNote && reasonNote.isNotEmpty)
+          'reason_note': reasonNote,
+      },
+    );
+
+    final prepared = QueuedEvent(
+      id: seed.id,
+      eventType: seed.eventType,
+      tripReference: seed.tripReference,
+      driverId: seed.driverId,
+      payloadJson: seed.payloadJson,
+      idempotencyKey: '$keyPrefix${seed.idempotencyKey}',
+      deviceTimestamp: seed.deviceTimestamp,
+      syncStatus: QueueSyncStatus.pending,
+      retryCount: seed.retryCount,
+      createdAt: seed.createdAt,
+      updatedAt: seed.updatedAt,
+    );
+
+    try {
+      await queue.enqueue(prepared);
+    } on DriverOfferPreparationException {
+      rethrow;
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.queueEnqueueFailed,
+      );
+    }
+
+    return prepared;
+  }
+
+  Future<DriverOfferAcceptanceResult> _declinePersistedRequest({
+    required DriverDeclineReason reason,
+    required String reasonNote,
+  }) async {
+    var event = await _prepareDeclineRecord(
+      reason: reason,
+      reasonNote: reasonNote,
+    );
+    event = await _persistDeclineFirstTapTimestamp(event);
+
+    _emit(const DriverOfferSubmissionTelemetryEvent.submitStart());
+
+    var queuedTelemetryEmitted = false;
+    final bufferedGatewayTelemetry = <DriverOfferSubmissionTelemetryEvent>[];
+
+    void forwardGatewayTelemetry(
+      DriverOfferSubmissionTelemetryEvent telemetryEvent,
+    ) {
+      if (!queuedTelemetryEmitted &&
+          telemetryEvent.stage ==
+              DriverOfferSubmissionTelemetryStage.requestSent) {
+        _emitSubmissionQueueState(event, startingSubmission: true);
+        queuedTelemetryEmitted = true;
+
+        for (final bufferedEvent in bufferedGatewayTelemetry) {
+          _emit(bufferedEvent);
+        }
+        bufferedGatewayTelemetry.clear();
+
+        _emit(telemetryEvent);
+        return;
+      }
+
+      if (!queuedTelemetryEmitted) {
+        bufferedGatewayTelemetry.add(telemetryEvent);
+        return;
+      }
+
+      _emit(telemetryEvent);
+    }
+
+    try {
+      final timestamp = _persistedTimestamp(event);
+      final persistedReasonCode = event.payloadJson['reason'];
+      final resolvedReason = DriverDeclineReason.values.firstWhere(
+        (candidate) => candidate.code == persistedReasonCode,
+      );
+      final persistedNote = event.payloadJson['reason_note'];
+
+      final receipt = await gateway.decline(
+        tripReference: event.tripReference,
+        idempotencyKey: event.idempotencyKey,
+        deviceTimestamp: timestamp,
+        reason: resolvedReason,
+        reasonNote: persistedNote is String ? persistedNote : null,
+        telemetrySink: _telemetrySink == null ? null : forwardGatewayTelemetry,
+      );
+
+      try {
+        await queue.markSynced(event.id);
+      } on Object {
+        _emitSubmissionQueueState(event, startingSubmission: false);
+        rethrow;
+      }
+      _confirmedDeclineReceipt = receipt;
+      _confirmedDeclineEvent = event;
+      _emit(
+        const DriverOfferSubmissionTelemetryEvent.queueState(
+          DriverOfferSubmissionQueueState.dequeued,
+        ),
+      );
+      _emit(const DriverOfferSubmissionTelemetryEvent.receiptCheck());
+
+      return _verifyConfirmedDeclineReceipt();
+    } on DriverOfferResponseException catch (error) {
+      if (!queuedTelemetryEmitted) {
+        for (final bufferedEvent in bufferedGatewayTelemetry) {
+          _emit(bufferedEvent);
+        }
+        bufferedGatewayTelemetry.clear();
+      }
+
+      _emitSubmissionQueueState(event, startingSubmission: false);
+      if (error.type == DriverOfferResponseFailureType.signInRequired) {
+        final handler = _sessionExpiredHandler;
+        if (handler != null) {
+          try {
+            await handler(error.message);
+          } on Object {
+            // The safe result remains available even if UI transition fails.
+          }
+        }
+      }
+      return DriverOfferAcceptanceResult(
+        disposition: switch (error.type) {
+          DriverOfferResponseFailureType.temporarilyUnavailable =>
+            DriverOfferAcceptanceDisposition.retryableFailure,
+          DriverOfferResponseFailureType.clientFailure =>
+            DriverOfferAcceptanceDisposition.retryableFailure,
+          DriverOfferResponseFailureType.conflict =>
+            DriverOfferAcceptanceDisposition.conflict,
+          _ => DriverOfferAcceptanceDisposition.rejected,
+        },
+        event: event,
+        error: error,
+      );
+    }
+  }
+
+  Future<DriverOfferAcceptanceResult> _verifyConfirmedDeclineReceipt() async {
+    final receipt = _confirmedDeclineReceipt;
+    final event = _confirmedDeclineEvent;
+
+    if (receipt == null || event == null) {
+      throw StateError('No confirmed offer decline is available.');
+    }
+
+    DriverOfferVerifiedTrip refreshedTrip;
+    try {
+      refreshedTrip = await verifyServerState(receipt);
+    } on Object {
+      return DriverOfferAcceptanceResult(
+        disposition: DriverOfferAcceptanceDisposition.retryableFailure,
+        event: event,
+        receipt: receipt,
+        error: const DriverOfferResponseException(
+          type: DriverOfferResponseFailureType.temporarilyUnavailable,
+          message: driverOfferDeclineFailureMessage,
+        ),
+      );
+    }
+
+    if (refreshedTrip.tripReference.trim() != event.tripReference ||
+        refreshedTrip.status.trim() != 'driver_declined') {
+      return DriverOfferAcceptanceResult(
+        disposition: DriverOfferAcceptanceDisposition.retryableFailure,
+        event: event,
+        receipt: receipt,
+        refreshedTrip: refreshedTrip,
+        error: const DriverOfferResponseException(
+          type: DriverOfferResponseFailureType.temporarilyUnavailable,
+          message: driverOfferDeclineFailureMessage,
+        ),
+      );
+    }
+
+    return DriverOfferAcceptanceResult(
+      disposition: receipt.duplicate
+          ? DriverOfferAcceptanceDisposition.duplicateRecovered
+          : DriverOfferAcceptanceDisposition.accepted,
+      event: event,
+      receipt: receipt,
+      refreshedTrip: refreshedTrip,
+    );
+  }
+
+  Future<QueuedEvent> _persistDeclineFirstTapTimestamp(
+    QueuedEvent event,
+  ) async {
+    final existingTimestamp = event.payloadJson['device_timestamp'];
+    if (existingTimestamp is String &&
+        existingTimestamp.trim().isNotEmpty &&
+        DateTime.tryParse(existingTimestamp.trim()) != null) {
+      return event;
+    }
+
+    final timestamp = _utcNow().toUtc();
+    final persisted = QueuedEvent(
+      id: event.id,
+      eventType: event.eventType,
+      tripReference: event.tripReference,
+      driverId: event.driverId,
+      payloadJson: <String, Object?>{
+        ...event.payloadJson,
+        'device_timestamp': timestamp.toIso8601String(),
+      },
+      idempotencyKey: event.idempotencyKey,
+      deviceTimestamp: timestamp,
+      syncStatus: QueueSyncStatus.pending,
+      retryCount: event.retryCount,
+      createdAt: event.createdAt,
+      updatedAt: timestamp,
+    );
+
+    await queue.enqueue(persisted);
+    return persisted;
+  }
+
+  void _validateExistingDeclineEvent(QueuedEvent event) {
+    final rawTimestamp = event.payloadJson['device_timestamp'];
+    final parsedTimestamp = rawTimestamp is String
+        ? DateTime.tryParse(rawTimestamp.trim())
+        : null;
+    final timestampIsValid =
+        rawTimestamp == null ||
+        (rawTimestamp is String &&
+            rawTimestamp.trim().isNotEmpty &&
+            parsedTimestamp != null &&
+            parsedTimestamp.timeZoneOffset == Duration.zero);
+
+    final rawReason = event.payloadJson['reason'];
+    final reasonIsValid =
+        rawReason is String &&
+        DriverDeclineReason.values.any((candidate) => candidate.code == rawReason);
+
+    final rawNote = event.payloadJson['reason_note'];
+    final noteIsValid = rawNote == null || rawNote is String;
+
+    if (event.id != _declineRecordId ||
+        event.eventType != _declineEventType ||
+        event.tripReference != _normalizedTripReference ||
+        event.driverId != _normalizedDriverId ||
+        event.idempotencyKey.isEmpty ||
+        !event.idempotencyKey.startsWith(_declineKeyPrefix) ||
+        event.idempotencyKey.length <= _declineKeyPrefix.length ||
+        event.payloadJson['response'] != driverOfferDeclineResponse ||
+        !reasonIsValid ||
+        !noteIsValid ||
+        !timestampIsValid) {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.invalidOfferRecord,
       );
     }
   }

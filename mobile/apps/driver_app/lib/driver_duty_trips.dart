@@ -1206,8 +1206,12 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
   bool _openingLiveActions = false;
   bool _preparingOfferResponse = false;
   bool _submittingOfferResponse = false;
+  bool _submittingDeclineResponse = false;
   DriverOfferResponseResilienceController? _offerResponseController;
   DriverOfferAcceptanceResult? _offerAcceptanceResult;
+  DriverOfferAcceptanceResult? _declineResult;
+  DriverDeclineReason? _lastDeclineReason;
+  String? _lastDeclineReasonNote;
   String? _offerPreparationStatus;
   final List<DriverOfferSubmissionTelemetryEvent>
   _offerSubmissionTelemetryEvents = [];
@@ -1347,6 +1351,89 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           : widget.gateway.fetchTripDetail(widget.tripReference);
     });
     await widget.onRefreshTripList?.call();
+  }
+
+  Future<void> _openDeclineOffer() async {
+    final controller = _offerResponseController;
+    if (controller == null ||
+        _submittingOfferResponse ||
+        _submittingDeclineResponse) {
+      return;
+    }
+
+    final selection = await showModalBottomSheet<_DriverDeclineSelection>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const _DriverDeclineReasonSheet(),
+    );
+
+    if (selection == null || !mounted) {
+      return;
+    }
+
+    await _declineOffer(
+      reason: selection.reason,
+      reasonNote: selection.reasonNote,
+      manualRetry: false,
+    );
+  }
+
+  Future<void> _declineOffer({
+    required DriverDeclineReason reason,
+    String? reasonNote,
+    required bool manualRetry,
+  }) async {
+    final controller = _offerResponseController;
+    if (controller == null || _submittingDeclineResponse) {
+      return;
+    }
+
+    setState(() {
+      _submittingDeclineResponse = true;
+      _declineResult = null;
+      _lastDeclineReason = reason;
+      _lastDeclineReasonNote = reasonNote;
+      if (widget.offerSubmissionTelemetryQaEnabled) {
+        _offerSubmissionTelemetryEvents.clear();
+      }
+    });
+
+    final result = manualRetry
+        ? await controller.retryDecline(reason: reason, reasonNote: reasonNote)
+        : await controller.decline(reason: reason, reasonNote: reasonNote);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _submittingDeclineResponse = false;
+      _declineResult = result;
+    });
+
+    if (!result.succeeded) {
+      return;
+    }
+
+    final refreshedSource = result.refreshedTrip?.source;
+    setState(() {
+      _future = refreshedSource is DriverAssignedTrip
+          ? Future<DriverAssignedTrip>.value(refreshedSource)
+          : widget.gateway.fetchTripDetail(widget.tripReference);
+    });
+    await widget.onRefreshTripList?.call();
+  }
+
+  Future<void> _retryDeclineOffer() {
+    final reason = _lastDeclineReason;
+    if (reason == null) {
+      return Future<void>.value();
+    }
+    return _declineOffer(
+      reason: reason,
+      reasonNote: _lastDeclineReasonNote,
+      manualRetry: true,
+    );
   }
 
   Future<void> _openRating(DriverAssignedTrip trip) async {
@@ -1505,6 +1592,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
               offerPrepared: _offerResponseController != null,
               offerPreparationStatus: _offerPreparationStatus,
               offerAcceptanceResult: _offerAcceptanceResult,
+              offerDeclineSubmitting: _submittingDeclineResponse,
+              offerDeclineResult: _declineResult,
               offerSubmissionTelemetryInitializationStatus:
                   _offerSubmissionTelemetryInitializationStatus,
               offerSubmissionTelemetryEvents:
@@ -1514,6 +1603,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
               onAcceptOffer: () => _acceptOffer(manualRetry: false),
               onRetryPreparation: () => _retryOfferPreparation(trip),
               onRetryOffer: () => _acceptOffer(manualRetry: true),
+              onDeclineOffer: _openDeclineOffer,
+              onRetryDeclineOffer: _retryDeclineOffer,
             );
           },
         ),
@@ -1605,11 +1696,15 @@ class _DriverTripDetailCard extends StatelessWidget {
     required this.offerPrepared,
     required this.offerPreparationStatus,
     required this.offerAcceptanceResult,
+    required this.offerDeclineSubmitting,
+    required this.offerDeclineResult,
     required this.offerSubmissionTelemetryInitializationStatus,
     required this.offerSubmissionTelemetryEvents,
     required this.onAcceptOffer,
     required this.onRetryPreparation,
     required this.onRetryOffer,
+    required this.onDeclineOffer,
+    required this.onRetryDeclineOffer,
   });
 
   final DriverAssignedTrip trip;
@@ -1623,12 +1718,16 @@ class _DriverTripDetailCard extends StatelessWidget {
   final bool offerPrepared;
   final String? offerPreparationStatus;
   final DriverOfferAcceptanceResult? offerAcceptanceResult;
+  final bool offerDeclineSubmitting;
+  final DriverOfferAcceptanceResult? offerDeclineResult;
   final String? offerSubmissionTelemetryInitializationStatus;
   final List<DriverOfferSubmissionTelemetryEvent>
   offerSubmissionTelemetryEvents;
   final VoidCallback onAcceptOffer;
   final VoidCallback onRetryPreparation;
   final VoidCallback onRetryOffer;
+  final VoidCallback onDeclineOffer;
+  final VoidCallback onRetryDeclineOffer;
 
   @override
   Widget build(BuildContext context) {
@@ -1706,7 +1805,11 @@ class _DriverTripDetailCard extends StatelessWidget {
             const SizedBox(height: AsmSpacing.space12),
             FilledButton.icon(
               key: const Key('driver-accept-offer'),
-              onPressed: offerPrepared && !offerPreparing && !offerSubmitting
+              onPressed:
+                  offerPrepared &&
+                      !offerPreparing &&
+                      !offerSubmitting &&
+                      !offerDeclineSubmitting
                   ? onAcceptOffer
                   : null,
               icon: offerSubmitting
@@ -1728,22 +1831,43 @@ class _DriverTripDetailCard extends StatelessWidget {
             ),
             const SizedBox(height: AsmSpacing.space8),
             OutlinedButton.icon(
-              key: const Key('driver-decline-offer-disabled'),
-              onPressed: null,
-              icon: const Icon(Icons.close_outlined),
-              label: const Text('Decline'),
+              key: const Key('driver-decline-offer'),
+              onPressed:
+                  offerPrepared &&
+                      !offerPreparing &&
+                      !offerSubmitting &&
+                      !offerDeclineSubmitting
+                  ? onDeclineOffer
+                  : null,
+              icon: offerDeclineSubmitting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.close_outlined),
+              label: Text(
+                offerDeclineSubmitting ? 'Declining...' : 'Decline',
+              ),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
               ),
             ),
-            const SizedBox(height: AsmSpacing.space8),
-            Text(
-              'Decline is not available in this build.',
-              key: const Key('driver-decline-offer-explanation'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AsmColors.driverTextSecondary,
+            if (offerDeclineResult?.message != null) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              Text(
+                offerDeclineResult!.message!,
+                key: const Key('driver-decline-response-error'),
               ),
-            ),
+            ],
+            if (offerDeclineResult?.permitsManualRetry == true) ...[
+              const SizedBox(height: AsmSpacing.space8),
+              TextButton.icon(
+                key: const Key('driver-decline-manual-retry'),
+                onPressed: offerDeclineSubmitting ? null : onRetryDeclineOffer,
+                icon: const Icon(Icons.refresh_outlined),
+                label: const Text('Retry'),
+              ),
+            ],
             if (offerPreparationStatus != null) ...[
               const SizedBox(height: AsmSpacing.space12),
               Text(
@@ -1839,6 +1963,139 @@ class _DriverCard extends StatelessWidget {
         border: Border.all(color: AsmColors.driverLine),
       ),
       child: child,
+    );
+  }
+}
+
+final class _DriverDeclineSelection {
+  const _DriverDeclineSelection({required this.reason, this.reasonNote});
+
+  final DriverDeclineReason reason;
+  final String? reasonNote;
+}
+
+class _DriverDeclineReasonSheet extends StatefulWidget {
+  const _DriverDeclineReasonSheet();
+
+  @override
+  State<_DriverDeclineReasonSheet> createState() =>
+      _DriverDeclineReasonSheetState();
+}
+
+class _DriverDeclineReasonSheetState
+    extends State<_DriverDeclineReasonSheet> {
+  DriverDeclineReason? _selected;
+  final _noteController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _canConfirm {
+    final selected = _selected;
+    if (selected == null) {
+      return false;
+    }
+    return !selected.requiresNote || _noteController.text.trim().isNotEmpty;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AsmSpacing.space20,
+            AsmSpacing.space20,
+            AsmSpacing.space20,
+            AsmSpacing.space20,
+          ),
+          child: Column(
+            key: const Key('driver-decline-reason-sheet'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Why are you declining?',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: AsmSpacing.space4),
+              Text(
+                'Staff can see this reason. This does not send an alert.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AsmColors.driverTextSecondary,
+                ),
+              ),
+              const SizedBox(height: AsmSpacing.space12),
+              for (final reason in DriverDeclineReason.values)
+                RadioListTile<DriverDeclineReason>(
+                  key: Key('driver-decline-reason-option-${reason.code}'),
+                  contentPadding: EdgeInsets.zero,
+                  value: reason,
+                  groupValue: _selected,
+                  onChanged: (value) {
+                    setState(() {
+                      _selected = value;
+                    });
+                  },
+                  title: Text(reason.label),
+                  subtitle: reason.helperText == null
+                      ? null
+                      : Text(
+                          reason.helperText!,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AsmColors.driverWarningSurface),
+                        ),
+                ),
+              if (_selected?.requiresNote == true) ...[
+                const SizedBox(height: AsmSpacing.space8),
+                TextField(
+                  key: const Key('driver-decline-reason-other-note'),
+                  controller: _noteController,
+                  maxLength: 500,
+                  maxLines: 3,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'Tell us what happened',
+                  ),
+                ),
+              ],
+              const SizedBox(height: AsmSpacing.space12),
+              FilledButton(
+                key: const Key('driver-decline-reason-confirm'),
+                onPressed: _canConfirm
+                    ? () {
+                        final reason = _selected!;
+                        final note = _noteController.text.trim();
+                        Navigator.of(context).pop(
+                          _DriverDeclineSelection(
+                            reason: reason,
+                            reasonNote: note.isEmpty ? null : note,
+                          ),
+                        );
+                      }
+                    : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                child: const Text('Confirm decline'),
+              ),
+              const SizedBox(height: AsmSpacing.space8),
+              TextButton(
+                key: const Key('driver-decline-reason-cancel'),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Never mind'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

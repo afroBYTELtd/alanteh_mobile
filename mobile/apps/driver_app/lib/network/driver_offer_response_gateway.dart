@@ -6,15 +6,64 @@ import 'driver_trip_action_gateway.dart';
 import 'ghana_network_resilience.dart';
 
 const driverOfferAcceptResponse = 'accept';
+const driverOfferDeclineResponse = 'decline';
 const driverOfferAcceptanceFailureMessage =
     'Could not confirm acceptance. Check your connection and try again.';
+const driverOfferDeclineFailureMessage =
+    'Could not confirm decline. Check your connection and try again.';
 const driverOfferConflictMessage =
     'There was a conflict with this request. Please contact support.';
 const driverOfferSafeClientFailureMessage =
     'Could not accept this offer. Please review the trip and try again.';
+const driverOfferDeclineSafeClientFailureMessage =
+    'Could not decline this offer. Please review the trip and try again.';
 const driverOfferSessionExpiredMessage =
     'Your session has expired. Please sign in again.';
 const driverOfferTokenRefreshThreshold = driverAccessTokenRefreshThreshold;
+
+/// Mirrors the backend's DRIVER_DECLINE_REASON_CHOICES allowlist exactly
+/// (`backend/dashboard/api_driver_assignments.py`), so client-side
+/// validation and staff-facing records stay in sync with the same wording.
+enum DriverDeclineReason {
+  vehicleIssue,
+  notComfortableWithAssignment,
+  unableToReachPickup,
+  endOfShift,
+  other,
+}
+
+extension DriverDeclineReasonDetails on DriverDeclineReason {
+  String get code => switch (this) {
+    DriverDeclineReason.vehicleIssue => 'vehicle_issue',
+    DriverDeclineReason.notComfortableWithAssignment =>
+      'not_comfortable_with_assignment',
+    DriverDeclineReason.unableToReachPickup => 'unable_to_reach_pickup',
+    DriverDeclineReason.endOfShift => 'end_of_shift',
+    DriverDeclineReason.other => 'other',
+  };
+
+  String get label => switch (this) {
+    DriverDeclineReason.vehicleIssue => 'Vehicle issue',
+    DriverDeclineReason.notComfortableWithAssignment =>
+      'Not comfortable with this specific assignment',
+    DriverDeclineReason.unableToReachPickup => 'Unable to reach pickup',
+    DriverDeclineReason.endOfShift => 'Ending shift',
+    DriverDeclineReason.other => 'Other',
+  };
+
+  /// Shown only under [DriverDeclineReason.notComfortableWithAssignment] so
+  /// it reads as "I don't want this specific job" and is never mistaken for
+  /// the active-emergency path (Emergency 191 / Alert Dispatch).
+  String? get helperText => switch (this) {
+    DriverDeclineReason.notComfortableWithAssignment =>
+      "For a pickup or route you'd rather not take. If something is "
+          'actively wrong right now, use Emergency 191 or Alert Dispatch '
+          'instead.',
+    _ => null,
+  };
+
+  bool get requiresNote => this == DriverDeclineReason.other;
+}
 
 enum DriverOfferSubmissionTelemetryStage {
   submitStart,
@@ -332,6 +381,7 @@ final class DriverOfferResponseReceipt {
   bool confirms({
     required String expectedTripReference,
     required int? statusCode,
+    String expectedTripStatus = 'driver_accepted',
   }) {
     final expectedDuplicate = switch (statusCode) {
       201 => false,
@@ -341,7 +391,7 @@ final class DriverOfferResponseReceipt {
 
     if (expectedDuplicate == null ||
         duplicate != expectedDuplicate ||
-        tripStatus != 'driver_accepted') {
+        tripStatus != expectedTripStatus) {
       return false;
     }
 
@@ -384,6 +434,15 @@ abstract interface class DriverOfferResponseGateway {
     required String tripReference,
     required String idempotencyKey,
     required String deviceTimestamp,
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  });
+
+  Future<DriverOfferResponseReceipt> decline({
+    required String tripReference,
+    required String idempotencyKey,
+    required String deviceTimestamp,
+    required DriverDeclineReason reason,
+    String? reasonNote,
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   });
 }
@@ -485,6 +544,113 @@ final class ApiDriverOfferResponseGateway
     throw _exceptionFromResponse(firstResponse);
   }
 
+  @override
+  Future<DriverOfferResponseReceipt> decline({
+    required String tripReference,
+    required String idempotencyKey,
+    required String deviceTimestamp,
+    required DriverDeclineReason reason,
+    String? reasonNote,
+    DriverOfferSubmissionTelemetrySink? telemetrySink,
+  }) async {
+    final normalizedReference = tripReference.trim();
+    final normalizedKey = idempotencyKey.trim();
+    final normalizedTimestamp = deviceTimestamp.trim();
+    final parsedTimestamp = DateTime.tryParse(normalizedTimestamp);
+    final normalizedNote = reasonNote?.trim() ?? '';
+
+    if (normalizedReference.isEmpty ||
+        normalizedKey.isEmpty ||
+        parsedTimestamp == null ||
+        parsedTimestamp.timeZoneOffset != Duration.zero) {
+      throw const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.badResponse,
+        message: 'The offer decline could not be prepared safely.',
+      );
+    }
+
+    if (reason.requiresNote && normalizedNote.isEmpty) {
+      throw const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.badResponse,
+        message: 'A note is required when declining for another reason.',
+      );
+    }
+
+    if (!connectionConfigured) {
+      throw const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.badResponse,
+        message: AsmApiClient.connectionNotConfiguredMessage,
+      );
+    }
+
+    final accessToken = await _accessTokenForSubmission(
+      telemetrySink: telemetrySink,
+    );
+    final extraFields = <String, Object?>{
+      'reason': reason.code,
+      if (reason.requiresNote && normalizedNote.isNotEmpty)
+        'reason_note': normalizedNote,
+    };
+
+    final firstResponse = await _postWithBoundedRetry(
+      tripReference: normalizedReference,
+      idempotencyKey: normalizedKey,
+      deviceTimestamp: normalizedTimestamp,
+      accessToken: accessToken,
+      responseValue: driverOfferDeclineResponse,
+      extraFields: extraFields,
+      telemetrySink: telemetrySink,
+    );
+
+    final firstReceipt = _validatedReceipt(
+      response: firstResponse,
+      tripReference: normalizedReference,
+      expectedTripStatus: 'driver_declined',
+      unconfirmedMessage: 'The server response could not confirm offer decline.',
+    );
+    if (firstReceipt != null) {
+      return firstReceipt;
+    }
+
+    if (firstResponse.statusCode == 401) {
+      final refreshedAccessToken = await _refreshAccessTokenForSubmission(
+        telemetrySink: telemetrySink,
+      );
+
+      final retryResponse = await _postWithBoundedRetry(
+        tripReference: normalizedReference,
+        idempotencyKey: normalizedKey,
+        deviceTimestamp: normalizedTimestamp,
+        accessToken: refreshedAccessToken,
+        responseValue: driverOfferDeclineResponse,
+        extraFields: extraFields,
+        telemetrySink: telemetrySink,
+      );
+      final retryReceipt = _validatedReceipt(
+        response: retryResponse,
+        tripReference: normalizedReference,
+        expectedTripStatus: 'driver_declined',
+        unconfirmedMessage: 'The server response could not confirm offer decline.',
+      );
+      if (retryReceipt != null) {
+        return retryReceipt;
+      }
+      throw _exceptionFromResponse(
+        retryResponse,
+        unavailableMessage: driverOfferDeclineFailureMessage,
+        clientFailureMessage: driverOfferDeclineSafeClientFailureMessage,
+        badResponseMessage: 'The offer decline could not be confirmed.',
+      );
+    }
+
+    throw _exceptionFromResponse(
+      firstResponse,
+      unavailableMessage: driverOfferDeclineFailureMessage,
+      clientFailureMessage: driverOfferDeclineSafeClientFailureMessage,
+      badResponseMessage: 'The offer decline could not be confirmed.',
+    );
+  }
+
   Future<String> _accessTokenForSubmission({
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
@@ -546,6 +712,8 @@ final class ApiDriverOfferResponseGateway
     required String idempotencyKey,
     required String deviceTimestamp,
     required String accessToken,
+    String responseValue = driverOfferAcceptResponse,
+    Map<String, Object?> extraFields = const <String, Object?>{},
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) {
     var transportInvocation = 0;
@@ -573,8 +741,9 @@ final class ApiDriverOfferResponseGateway
         final response = await apiGateway.post<DriverOfferResponseReceipt>(
           driverOfferResponsePath(tripReference),
           data: <String, Object?>{
-            'response': driverOfferAcceptResponse,
+            'response': responseValue,
             'device_timestamp': deviceTimestamp,
+            ...extraFields,
           },
           headers: <String, String>{
             'Authorization': 'Bearer $accessToken',
@@ -593,6 +762,9 @@ final class ApiDriverOfferResponseGateway
   DriverOfferResponseReceipt? _validatedReceipt({
     required ApiResponse<DriverOfferResponseReceipt> response,
     required String tripReference,
+    String expectedTripStatus = 'driver_accepted',
+    String unconfirmedMessage =
+        'The server response could not confirm offer acceptance.',
   }) {
     final receipt = response.data;
     if (!response.isSuccess || receipt == null) {
@@ -602,10 +774,11 @@ final class ApiDriverOfferResponseGateway
     if (!receipt.confirms(
       expectedTripReference: tripReference,
       statusCode: response.statusCode,
+      expectedTripStatus: expectedTripStatus,
     )) {
-      throw const DriverOfferResponseException(
+      throw DriverOfferResponseException(
         type: DriverOfferResponseFailureType.badResponse,
-        message: 'The server response could not confirm offer acceptance.',
+        message: unconfirmedMessage,
       );
     }
 
@@ -613,8 +786,11 @@ final class ApiDriverOfferResponseGateway
   }
 
   DriverOfferResponseException _exceptionFromResponse(
-    ApiResponse<DriverOfferResponseReceipt> response,
-  ) {
+    ApiResponse<DriverOfferResponseReceipt> response, {
+    String unavailableMessage = driverOfferAcceptanceFailureMessage,
+    String clientFailureMessage = driverOfferSafeClientFailureMessage,
+    String badResponseMessage = 'The offer acceptance could not be confirmed.',
+  }) {
     final statusCode = response.statusCode;
     final error = response.error;
 
@@ -624,9 +800,9 @@ final class ApiDriverOfferResponseGateway
         statusCode == 502 ||
         statusCode == 503 ||
         statusCode == 504) {
-      return const DriverOfferResponseException(
+      return DriverOfferResponseException(
         type: DriverOfferResponseFailureType.temporarilyUnavailable,
-        message: driverOfferAcceptanceFailureMessage,
+        message: unavailableMessage,
       );
     }
 
@@ -646,15 +822,15 @@ final class ApiDriverOfferResponseGateway
     }
 
     if (statusCode != null && statusCode >= 400 && statusCode < 500) {
-      return const DriverOfferResponseException(
+      return DriverOfferResponseException(
         type: DriverOfferResponseFailureType.clientFailure,
-        message: driverOfferSafeClientFailureMessage,
+        message: clientFailureMessage,
       );
     }
 
-    return const DriverOfferResponseException(
+    return DriverOfferResponseException(
       type: DriverOfferResponseFailureType.badResponse,
-      message: 'The offer acceptance could not be confirmed.',
+      message: badResponseMessage,
     );
   }
 }
