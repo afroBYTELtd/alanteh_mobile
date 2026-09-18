@@ -2299,6 +2299,46 @@ void main() {
     });
 
     testWidgets(
+      'does not overflow when the on-screen keyboard opens for the other '
+      'note field',
+      (tester) async {
+        // Caught live on a physical device: typing in the "other" note
+        // field opens the keyboard, which shrinks the available height.
+        // The sheet's Column (mainAxisSize.min, no scrollable ancestor)
+        // overflowed rather than scrolling — "BOTTOM OVERFLOWED BY 243
+        // PIXELS". Widget tests don't open a real keyboard, but
+        // WidgetTester.view.viewInsets simulates the same height loss
+        // MediaQuery.viewInsets.bottom would see from a real keyboard.
+        await pumpPendingOffer(tester);
+
+        await tester.tap(find.byKey(const Key('driver-decline-offer')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const Key('driver-decline-reason-option-other')),
+        );
+        await tester.pump();
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+
+        await tester.enterText(
+          find.byKey(const Key('driver-decline-reason-other-note')),
+          'Passenger vehicle info was incorrect on the offer screen.',
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const Key('driver-decline-reason-confirm')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
       'confirming a non-other reason declines with no note and clears the '
       'pending offer',
       (tester) async {

@@ -2009,7 +2009,7 @@ class _DriverDeclineReasonSheetState
       ),
       child: SafeArea(
         top: false,
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
             AsmSpacing.space20,
             AsmSpacing.space20,
