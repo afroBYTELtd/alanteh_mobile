@@ -1321,6 +1321,16 @@ void main() {
     },
   );
 
+  // KNOWN GAP (deliberately accepted, logged 2026-09-19): this proves the
+  // client-side render path via a fabricated PassengerCancellationException,
+  // not a live 400 from a trip actually progressed to PASSENGER_ONBOARD or
+  // later. The boundary itself is confirmed from backend code + backend
+  // tests (TRIP_PASSENGER_CANCEL_ELIGIBLE_STATUSES), and this handler is the
+  // same shared "render this message for this stable error code" path
+  // already live-verified end-to-end on the pre-conversion RideRequest case.
+  // Risk is low given the shared code path; revisit live-triggering this
+  // specific transition if a future trip-lifecycle live test makes it cheap,
+  // rather than manufacturing one for this alone.
   testWidgets(
     'a not-eligible cancellation shows the friendly message with a '
     'separate contact-support action, not appended to the same sentence',
