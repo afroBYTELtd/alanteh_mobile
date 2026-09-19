@@ -6,10 +6,38 @@ import 'package:latlong2/latlong.dart';
 
 import '../account/passenger_payment_setup_screen.dart';
 import '../map/passenger_map.dart';
+import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
+
+/// Mirrors the backend's eligible-status sets exactly
+/// (RIDE_REQUEST_CANCEL_ELIGIBLE_STATUSES / TRIP_PASSENGER_CANCEL_ELIGIBLE_STATUSES
+/// in backend/dashboard/api_rides.py and api_trips.py) - checked against the raw
+/// status string, not PassengerRideState, since that derived enum has gaps for
+/// some raw statuses (e.g. passenger_onboard falls through to "looking") that
+/// would make an already-uncancellable trip look cancellable here.
+bool passengerCanCancelTrip({required bool tripCreated, required String rawStatus}) {
+  final normalized = rawStatus.trim().toLowerCase();
+  if (!tripCreated) {
+    return normalized == 'requested' || normalized == 'under_review';
+  }
+  return const <String>{
+    'requested',
+    'under_review',
+    'fare_confirmed',
+    'awaiting_payment',
+    'payment_confirmed',
+    'driver_offer_sent',
+    'driver_accepted',
+    'driver_declined',
+    'assigned',
+    'dispatched',
+    'driver_en_route',
+    'arrived_at_pickup',
+  }.contains(normalized);
+}
 
 class RideTrackingScreen extends StatefulWidget {
   const RideTrackingScreen({
@@ -22,6 +50,7 @@ class RideTrackingScreen extends StatefulWidget {
     this.trustedContactRepository,
     this.safetyUriLauncher = const PlatformPassengerSafetyUriLauncher(),
     this.safetyShareGateway = const PlatformPassengerSafetyShareGateway(),
+    this.cancellationGateway,
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.onSignInRequired,
@@ -37,6 +66,7 @@ class RideTrackingScreen extends StatefulWidget {
   final PassengerTrustedContactRepository? trustedContactRepository;
   final PassengerSafetyUriLauncher safetyUriLauncher;
   final PassengerSafetyShareGateway safetyShareGateway;
+  final PassengerCancellationGateway? cancellationGateway;
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final VoidCallback? onSignInRequired;
@@ -53,6 +83,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   bool _loading = true;
   bool _offline = false;
   bool _reconnecting = false;
+  bool _cancelling = false;
 
   @override
   void initState() {
@@ -362,47 +393,99 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     );
   }
 
-  Future<void> _showCancelDialog({required bool vehicleEnRoute}) {
-    return showModalBottomSheet<void>(
+  Future<void> _openCancelFlow({required bool vehicleEnRoute}) async {
+    final gateway = widget.cancellationGateway;
+    final record = _record;
+    if (gateway == null || record == null || _cancelling) {
+      return;
+    }
+
+    final selection = await showModalBottomSheet<_PassengerCancellationSelection>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => Padding(
-        key: Key(
-          vehicleEnRoute
-              ? 'cancel-vehicle-en-route-dialog'
-              : 'cancel-confirmation-dialog',
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              vehicleEnRoute
-                  ? 'Cancel after driver dispatch?'
-                  : 'Cancel this request?',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              vehicleEnRoute
-                  ? 'Your driver is already on the way. Cancellation may affect availability for other passengers.'
-                  : 'Your request will remain active unless cancellation is completed through an approved service.',
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Keep my ride'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              key: const Key('cancel-dialog-no-backend-mutation'),
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
+      builder: (context) => _PassengerCancellationReasonSheet(
+        vehicleEnRoute: vehicleEnRoute,
+        includeFareReason: record.hasFare,
       ),
+    );
+
+    if (selection == null || !mounted) {
+      return;
+    }
+
+    await _submitCancellation(gateway: gateway, record: record, selection: selection);
+  }
+
+  Future<void> _submitCancellation({
+    required PassengerCancellationGateway gateway,
+    required PassengerRideRequestRecord record,
+    required _PassengerCancellationSelection selection,
+  }) async {
+    setState(() {
+      _cancelling = true;
+    });
+
+    final idempotencyKey = PassengerRideRequestIdempotencyKey.generate();
+
+    try {
+      if (record.tripCreated) {
+        final tripReference = _tripReference ?? record.normalizedTripReference;
+        if (tripReference == null) {
+          throw const PassengerCancellationException.unknown();
+        }
+        await gateway.cancelTripBooking(
+          tripReference: tripReference,
+          reason: selection.reason,
+          reasonNote: selection.reasonNote,
+          idempotencyKey: idempotencyKey,
+        );
+      } else {
+        await gateway.cancelRideRequest(
+          requestReference: widget.requestReference,
+          reason: selection.reason,
+          reasonNote: selection.reasonNote,
+          idempotencyKey: idempotencyKey,
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cancelling = false;
+      });
+      _manualRetry();
+    } on PassengerCancellationException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cancelling = false;
+      });
+      _showCancellationError(error);
+    }
+  }
+
+  void _showCancellationError(PassengerCancellationException error) {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+
+    if (error.isNotEligible) {
+      messenger.showSnackBar(
+        SnackBar(
+          key: const Key('cancel-not-eligible-snackbar'),
+          content: Text(error.message),
+          action: SnackBarAction(
+            label: 'Contact support',
+            onPressed: () {},
+          ),
+        ),
+      );
+      _manualRetry();
+      return;
+    }
+
+    messenger.showSnackBar(
+      SnackBar(key: const Key('cancel-error-snackbar'), content: Text(error.message)),
     );
   }
 
@@ -709,6 +792,14 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       onPressed: () => Navigator.of(context).maybePop(),
                       child: const Text('Book again'),
                     ),
+                  ] else if (record.passengerState ==
+                      PassengerRideState.cancelledByPassenger) ...[
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      key: const Key('cancelled-by-passenger-book-again'),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Book again'),
+                    ),
                   ] else if (view.rejected) ...[
                     const SizedBox(height: 18),
                     FilledButton(
@@ -721,15 +812,28 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       onPressed: () {},
                       child: const Text('Contact support'),
                     ),
-                  ] else if (!record.isTerminal) ...[
+                  ] else if (widget.cancellationGateway != null &&
+                      passengerCanCancelTrip(
+                        tripCreated: record.tripCreated,
+                        rawStatus: record.status,
+                      )) ...[
                     const SizedBox(height: 18),
                     OutlinedButton.icon(
                       key: const Key('open-cancel-confirmation'),
-                      onPressed: () => _showCancelDialog(
-                        vehicleEnRoute: view.vehicleEnRoute,
+                      onPressed: _cancelling
+                          ? null
+                          : () => _openCancelFlow(
+                              vehicleEnRoute: view.vehicleEnRoute,
+                            ),
+                      icon: _cancelling
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.close),
+                      label: Text(
+                        _cancelling ? 'Cancelling...' : 'Cancel request',
                       ),
-                      icon: const Icon(Icons.close),
-                      label: const Text('Cancel request'),
                     ),
                   ],
                 ],
@@ -1009,6 +1113,16 @@ class _TrackingView {
           route: const <LatLng>[],
         );
 
+      case PassengerRideState.cancelledByPassenger:
+        return _TrackingView(
+          key: 'trip-cancelled-by-passenger-state',
+          title: 'Trip cancelled',
+          message: message,
+          icon: Icons.cancel_outlined,
+          color: Colors.redAccent,
+          route: const <LatLng>[],
+        );
+
       case PassengerRideState.rejected:
         return _TrackingView(
           key: 'request-rejected-state',
@@ -1030,5 +1144,160 @@ class _TrackingView {
           route: const <LatLng>[],
         );
     }
+  }
+}
+
+final class _PassengerCancellationSelection {
+  const _PassengerCancellationSelection({required this.reason, this.reasonNote});
+
+  final PassengerCancellationReason reason;
+  final String? reasonNote;
+}
+
+class _PassengerCancellationReasonSheet extends StatefulWidget {
+  const _PassengerCancellationReasonSheet({
+    required this.vehicleEnRoute,
+    required this.includeFareReason,
+  });
+
+  final bool vehicleEnRoute;
+  final bool includeFareReason;
+
+  @override
+  State<_PassengerCancellationReasonSheet> createState() =>
+      _PassengerCancellationReasonSheetState();
+}
+
+class _PassengerCancellationReasonSheetState
+    extends State<_PassengerCancellationReasonSheet> {
+  PassengerCancellationReason? _selected;
+  final _noteController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  bool get _canConfirm {
+    final selected = _selected;
+    if (selected == null) {
+      return false;
+    }
+    return !selected.requiresNote || _noteController.text.trim().isNotEmpty;
+  }
+
+  List<PassengerCancellationReason> get _availableReasons {
+    return PassengerCancellationReason.values
+        .where(
+          (reason) =>
+              widget.includeFareReason ||
+              reason != PassengerCancellationReason.priceOrFareConcern,
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Built with SingleChildScrollView from the start: the driver-app
+    // decline sheet shipped without one and overflowed under the
+    // on-screen keyboard on a real device (RenderFlex overflow when
+    // typing the "other" note). Same interaction shape here (radio list
+    // + conditional note field), so the same fix applies preemptively.
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            key: const Key('passenger-cancel-reason-sheet'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Why are you cancelling?',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'This helps us improve. It does not affect other passengers.',
+                style: TextStyle(color: Colors.black54),
+              ),
+              if (widget.vehicleEnRoute) ...[
+                const SizedBox(height: 12),
+                Container(
+                  key: const Key('cancel-vehicle-en-route-notice'),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E0),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Your driver is already on the way.',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              for (final reason in _availableReasons)
+                RadioListTile<PassengerCancellationReason>(
+                  key: Key('passenger-cancel-reason-option-${reason.code}'),
+                  contentPadding: EdgeInsets.zero,
+                  value: reason,
+                  groupValue: _selected,
+                  onChanged: (value) {
+                    setState(() {
+                      _selected = value;
+                    });
+                  },
+                  title: Text(reason.label),
+                ),
+              if (_selected?.requiresNote == true) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  key: const Key('passenger-cancel-reason-other-note'),
+                  controller: _noteController,
+                  maxLength: passengerCancellationReasonNoteLimit,
+                  maxLines: 3,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'Tell us what happened',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              FilledButton(
+                key: const Key('passenger-cancel-reason-confirm'),
+                onPressed: _canConfirm
+                    ? () {
+                        final reason = _selected!;
+                        final note = _noteController.text.trim();
+                        Navigator.of(context).pop(
+                          _PassengerCancellationSelection(
+                            reason: reason,
+                            reasonNote: note.isEmpty ? null : note,
+                          ),
+                        );
+                      }
+                    : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                child: const Text('Confirm cancellation'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                key: const Key('passenger-cancel-reason-cancel'),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Never mind'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

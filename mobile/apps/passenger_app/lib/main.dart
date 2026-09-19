@@ -17,6 +17,7 @@ import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'network/ghana_network_resilience.dart';
+import 'network/passenger_cancellation_gateway.dart';
 import 'notifications/passenger_push_navigation.dart';
 
 import 'notifications/push_device_registration.dart';
@@ -124,6 +125,11 @@ class PassengerApp extends StatelessWidget {
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
+    final resolvedCancellationGateway =
+        ApiPassengerCancellationGateway.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
 
     final resolvedAuthService =
         authService ??
@@ -157,6 +163,7 @@ class PassengerApp extends StatelessWidget {
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
             trustedContactRepository: resolvedTrustedContactRepository,
+            cancellationGateway: resolvedCancellationGateway,
           );
 
     return MaterialApp(
