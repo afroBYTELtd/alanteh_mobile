@@ -503,7 +503,22 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     final driverFirstName = _driverFirstName(record.driverName);
     final vehicleInfo = _vehicleInfo(record.vehicleColour, record.vehicleType);
     final driverDistanceKm = record.driverDistanceKm;
-    final view = _TrackingView.from(record);
+    // "converted" is the RideRequest's own placeholder status - it means
+    // "this has a linked Trip now, look there for the real status," never
+    // a real, displayable state on its own. It has no case in
+    // PassengerRideState.fromStatus and would otherwise fall through to
+    // "looking for a driver" - a confidently wrong answer for what's
+    // actually just a not-yet-resolved fetch (the list screen enriches
+    // this before handing off an initialRecord, but a push notification
+    // can open this screen from just a request reference, and any single
+    // trip fetch - initial or a later poll - can fail-soft and leave this
+    // record's status exactly as "converted"). Substituting a neutral
+    // view here, rather than short-circuiting build() entirely, keeps the
+    // reconnecting/offline banners and safety actions working normally
+    // while this resolves.
+    final view = record.status.trim().toLowerCase() == 'converted'
+        ? _TrackingView.checkingStatus()
+        : _TrackingView.from(record);
     final heading = record.status.trim().toLowerCase() == 'under_review'
         ? 'Reviewing your request'
         : view.title;
@@ -1066,6 +1081,17 @@ class _TrackingView {
   final bool vehicleEnRoute;
   final bool reassigned;
   final bool rejected;
+
+  factory _TrackingView.checkingStatus() {
+    return const _TrackingView(
+      key: 'checking-trip-status-state',
+      title: 'Checking your trip',
+      message: 'We are confirming your trip\'s current status.',
+      icon: Icons.hourglass_top_outlined,
+      color: Color(0xFF6B7280),
+      route: <LatLng>[],
+    );
+  }
 
   factory _TrackingView.from(PassengerRideRequestRecord record) {
     final status = record.passengerState;
