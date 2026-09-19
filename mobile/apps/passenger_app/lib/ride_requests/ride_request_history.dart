@@ -858,7 +858,7 @@ class _PassengerRideRequestHistoryPageState
       final loadedRecords = List<PassengerRideRequestRecord>.of(
         await widget.repository.fetchRequests(),
       );
-      final records = loadedRecords;
+      final records = await _enrichConvertedRecords(loadedRecords);
       records.sort((left, right) {
         final leftCreatedAt = left.createdAt;
         final rightCreatedAt = right.createdAt;
@@ -908,6 +908,75 @@ class _PassengerRideRequestHistoryPageState
     }
   }
 
+  // "converted" is the RideRequest's own terminal status - it never
+  // changes again once a Trip exists, so every converted request would
+  // otherwise render its list card (and any screen it hands its record
+  // to, e.g. RideTrackingScreen's initialRecord) using a status neither
+  // PassengerRideState nor the Active/Completed filters have a case
+  // for - falling through to a wrong default rather than the trip's
+  // real, current status. This fetches each *unique* linked trip
+  // concurrently (not one request per card, and not sequentially - the
+  // original version of this method awaited each fetch in turn, which
+  // is what actually motivated removing it rather than the fetching
+  // itself) so the wall-clock cost stays close to one round trip
+  // regardless of how many converted trips are in the list.
+  Future<List<PassengerRideRequestRecord>> _enrichConvertedRecords(
+    List<PassengerRideRequestRecord> records,
+  ) async {
+    final repository = widget.repository;
+    if (repository is! PassengerTripLifecycleRepository) {
+      return records;
+    }
+    final tripRepository = repository as PassengerTripLifecycleRepository;
+
+    final uniqueTripReferences = <String>{};
+    for (final record in records) {
+      if (record.status.trim().toLowerCase() != 'converted') {
+        continue;
+      }
+
+      final tripReference = record.normalizedTripReference;
+      if (tripReference != null) {
+        uniqueTripReferences.add(tripReference);
+      }
+    }
+
+    if (uniqueTripReferences.isEmpty) {
+      return records;
+    }
+
+    final tripsByReference = <String, PassengerTripRecord>{};
+
+    await Future.wait(
+      uniqueTripReferences.map((tripReference) async {
+        try {
+          tripsByReference[tripReference] = await tripRepository.fetchTrip(
+            tripReference,
+          );
+        } on Object {
+          // History enrichment is deliberately fail-soft. The original
+          // converted Ride Request card remains available to the
+          // passenger - RideTrackingScreen's own "converted" handling
+          // covers the case where this card is then opened.
+        }
+      }),
+    );
+
+    return records
+        .map((record) {
+          if (record.status.trim().toLowerCase() != 'converted') {
+            return record;
+          }
+
+          final tripReference = record.normalizedTripReference;
+          final trip = tripReference == null
+              ? null
+              : tripsByReference[tripReference];
+
+          return trip == null ? record : record.withTrip(trip);
+        })
+        .toList(growable: false);
+  }
 
   void _selectFilter(_TripsFilter filter) {
     if (_selectedFilter == filter) {
@@ -921,10 +990,19 @@ class _PassengerRideRequestHistoryPageState
   Future<void> _openDetail(
     PassengerRideRequestRecord record,
   ) async {
+    // "converted" alone only ever matters as the pre-enrichment
+    // placeholder (kept as a fallback in case enrichment failed for
+    // this specific record) - once enrichment succeeds, record.status
+    // is the trip's real status, so routing must be decided from
+    // whether it's terminal, not from the literal status string.
+    final isConvertedPlaceholder =
+        record.status.trim().toLowerCase() == 'converted';
+    final isActiveLinkedTrip =
+        record.normalizedTripReference != null && !record.isTerminal;
     final hasActiveTrackingPath =
         _isActiveTripStatus(record.status) ||
-        (record.status.trim().toLowerCase() == 'converted' &&
-            record.tripReference != null);
+        (isConvertedPlaceholder && record.tripReference != null) ||
+        isActiveLinkedTrip;
 
     if (hasActiveTrackingPath) {
       final handler = widget.onOpenActiveTracking;
