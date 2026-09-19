@@ -2749,6 +2749,7 @@ final class _ArrivedDiagnosticsPendingGateway
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) {
     calls += 1;
     return _completer.future;
@@ -3205,6 +3206,7 @@ final class _WidgetNotFoundDriverTripActionGateway
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) async {
     calls += 1;
     idempotencyKeys.add(idempotencyKey);

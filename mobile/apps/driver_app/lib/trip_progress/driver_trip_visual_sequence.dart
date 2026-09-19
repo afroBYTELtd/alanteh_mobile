@@ -33,6 +33,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.destination,
     this.passengerCount,
     this.passengerNote,
+    this.pickupVerificationRequired = false,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
     this.driverTrustedContactRepository,
@@ -49,6 +50,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final String? destination;
   final int? passengerCount;
   final String? passengerNote;
+  final bool pickupVerificationRequired;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
   final bool tripActionTelemetryQaEnabled;
@@ -68,6 +70,9 @@ class _DriverTripVisualSequencePageState
   bool _isSubmitting = false;
   bool _sendingAlert = false;
   final List<DriverTripActionTelemetryEvent> _telemetryEvents = [];
+  final _pickupCodeController = TextEditingController();
+  String? _pickupCodeErrorText;
+  bool _pickupCodeLocked = false;
 
   @override
   void initState() {
@@ -85,6 +90,7 @@ class _DriverTripVisualSequencePageState
     if (widget.tripActionTelemetryQaEnabled) {
       widget.actionRecorder?.attachSubmissionTelemetrySink(null);
     }
+    _pickupCodeController.dispose();
     super.dispose();
   }
 
@@ -196,16 +202,72 @@ class _DriverTripVisualSequencePageState
     if (_isSubmitting) {
       return;
     }
-    setState(() => _state = _state.cancelPassengerOnboardConfirmation());
+    _pickupCodeController.clear();
+    setState(() {
+      _pickupCodeErrorText = null;
+      _pickupCodeLocked = false;
+      _state = _state.cancelPassengerOnboardConfirmation();
+    });
   }
 
   void _confirmPassengerOnboard() {
+    if (widget.pickupVerificationRequired) {
+      unawaited(_confirmPassengerOnboardWithCode());
+      return;
+    }
+
     unawaited(
       _applyResilientAction(
         eventType: 'start-trip',
         transition: (state) => state.confirmPassengerOnboard(),
       ),
     );
+  }
+
+  Future<void> _confirmPassengerOnboardWithCode() async {
+    if (_isSubmitting || _pickupCodeLocked) {
+      return;
+    }
+
+    final code = _pickupCodeController.text.trim();
+    if (code.isEmpty) {
+      setState(() => _pickupCodeErrorText = 'Enter the code your passenger gave you.');
+      return;
+    }
+
+    final recorder = widget.actionRecorder;
+    if (recorder == null) {
+      setState(() => _state = _state.confirmPassengerOnboard());
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _pickupCodeErrorText = null;
+    });
+
+    final result = await recorder.submitPickupVerificationCode(code);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result.canAdvance) {
+      setState(() {
+        _isSubmitting = false;
+        _state = _state.confirmPassengerOnboard();
+      });
+      return;
+    }
+
+    final error = result.error;
+    setState(() {
+      _isSubmitting = false;
+      _pickupCodeLocked = error?.isPickupCodeLocked ?? false;
+      _pickupCodeErrorText =
+          error?.message ??
+          'This code could not be confirmed. Check your connection and try again.';
+    });
   }
 
   void _markArrivedAtDestination() {
@@ -396,17 +458,31 @@ class _DriverTripVisualSequencePageState
           key: const Key('driver-confirm-passenger-onboard'),
           icon: Icons.people_alt_outlined,
           title: 'Confirm passenger onboard',
-          message:
-              'Only start the trip after the passenger is safely seated '
-              'and ready to travel.',
+          message: _pickupCodeLocked
+              ? 'Too many incorrect pickup code attempts. Use the options '
+                    'below to contact dispatch before continuing.'
+              : widget.pickupVerificationRequired
+              ? 'Ask your passenger for their pickup code and enter it '
+                    'below before starting the trip.'
+              : 'Only start the trip after the passenger is safely seated '
+                    'and ready to travel.',
           primaryActionKey: const Key('driver-confirm-onboard'),
-          primaryActionLabel: 'Start trip',
+          primaryActionLabel: _pickupCodeLocked ? 'Locked' : 'Start trip',
           primaryActionIcon: Icons.play_arrow_outlined,
           isPrimaryActionPending: _isSubmitting,
+          primaryActionEnabled: !_pickupCodeLocked,
           onPrimaryAction: _confirmPassengerOnboard,
           secondaryActionKey: const Key('driver-cancel-onboard-confirmation'),
           secondaryActionLabel: 'Back',
           onSecondaryAction: _cancelPassengerConfirmation,
+          child: widget.pickupVerificationRequired && !_pickupCodeLocked
+              ? _PickupVerificationCodeField(
+                  controller: _pickupCodeController,
+                  errorText: _pickupCodeErrorText,
+                  enabled: !_isSubmitting,
+                  onSubmitted: (_) => _confirmPassengerOnboard(),
+                )
+              : null,
         ),
         DriverTripVisualStage.activeTrip => _DriverMapStage(
           key: const Key('driver-active-trip'),
@@ -835,9 +911,11 @@ class _DriverStateScreen extends StatelessWidget {
     required this.primaryActionIcon,
     required this.onPrimaryAction,
     this.isPrimaryActionPending = false,
+    this.primaryActionEnabled = true,
     this.secondaryActionKey,
     this.secondaryActionLabel,
     this.onSecondaryAction,
+    this.child,
   });
 
   final IconData icon;
@@ -848,9 +926,11 @@ class _DriverStateScreen extends StatelessWidget {
   final IconData primaryActionIcon;
   final VoidCallback onPrimaryAction;
   final bool isPrimaryActionPending;
+  final bool primaryActionEnabled;
   final Key? secondaryActionKey;
   final String? secondaryActionLabel;
   final VoidCallback? onSecondaryAction;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -885,10 +965,16 @@ class _DriverStateScreen extends StatelessWidget {
                 height: 1.45,
               ),
             ),
+            if (child != null) ...[
+              const SizedBox(height: AsmSpacing.space20),
+              child!,
+            ],
             const SizedBox(height: AsmSpacing.space32),
             FilledButton.icon(
               key: primaryActionKey,
-              onPressed: isPrimaryActionPending ? null : onPrimaryAction,
+              onPressed: (isPrimaryActionPending || !primaryActionEnabled)
+                  ? null
+                  : onPrimaryAction,
               icon: isPrimaryActionPending
                   ? const SizedBox.square(
                       dimension: 18,
@@ -918,6 +1004,42 @@ class _DriverStateScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PickupVerificationCodeField extends StatelessWidget {
+  const _PickupVerificationCodeField({
+    required this.controller,
+    required this.enabled,
+    required this.onSubmitted,
+    this.errorText,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final ValueChanged<String> onSubmitted;
+  final String? errorText;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: const Key('driver-pickup-verification-code-field'),
+      controller: controller,
+      enabled: enabled,
+      autofocus: true,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.done,
+      maxLength: 4,
+      textAlign: TextAlign.center,
+      style: const TextStyle(fontSize: 24, letterSpacing: 8),
+      decoration: InputDecoration(
+        labelText: 'Pickup code',
+        counterText: '',
+        errorText: errorText,
+        errorMaxLines: 3,
+      ),
+      onSubmitted: onSubmitted,
     );
   }
 }

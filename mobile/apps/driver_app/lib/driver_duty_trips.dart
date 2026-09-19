@@ -518,6 +518,7 @@ final class DriverAssignedTrip {
     this.controlCenterMessage,
     this.passengerNote,
     this.assignmentReleased,
+    this.pickupVerificationRequired = false,
   });
 
   final String reference;
@@ -533,6 +534,7 @@ final class DriverAssignedTrip {
   final String? controlCenterMessage;
   final String? passengerNote;
   final bool? assignmentReleased;
+  final bool pickupVerificationRequired;
 
   static DriverAssignedTrip fromJson(Object? json) {
     final map = _decodeMap(json, 'Trip response was not a JSON object.');
@@ -623,6 +625,8 @@ final class DriverAssignedTrip {
       ]),
       passengerNote: _firstString(map, const ['passenger_note']),
       assignmentReleased: assignmentReleased,
+      pickupVerificationRequired:
+          _firstBool(map, const ['pickup_verification_required']) ?? false,
     );
   }
 
@@ -1492,6 +1496,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           destination: trip.destination,
           passengerCount: trip.passengerCount,
           passengerNote: trip.passengerNote,
+          pickupVerificationRequired: trip.pickupVerificationRequired,
           onActionRejected: _handleRejectedAction,
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
           driverTrustedContactRepository: widget.driverTrustedContactRepository,

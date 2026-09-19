@@ -623,7 +623,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                   Text(view.message),
                   if (driverFirstName != null ||
                       vehicleInfo != null ||
-                      record.plateNumber != null) ...[
+                      record.plateNumber != null ||
+                      record.pickupVerificationCode != null) ...[
                     const SizedBox(height: AsmSpacing.space16),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -697,6 +698,63 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                                       fontSize: 24,
                                       fontWeight: FontWeight.w900,
                                     ),
+                                  ),
+                                ),
+                              ],
+                              if (record.pickupVerificationCode != null) ...[
+                                const SizedBox(height: AsmSpacing.space12),
+                                Container(
+                                  key: const Key(
+                                    'tracking-pickup-verification-code-badge',
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AsmSpacing.space12,
+                                    vertical: AsmSpacing.space8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AsmColors.passengerSurface,
+                                    borderRadius: BorderRadius.circular(
+                                      AsmRadii.radius16,
+                                    ),
+                                    border: Border.all(
+                                      color: AsmColors.passengerLine,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Pickup code',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                      Text(
+                                        record.pickupVerificationCode!,
+                                        key: const Key(
+                                          'tracking-pickup-verification-code',
+                                        ),
+                                        style: const TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 4,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Share this with your driver to start the trip.',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
