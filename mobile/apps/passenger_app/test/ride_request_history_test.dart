@@ -64,6 +64,49 @@ void main() {
     expect(trip.driverDistanceKm, 2.34);
   });
 
+  test('pickup verification code deserializes when present', () {
+    final trip = PassengerTripRecord.fromJson(
+      <String, Object?>{
+        'trip_reference': 'TRIP-PVC-001',
+        'trip_status': 'driver_accepted',
+        'pickup_verification_code': '4821',
+      },
+      expectedTripReference: 'TRIP-PVC-001',
+    );
+
+    expect(trip.pickupVerificationCode, '4821');
+  });
+
+  test('pickup verification code is null when absent', () {
+    final trip = PassengerTripRecord.fromJson(
+      <String, Object?>{
+        'trip_reference': 'TRIP-PVC-002',
+        'trip_status': 'assigned',
+      },
+      expectedTripReference: 'TRIP-PVC-002',
+    );
+
+    expect(trip.pickupVerificationCode, isNull);
+  });
+
+  test('withTrip carries the pickup verification code onto the ride request', () {
+    final request = PassengerRideRequestRecord.fromJson(
+      _recordJson(reference: 'RR-PVC-001', tripReference: 'TRIP-PVC-003'),
+    );
+    final trip = PassengerTripRecord.fromJson(
+      <String, Object?>{
+        'trip_reference': 'TRIP-PVC-003',
+        'trip_status': 'driver_accepted',
+        'pickup_verification_code': '7710',
+      },
+      expectedTripReference: 'TRIP-PVC-003',
+    );
+
+    final merged = request.withTrip(trip);
+
+    expect(merged.pickupVerificationCode, '7710');
+  });
+
   test(
     'converted request parses trip reference and fetches canonical trip detail',
     () async {

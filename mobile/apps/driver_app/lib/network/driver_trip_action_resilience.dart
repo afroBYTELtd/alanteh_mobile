@@ -1,4 +1,5 @@
 import 'package:asm_offline_queue/asm_offline_queue.dart';
+import 'package:uuid/uuid.dart';
 
 import 'driver_trip_action_gateway.dart';
 
@@ -139,6 +140,8 @@ final class DriverTripActionResilienceController {
   final Map<String, Future<DriverTripActionRecordResult>> _inFlight =
       <String, Future<DriverTripActionRecordResult>>{};
 
+  static final Uuid _uuid = Uuid();
+
   void attachSubmissionTelemetrySink(
     DriverTripActionTelemetrySink? telemetrySink,
   ) {
@@ -235,6 +238,45 @@ final class DriverTripActionResilienceController {
       message:
           'This trip is complete. No further Driver actions are available.',
     );
+  }
+
+  // Pickup verification is a live, in-person check ("is this passenger
+  // really the one waiting outside right now") - it must never be
+  // silently queued for later offline replay the way arrived-pickup or
+  // an un-coded start-trip can be, because by the time connectivity
+  // returned and a queued attempt replayed automatically, the moment it
+  // was meant to verify would already be gone, and the driver would get
+  // no real-time feedback on a wrong code. This bypasses the persistent
+  // queue entirely: it either confirms live right now, or fails with a
+  // clear reason the caller can show immediately.
+  Future<DriverTripActionRecordResult> submitPickupVerificationCode(
+    String code,
+  ) async {
+    final liveGateway = gateway;
+    if (liveGateway == null) {
+      return const DriverTripActionRecordResult(
+        disposition: DriverTripActionDisposition.onlineVisualOnly,
+      );
+    }
+
+    try {
+      final receipt = await liveGateway.submit(
+        action: DriverTripAction.startTrip,
+        tripReference: tripReference,
+        idempotencyKey: _uuid.v4(),
+        pickupVerificationCode: code,
+      );
+
+      return DriverTripActionRecordResult(
+        disposition: DriverTripActionDisposition.acknowledged,
+        receipt: receipt,
+      );
+    } on DriverTripActionException catch (error) {
+      return DriverTripActionRecordResult(
+        disposition: DriverTripActionDisposition.rejected,
+        error: error,
+      );
+    }
   }
 
   Future<List<DriverTripActionReceipt>> recoverPendingActions() async {

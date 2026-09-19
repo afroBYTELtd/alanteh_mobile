@@ -302,20 +302,30 @@ enum DriverTripActionFailureType {
   idempotencyConflict,
   rateLimited,
   temporarilyUnavailable,
+  pickupCodeMismatch,
+  pickupCodeLocked,
   badResponse,
 }
 
 final class DriverTripActionException implements Exception {
-  const DriverTripActionException({required this.type, required this.message});
+  const DriverTripActionException({
+    required this.type,
+    required this.message,
+    this.attemptsRemaining,
+  });
 
   final DriverTripActionFailureType type;
   final String message;
+  final int? attemptsRemaining;
 
   bool get requiresSignIn => type == DriverTripActionFailureType.signInRequired;
 
   bool get retryable =>
       type == DriverTripActionFailureType.temporarilyUnavailable ||
       type == DriverTripActionFailureType.rateLimited;
+
+  bool get isPickupCodeLocked =>
+      type == DriverTripActionFailureType.pickupCodeLocked;
 
   @override
   String toString() => message;
@@ -327,6 +337,7 @@ abstract interface class DriverTripActionGateway {
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   });
 }
 
@@ -358,6 +369,7 @@ final class ApiDriverTripActionGateway
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) async {
     final telemetrySink = action == DriverTripAction.arrivedPickup
         ? _telemetrySink
@@ -417,7 +429,7 @@ final class ApiDriverTripActionGateway
       tripReference: normalizedReference,
       idempotencyKey: normalizedKey,
       accessToken: accessToken,
-      body: const <String, Object?>{},
+      body: _requestBody(action: action, pickupVerificationCode: pickupVerificationCode),
       telemetrySink: telemetrySink,
     );
 
@@ -456,7 +468,7 @@ final class ApiDriverTripActionGateway
             tripReference: normalizedReference,
             idempotencyKey: normalizedKey,
             accessToken: refreshedAccessToken,
-            body: const <String, Object?>{},
+            body: _requestBody(action: action, pickupVerificationCode: pickupVerificationCode),
             telemetrySink: telemetrySink,
           );
           final retryReceipt = _validatedReceipt(
@@ -483,6 +495,27 @@ final class ApiDriverTripActionGateway
     }
 
     throw _exceptionFromResponse(firstResponse);
+  }
+
+  Map<String, Object?> _requestBody({
+    required DriverTripAction action,
+    required String? pickupVerificationCode,
+  }) {
+    // Every action other than start-trip always transmits exact empty
+    // JSON, deliberately - see "discards caller metadata and always
+    // transmits exact empty JSON" in driver_live_trip_actions_test.dart.
+    // pickup_verification_code is the one piece of caller-supplied data
+    // start-trip legitimately needs to send.
+    if (action != DriverTripAction.startTrip) {
+      return const <String, Object?>{};
+    }
+
+    final normalizedCode = pickupVerificationCode?.trim();
+    if (normalizedCode == null || normalizedCode.isEmpty) {
+      return const <String, Object?>{};
+    }
+
+    return <String, Object?>{'pickup_verification_code': normalizedCode};
   }
 
   Future<ApiResponse<DriverTripActionReceipt>> _post({
@@ -562,6 +595,26 @@ final class ApiDriverTripActionGateway
       );
     }
 
+    if (statusCode == 400 && backendCode == 'pickup_code_locked') {
+      return DriverTripActionException(
+        type: DriverTripActionFailureType.pickupCodeLocked,
+        message:
+            'Too many incorrect pickup code attempts. Contact dispatch to '
+            'continue this trip.',
+        attemptsRemaining: _attemptsRemaining(error?.cause),
+      );
+    }
+
+    if (statusCode == 400 && backendCode == 'pickup_code_mismatch') {
+      return DriverTripActionException(
+        type: DriverTripActionFailureType.pickupCodeMismatch,
+        message:
+            "That pickup code doesn't match. Ask your passenger to confirm "
+            'it and try again.',
+        attemptsRemaining: _attemptsRemaining(error?.cause),
+      );
+    }
+
     if (statusCode == 401) {
       return const DriverTripActionException(
         type: DriverTripActionFailureType.signInRequired,
@@ -622,5 +675,13 @@ final class ApiDriverTripActionGateway
     }
     final value = cause['code'];
     return value is String ? value.trim() : null;
+  }
+
+  int? _attemptsRemaining(Object? cause) {
+    if (cause is! Map) {
+      return null;
+    }
+    final value = cause['attempts_remaining'];
+    return value is int ? value : null;
   }
 }

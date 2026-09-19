@@ -3829,6 +3829,7 @@ final class _ArrivedDiagnosticsOfferActionGateway
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) async {
     calls += 1;
     return DriverTripActionReceipt(

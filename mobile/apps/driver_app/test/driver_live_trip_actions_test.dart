@@ -549,6 +549,152 @@ void main() {
         );
       },
     );
+
+    test(
+      'start-trip sends the pickup verification code; every other action '
+      'and an un-coded start-trip still send exact empty JSON',
+      () async {
+        final store = MemoryAuthTokenStore();
+        await store.saveTokens(
+          AuthTokens(
+            accessToken: 'driver-access',
+            refreshToken: 'driver-refresh',
+          ),
+        );
+        final api = _RecordingActionApiGateway(
+          responses: <ApiResponse<DriverTripActionReceipt>>[
+            _successReceipt(
+              action: DriverTripAction.arrivedPickup,
+              statusCode: 201,
+            ),
+            _successReceipt(action: DriverTripAction.startTrip, statusCode: 201),
+            _successReceipt(action: DriverTripAction.startTrip, statusCode: 201),
+          ],
+        );
+        final gateway = ApiDriverTripActionGateway(
+          apiGateway: api,
+          tokenStore: store,
+        );
+
+        await gateway.submit(
+          action: DriverTripAction.arrivedPickup,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-PVC-1',
+          pickupVerificationCode: '1234',
+        );
+        await gateway.submit(
+          action: DriverTripAction.startTrip,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-PVC-2',
+        );
+        await gateway.submit(
+          action: DriverTripAction.startTrip,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-PVC-3',
+          pickupVerificationCode: ' 1234 ',
+        );
+
+        expect(api.bodies, <Map<String, Object?>>[
+          const <String, Object?>{},
+          const <String, Object?>{},
+          const <String, Object?>{'pickup_verification_code': '1234'},
+        ]);
+      },
+    );
+
+    test('maps pickup_code_mismatch with the remaining-attempts count', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'driver-access', refreshToken: 'driver-refresh'),
+      );
+      final api = _RecordingActionApiGateway(
+        responses: <ApiResponse<DriverTripActionReceipt>>[
+          ApiResponse.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.badResponse,
+              message: 'Raw backend mismatch failure.',
+              statusCode: 400,
+              cause: <String, Object?>{
+                'code': 'pickup_code_mismatch',
+                'attempts_remaining': 2,
+              },
+            ),
+          ),
+        ],
+      );
+      final gateway = ApiDriverTripActionGateway(
+        apiGateway: api,
+        tokenStore: store,
+      );
+
+      await expectLater(
+        gateway.submit(
+          action: DriverTripAction.startTrip,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-pvc-mismatch',
+          pickupVerificationCode: '0000',
+        ),
+        throwsA(
+          isA<DriverTripActionException>()
+              .having(
+                (error) => error.type,
+                'type',
+                DriverTripActionFailureType.pickupCodeMismatch,
+              )
+              .having(
+                (error) => error.attemptsRemaining,
+                'attemptsRemaining',
+                2,
+              )
+              .having((error) => error.isPickupCodeLocked, 'isPickupCodeLocked', isFalse),
+        ),
+      );
+    });
+
+    test('maps pickup_code_locked with zero attempts remaining', () async {
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'driver-access', refreshToken: 'driver-refresh'),
+      );
+      final api = _RecordingActionApiGateway(
+        responses: <ApiResponse<DriverTripActionReceipt>>[
+          ApiResponse.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.badResponse,
+              message: 'Raw backend lock failure.',
+              statusCode: 400,
+              cause: <String, Object?>{
+                'code': 'pickup_code_locked',
+                'attempts_remaining': 0,
+              },
+            ),
+          ),
+        ],
+      );
+      final gateway = ApiDriverTripActionGateway(
+        apiGateway: api,
+        tokenStore: store,
+      );
+
+      await expectLater(
+        gateway.submit(
+          action: DriverTripAction.startTrip,
+          tripReference: 'TRIP-GHANA-001',
+          idempotencyKey: 'ACTION-pvc-locked',
+          pickupVerificationCode: '0000',
+        ),
+        throwsA(
+          isA<DriverTripActionException>()
+              .having(
+                (error) => error.type,
+                'type',
+                DriverTripActionFailureType.pickupCodeLocked,
+              )
+              .having((error) => error.attemptsRemaining, 'attemptsRemaining', 0)
+              .having((error) => error.isPickupCodeLocked, 'isPickupCodeLocked', isTrue),
+        ),
+      );
+    });
   });
 
   group('Driver persistent action coordinator', () {
@@ -817,6 +963,86 @@ void main() {
       queue.events.single.eventType,
       '/api/driver/trips/TRIP-GHANA-005/'
       'actions/complete-trip/',
+    );
+  });
+
+  group('Driver pickup verification code submission', () {
+    test('submits start-trip with the code, using a fresh key each call, and never queues', () async {
+      final queue = _MemoryPersistentActionQueue();
+      final gateway = _RecordingCodeSubmissionGateway();
+      final controller = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-GATEWAY-001',
+        driverId: 'DRIVER-PVC-001',
+      );
+
+      final first = await controller.submitPickupVerificationCode('1234');
+      final second = await controller.submitPickupVerificationCode('1234');
+
+      expect(first.disposition, DriverTripActionDisposition.acknowledged);
+      expect(second.disposition, DriverTripActionDisposition.acknowledged);
+      expect(gateway.submittedCodes, <String?>['1234', '1234']);
+      expect(gateway.actions, everyElement(DriverTripAction.startTrip));
+      // Never persisted to the offline queue - a wrong or right pickup
+      // code is a live, in-person check, not a deferrable status update.
+      expect(queue.events, isEmpty);
+      // Each attempt gets its own idempotency key rather than reusing
+      // one, since these are genuinely separate verification attempts.
+      expect(gateway.idempotencyKeys.toSet(), hasLength(2));
+    });
+
+    test('a rejected code is surfaced directly, not queued for later retry', () async {
+      final queue = _MemoryPersistentActionQueue();
+      final gateway = _RecordingCodeSubmissionGateway(
+        failures: [
+          const DriverTripActionException(
+            type: DriverTripActionFailureType.pickupCodeMismatch,
+            message: "That pickup code doesn't match.",
+            attemptsRemaining: 2,
+          ),
+        ],
+      );
+      final controller = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-GATEWAY-002',
+        driverId: 'DRIVER-PVC-002',
+      );
+
+      final result = await controller.submitPickupVerificationCode('0000');
+
+      expect(result.disposition, DriverTripActionDisposition.rejected);
+      expect(result.error?.type, DriverTripActionFailureType.pickupCodeMismatch);
+      expect(result.error?.attemptsRemaining, 2);
+      expect(queue.events, isEmpty);
+    });
+
+    test(
+      'a temporarily-unavailable failure is also surfaced directly, not '
+      'queued - retryable elsewhere does not mean queueable here',
+      () async {
+        final queue = _MemoryPersistentActionQueue();
+        final gateway = _RecordingCodeSubmissionGateway(
+          failures: [
+            const DriverTripActionException(
+              type: DriverTripActionFailureType.temporarilyUnavailable,
+              message: 'Cannot confirm this action right now.',
+            ),
+          ],
+        );
+        final controller = DriverTripActionResilienceController(
+          queue: queue,
+          gateway: gateway,
+          tripReference: 'TRIP-PVC-GATEWAY-003',
+          driverId: 'DRIVER-PVC-003',
+        );
+
+        final result = await controller.submitPickupVerificationCode('1234');
+
+        expect(result.disposition, DriverTripActionDisposition.rejected);
+        expect(queue.events, isEmpty);
+      },
     );
   });
 
@@ -1168,6 +1394,7 @@ final class _SequenceDriverTripActionGateway
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) async {
     idempotencyKeys.add(idempotencyKey);
     if (_failures.isNotEmpty) {
@@ -1182,6 +1409,39 @@ final class _SequenceDriverTripActionGateway
   }
 }
 
+final class _RecordingCodeSubmissionGateway implements DriverTripActionGateway {
+  _RecordingCodeSubmissionGateway({
+    List<DriverTripActionException> failures = const [],
+  }) : _failures = List<DriverTripActionException>.from(failures);
+
+  final List<DriverTripActionException> _failures;
+  final submittedCodes = <String?>[];
+  final idempotencyKeys = <String>[];
+  final actions = <DriverTripAction>[];
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
+  }) async {
+    actions.add(action);
+    submittedCodes.add(pickupVerificationCode);
+    idempotencyKeys.add(idempotencyKey);
+    if (_failures.isNotEmpty) {
+      throw _failures.removeAt(0);
+    }
+    return DriverTripActionReceipt(
+      tripReference: tripReference,
+      status: action.expectedStatus,
+      message: 'Trip started.',
+      duplicate: false,
+    );
+  }
+}
+
 final class _PendingDriverTripActionGateway implements DriverTripActionGateway {
   final _completer = Completer<DriverTripActionReceipt>();
   int calls = 0;
@@ -1192,6 +1452,7 @@ final class _PendingDriverTripActionGateway implements DriverTripActionGateway {
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) {
     calls += 1;
     return _completer.future;

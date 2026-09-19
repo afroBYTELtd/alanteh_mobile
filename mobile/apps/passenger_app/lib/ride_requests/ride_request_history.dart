@@ -53,6 +53,7 @@ class PassengerRideRequestRecord {
     this.fareDisplay,
     this.fareAmount,
     this.plateNumber,
+    this.pickupVerificationCode,
     this.vehicleLatitude,
     this.vehicleLongitude,
     this.driverName,
@@ -82,6 +83,10 @@ class PassengerRideRequestRecord {
   // "Concerned about the fare" belongs in the cancellation reason list.
   final String? fareAmount;
   final String? plateNumber;
+  // The passenger's own pickup verification code - present only once a
+  // driver is assigned and the trip's market has this enabled. The
+  // driver never sees this value; they only see whether one is required.
+  final String? pickupVerificationCode;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
   final String? driverName;
@@ -132,6 +137,8 @@ class PassengerRideRequestRecord {
       fareDisplay: fareDisplay,
       fareAmount: trip.fareAmount ?? fareAmount,
       plateNumber: trip.plateNumber ?? plateNumber,
+      pickupVerificationCode:
+          trip.pickupVerificationCode ?? pickupVerificationCode,
       vehicleLatitude: trip.vehicleLatitude ?? vehicleLatitude,
       vehicleLongitude: trip.vehicleLongitude ?? vehicleLongitude,
       driverName: trip.driverName ?? driverName,
@@ -293,6 +300,7 @@ final class PassengerTripRecord {
     this.controlCenterMessage,
     this.fareAmount,
     this.plateNumber,
+    this.pickupVerificationCode,
     this.vehicleLatitude,
     this.vehicleLongitude,
     this.driverName,
@@ -306,6 +314,7 @@ final class PassengerTripRecord {
   final String? controlCenterMessage;
   final String? fareAmount;
   final String? plateNumber;
+  final String? pickupVerificationCode;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
   final String? driverName;
@@ -353,6 +362,10 @@ final class PassengerTripRecord {
       plateNumber:
           _optionalString(map, 'plate_number') ??
           _optionalString(map, 'vehicle_plate_number'),
+      pickupVerificationCode: _optionalString(
+        map,
+        'pickup_verification_code',
+      ),
       vehicleLatitude:
           _optionalDouble(map, 'vehicle_latitude') ??
           _optionalDouble(map, 'last_known_vehicle_latitude'),

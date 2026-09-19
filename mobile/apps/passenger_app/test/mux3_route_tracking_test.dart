@@ -381,6 +381,91 @@ void main() {
     await _disposeTracking(tester);
   });
 
+  testWidgets('pickup verification code is shown when present', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        latestStaffState: 'driver assigned',
+        plateNumber: 'GT 1234-26',
+        pickupVerificationCode: '4821',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(
+      find.byKey(const Key('tracking-pickup-verification-code-badge')),
+      findsOneWidget,
+    );
+    expect(find.text('4821'), findsOneWidget);
+    expect(find.text('Pickup code'), findsOneWidget);
+    // Must never be confused with the plate number, both of which are
+    // now rendered as prominent digit badges on the same screen.
+    expect(find.text('GT 1234-26'), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets(
+    'pickup verification code badge is absent when the trip has no code',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(latestStaffState: 'driver assigned', plateNumber: 'GT 1234-26'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(
+        find.byKey(const Key('tracking-pickup-verification-code-badge')),
+        findsNothing,
+      );
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'pickup verification code carries over once a trip is converted',
+    (tester) async {
+      _useSurface(tester);
+
+      final requestRepository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'driver_accepted', pickupVerificationCode: '9034'),
+      ]);
+
+      await _pumpTracking(
+        tester,
+        requestRepository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+      );
+
+      expect(
+        find.byKey(const Key('tracking-pickup-verification-code-badge')),
+        findsOneWidget,
+      );
+      expect(find.text('9034'), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
   testWidgets('test_driver_name_displayed_when_present', (tester) async {
     _useSurface(tester);
 
@@ -1969,6 +2054,7 @@ PassengerRideRequestRecord _record({
   String pickup = 'Solar Hotel',
   String destination = 'Accra Airport',
   String? plateNumber,
+  String? pickupVerificationCode,
   LatLng? vehiclePosition,
   String? driverName,
   String? vehicleType,
@@ -1989,6 +2075,7 @@ PassengerRideRequestRecord _record({
     controlCenterMessage: controlCenterMessage,
     tripReference: tripReference,
     plateNumber: plateNumber,
+    pickupVerificationCode: pickupVerificationCode,
     vehicleLatitude: vehiclePosition?.latitude,
     vehicleLongitude: vehiclePosition?.longitude,
     driverName: driverName,
@@ -2170,6 +2257,8 @@ PassengerTripRecord _trip({
   String? vehicleColour,
   double? driverDistanceKm,
   String? fareAmount,
+  String? plateNumber,
+  String? pickupVerificationCode,
 }) {
   return PassengerTripRecord(
     tripReference: 'TRIP-SWITCH-001',
@@ -2180,6 +2269,8 @@ PassengerTripRecord _trip({
     vehicleColour: vehicleColour,
     driverDistanceKm: driverDistanceKm,
     fareAmount: fareAmount,
+    plateNumber: plateNumber,
+    pickupVerificationCode: pickupVerificationCode,
   );
 }
 
@@ -2263,6 +2354,7 @@ class _TripSequenceRepository implements PassengerTripLifecycleRepository {
         controlCenterMessage: result.controlCenterMessage,
         fareAmount: result.fareAmount,
         plateNumber: result.plateNumber,
+        pickupVerificationCode: result.pickupVerificationCode,
         vehicleLatitude: result.vehicleLatitude,
         vehicleLongitude: result.vehicleLongitude,
         driverName: result.driverName,

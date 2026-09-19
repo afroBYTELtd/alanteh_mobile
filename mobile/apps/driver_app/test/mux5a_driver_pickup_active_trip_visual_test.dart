@@ -598,6 +598,332 @@ void main() {
       }
     },
   );
+
+  group('pickup verification code', () {
+    testWidgets(
+      'code field is absent when the trip does not require verification',
+      (tester) async {
+        _useSurface(tester);
+        final queue = _VisualPersistentQueue();
+        final gateway = _PickupCodeGateway();
+        final recorder = DriverTripActionResilienceController(
+          queue: queue,
+          gateway: gateway,
+          tripReference: 'TRIP-PVC-001',
+          driverId: 'DRIVER-PVC-001',
+        );
+
+        await _pumpTripSequence(
+          tester,
+          actionRecorder: recorder,
+          pickupVerificationRequired: false,
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-mark-arrived-pickup')),
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-open-onboard-confirmation')),
+        );
+
+        expect(
+          find.byKey(const Key('driver-pickup-verification-code-field')),
+          findsNothing,
+        );
+
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-confirm-onboard')),
+        );
+
+        expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+        expect(gateway.submittedCodes, [null, null]);
+        expect(queue.events, hasLength(2));
+      },
+    );
+
+    testWidgets('code field appears when the trip requires verification', (
+      tester,
+    ) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway();
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-002',
+        driverId: 'DRIVER-PVC-002',
+      );
+
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
+
+      expect(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Ask your passenger for their pickup code'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an empty code is rejected locally without calling the gateway', (
+      tester,
+    ) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway();
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-003',
+        driverId: 'DRIVER-PVC-003',
+      );
+
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
+
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-confirm-onboard')),
+      );
+
+      expect(
+        find.text('Enter the code your passenger gave you.'),
+        findsOneWidget,
+      );
+      expect(gateway.submittedCodes, [null]);
+      expect(
+        find.byKey(const Key('driver-confirm-passenger-onboard')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a wrong code shows the server message and stays on this screen', (
+      tester,
+    ) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway(correctCode: '1234');
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-004',
+        driverId: 'DRIVER-PVC-004',
+      );
+
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        '0000',
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-confirm-onboard')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining("doesn't match"),
+        findsOneWidget,
+      );
+      expect(gateway.submittedCodes, [null, '0000']);
+      expect(
+        find.byKey(const Key('driver-confirm-passenger-onboard')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        findsOneWidget,
+      );
+      // Pickup verification must never go through the offline queue - it
+      // is a live, in-person check, not a deferrable status update. The
+      // one queued event here is the earlier arrived-pickup tap, which
+      // does use the queue as normal.
+      expect(queue.events, hasLength(1));
+    });
+
+    testWidgets('the correct code starts the trip', (tester) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway(correctCode: '1234');
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-005',
+        driverId: 'DRIVER-PVC-005',
+      );
+
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        '1234',
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-confirm-onboard')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+      expect(gateway.submittedCodes, [null, '1234']);
+      // Only the earlier arrived-pickup tap is queued - the pickup-code
+      // submission itself bypasses the offline queue entirely.
+      expect(queue.events, hasLength(1));
+    });
+
+    testWidgets(
+      'three wrong attempts locks the field and points to dispatch escalation',
+      (tester) async {
+        _useSurface(tester);
+        final queue = _VisualPersistentQueue();
+        final gateway = _PickupCodeGateway(correctCode: '1234');
+        final recorder = DriverTripActionResilienceController(
+          queue: queue,
+          gateway: gateway,
+          tripReference: 'TRIP-PVC-006',
+          driverId: 'DRIVER-PVC-006',
+        );
+
+        await _pumpTripSequence(
+          tester,
+          actionRecorder: recorder,
+          pickupVerificationRequired: true,
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-mark-arrived-pickup')),
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-open-onboard-confirmation')),
+        );
+
+        for (var attempt = 0; attempt < 3; attempt++) {
+          await tester.enterText(
+            find.byKey(const Key('driver-pickup-verification-code-field')),
+            '0000',
+          );
+          await _tapVisible(
+            tester,
+            find.byKey(const Key('driver-confirm-onboard')),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        expect(gateway.attempts, 3);
+        expect(
+          find.byKey(const Key('driver-pickup-verification-code-field')),
+          findsNothing,
+        );
+        expect(find.text('Locked'), findsOneWidget);
+        expect(
+          find.textContaining('Use the options below to contact dispatch'),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.byKey(const Key('driver-confirm-onboard')),
+              )
+              .onPressed,
+          isNull,
+        );
+        // The escalation path is the safety bar that's already on this
+        // screen, not a new affordance.
+        expect(find.text('Emergency 191'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'the code field survives a real on-screen keyboard without overflowing',
+      (tester) async {
+        _useSurface(tester);
+        final queue = _VisualPersistentQueue();
+        final gateway = _PickupCodeGateway();
+        final recorder = DriverTripActionResilienceController(
+          queue: queue,
+          gateway: gateway,
+          tripReference: 'TRIP-PVC-007',
+          driverId: 'DRIVER-PVC-007',
+        );
+
+        await _pumpTripSequence(
+          tester,
+          actionRecorder: recorder,
+          pickupVerificationRequired: true,
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-mark-arrived-pickup')),
+        );
+        await _tapVisible(
+          tester,
+          find.byKey(const Key('driver-open-onboard-confirmation')),
+        );
+
+        tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+        addTearDown(() => tester.view.resetViewInsets());
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const Key('driver-pickup-verification-code-field')),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 }
 
 final class _FakeDriverTrustedContactRepository
@@ -645,6 +971,7 @@ Future<void> _pumpTripSequence(
   String? destination = _authoritativeDestination,
   int? passengerCount = _authoritativePassengerCount,
   String? passengerNote,
+  bool pickupVerificationRequired = false,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -656,6 +983,7 @@ Future<void> _pumpTripSequence(
         destination: destination,
         passengerCount: passengerCount,
         passengerNote: passengerNote,
+        pickupVerificationRequired: pickupVerificationRequired,
       ),
     ),
   );
@@ -730,6 +1058,7 @@ final class _PendingVisualActionGateway implements DriverTripActionGateway {
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) {
     calls += 1;
     return _completer.future;
@@ -756,11 +1085,74 @@ final class _FailingVisualActionGateway implements DriverTripActionGateway {
     required String tripReference,
     required String idempotencyKey,
     Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
   }) async {
     calls += 1;
     throw const DriverTripActionException(
       type: DriverTripActionFailureType.temporarilyUnavailable,
       message: 'Cannot confirm this action right now.',
+    );
+  }
+}
+
+final class _PickupCodeGateway implements DriverTripActionGateway {
+  _PickupCodeGateway({this.correctCode = '1234'});
+
+  final String correctCode;
+  final List<String?> submittedCodes = [];
+  final List<String> idempotencyKeys = [];
+  int attempts = 0;
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
+  }) async {
+    submittedCodes.add(pickupVerificationCode);
+    idempotencyKeys.add(idempotencyKey);
+
+    if (action != DriverTripAction.startTrip || pickupVerificationCode == null) {
+      // A null code means either a different action, or (for start-trip)
+      // the generic un-coded path a trip with verification switched off
+      // uses - both always succeed here, mirroring the real backend
+      // only enforcing when a code is actually present server-side.
+      return DriverTripActionReceipt(
+        tripReference: tripReference,
+        status: action.expectedStatus,
+        message: 'Confirmed.',
+        duplicate: false,
+      );
+    }
+
+    if (pickupVerificationCode == correctCode) {
+      return DriverTripActionReceipt(
+        tripReference: tripReference,
+        status: action.expectedStatus,
+        message: 'Trip started.',
+        duplicate: false,
+      );
+    }
+
+    attempts += 1;
+    if (attempts >= 3) {
+      throw DriverTripActionException(
+        type: DriverTripActionFailureType.pickupCodeLocked,
+        message:
+            'Too many incorrect pickup code attempts. Contact dispatch to '
+            'continue this trip.',
+        attemptsRemaining: 0,
+      );
+    }
+
+    throw DriverTripActionException(
+      type: DriverTripActionFailureType.pickupCodeMismatch,
+      message:
+          "That pickup code doesn't match. Ask your passenger to confirm "
+          'it and try again.',
+      attemptsRemaining: 3 - attempts,
     );
   }
 }
