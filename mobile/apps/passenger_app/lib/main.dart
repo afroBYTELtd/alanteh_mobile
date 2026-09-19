@@ -17,6 +17,7 @@ import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'network/ghana_network_resilience.dart';
+import 'network/passenger_cancellation_gateway.dart';
 import 'notifications/passenger_push_navigation.dart';
 
 import 'notifications/push_device_registration.dart';
@@ -124,6 +125,11 @@ class PassengerApp extends StatelessWidget {
           tokenStore: tokenStore,
           baseUrl: apiBaseUrl,
         );
+    final resolvedCancellationGateway =
+        ApiPassengerCancellationGateway.withDefaultClient(
+          tokenStore: tokenStore,
+          baseUrl: apiBaseUrl,
+        );
 
     final resolvedAuthService =
         authService ??
@@ -146,6 +152,7 @@ class PassengerApp extends StatelessWidget {
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
             trustedContactRepository: resolvedTrustedContactRepository,
+            cancellationGateway: resolvedCancellationGateway,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             localQaEnabled: configuration.localQaEnabled,
           )
@@ -157,6 +164,7 @@ class PassengerApp extends StatelessWidget {
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
             trustedContactRepository: resolvedTrustedContactRepository,
+            cancellationGateway: resolvedCancellationGateway,
           );
 
     return MaterialApp(
@@ -281,6 +289,7 @@ class PassengerLoginShell extends StatefulWidget {
     required this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.trustedContactRepository,
+    this.cancellationGateway,
     this.pushDeviceRegistrarFactory,
     this.localQaEnabled = false,
     super.key,
@@ -296,6 +305,7 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerPaymentRatingRepository paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final PassengerTrustedContactRepository? trustedContactRepository;
+  final PassengerCancellationGateway? cancellationGateway;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final bool localQaEnabled;
 
@@ -602,6 +612,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           record: record!,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,
+          cancellationGateway: widget.cancellationGateway,
           phoneNumber: _passengerPhoneNumber,
           onSignInRequired: _returnToSignIn,
         ),
@@ -894,6 +905,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         paymentRatingRepository: widget.paymentRatingRepository,
         fareEstimateRepository: widget.fareEstimateRepository,
         trustedContactRepository: widget.trustedContactRepository,
+        cancellationGateway: widget.cancellationGateway,
         phoneNumber: _passengerPhoneNumber,
         passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,

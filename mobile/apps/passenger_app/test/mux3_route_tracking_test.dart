@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:passenger_app/booking/route_preview_card.dart';
 import 'package:passenger_app/map/osrm_route.dart';
 import 'package:passenger_app/map/passenger_map.dart';
+import 'package:passenger_app/network/passenger_cancellation_gateway.dart';
 import 'package:passenger_app/payment_rating/passenger_payment_rating_contract.dart';
 import 'package:passenger_app/payment_rating/passenger_payment_rating_page.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
@@ -1135,78 +1136,294 @@ void main() {
     await _disposeTracking(tester);
   });
 
-  testWidgets('cancel dialog performs no backend mutation', (tester) async {
-    _useSurface(tester);
+  testWidgets(
+    'cancel button opens the reason sheet and submits a ride-request '
+    'cancellation',
+    (tester) async {
+      _useSurface(tester);
 
-    final repository = _SequenceRepository(<Object>[
-      _record(status: 'requested'),
-    ]);
+      final repository = _SequenceRepository(<Object>[
+        _record(status: 'requested'),
+        _record(status: 'cancelled'),
+      ]);
+      final gateway = _FakeCancellationGateway();
 
-    await _pumpTracking(
-      tester,
-      repository,
-      pollInterval: const Duration(hours: 1),
-    );
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+        cancellationGateway: gateway,
+      );
 
-    final callsBeforeDialog = repository.detailCalls;
+      await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.byKey(const Key('passenger-cancel-reason-sheet')),
+        findsOneWidget,
+      );
+      for (final reason in PassengerCancellationReason.values) {
+        if (reason == PassengerCancellationReason.priceOrFareConcern) {
+          // No fare exists pre-conversion; excluded below.
+          continue;
+        }
+        expect(
+          find.byKey(Key('passenger-cancel-reason-option-${reason.code}')),
+          findsOneWidget,
+        );
+      }
+      expect(
+        find.byKey(
+          const Key(
+            'passenger-cancel-reason-option-price_or_fare_concern',
+          ),
+        ),
+        findsNothing,
+      );
 
-    expect(find.byKey(const Key('cancel-confirmation-dialog')), findsOneWidget);
-    expect(repository.detailCalls, callsBeforeDialog);
+      await tester.tap(
+        find.byKey(
+          const Key('passenger-cancel-reason-option-no_longer_needed'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-confirm')),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byKey(const Key('cancel-dialog-no-backend-mutation')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      expect(gateway.rideRequestCalls, 1);
+      expect(gateway.tripCalls, 0);
+      expect(gateway.rideRequestReasons, <PassengerCancellationReason>[
+        PassengerCancellationReason.noLongerNeeded,
+      ]);
+      expect(gateway.rideRequestNotes, <String?>[null]);
+      expect(find.byKey(const Key('trip-cancelled-by-passenger-state')), findsOneWidget);
+      expect(find.byKey(const Key('open-cancel-confirmation')), findsNothing);
 
-    expect(repository.detailCalls, callsBeforeDialog);
+      await _disposeTracking(tester);
+    },
+  );
 
-    await _disposeTracking(tester);
-  });
+  testWidgets(
+    'vehicle-en-route notice shows in the reason sheet, and Never mind '
+    'submits nothing',
+    (tester) async {
+      _useSurface(tester);
 
-  testWidgets('vehicle-en-route cancel dialog stays local only', (
-    tester,
-  ) async {
-    _useSurface(tester);
+      final repository = _SequenceRepository(<Object>[
+        _record(
+          latestStaffState: 'dispatched',
+          vehiclePosition: _testVehiclePosition,
+        ),
+      ]);
+      final gateway = _FakeCancellationGateway();
 
-    final repository = _SequenceRepository(<Object>[
-      _record(
-        latestStaffState: 'dispatched',
-        vehiclePosition: _testVehiclePosition,
-      ),
-    ]);
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+        cancellationGateway: gateway,
+      );
 
-    await _pumpTracking(
-      tester,
-      repository,
-      pollInterval: const Duration(hours: 1),
-    );
+      await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
+      await tester.pumpAndSettle();
 
-    final callsBeforeDialog = repository.detailCalls;
+      expect(
+        find.byKey(const Key('cancel-vehicle-en-route-notice')),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-cancel')),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(const Key('cancel-vehicle-en-route-dialog')),
-      findsOneWidget,
-    );
+      expect(gateway.rideRequestCalls, 0);
+      expect(gateway.tripCalls, 0);
+      expect(
+        find.byKey(const Key('passenger-cancel-reason-sheet')),
+        findsNothing,
+      );
 
-    await tester.tap(
-      find.byKey(const Key('cancel-dialog-no-backend-mutation')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await _disposeTracking(tester);
+    },
+  );
 
-    expect(repository.detailCalls, callsBeforeDialog);
+  testWidgets(
+    'other requires a note, and a Trip-linked cancellation calls the '
+    'trip endpoint with the fare-concern reason available',
+    (tester) async {
+      _useSurface(tester);
 
-    await _disposeTracking(tester);
-  });
+      final repository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'fare_confirmed', fareAmount: '55.00'),
+      ]);
+      final gateway = _FakeCancellationGateway();
+
+      await _pumpTracking(
+        tester,
+        repository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+        cancellationGateway: gateway,
+      );
+
+      await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const Key(
+            'passenger-cancel-reason-option-price_or_fare_concern',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-option-other')),
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('passenger-cancel-reason-confirm')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-cancel-reason-other-note')),
+        'Driver asked me to cancel and rebook at a lower fare.',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(gateway.tripCalls, 1);
+      expect(gateway.rideRequestCalls, 0);
+      expect(gateway.tripReasons, <PassengerCancellationReason>[
+        PassengerCancellationReason.other,
+      ]);
+      expect(gateway.tripNotes, <String?>[
+        'Driver asked me to cancel and rebook at a lower fare.',
+      ]);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'a not-eligible cancellation shows the friendly message with a '
+    'separate contact-support action, not appended to the same sentence',
+    (tester) async {
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+      ]);
+      final tripRepository = _TripSequenceRepository(<Object>[
+        _trip(status: 'arrived_at_pickup'),
+      ]);
+      final gateway = _FakeCancellationGateway(
+        error: const PassengerCancellationException.notEligible(),
+      );
+
+      await _pumpTracking(
+        tester,
+        repository,
+        tripRepository: tripRepository,
+        pollInterval: const Duration(hours: 1),
+        cancellationGateway: gateway,
+      );
+
+      await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const Key('passenger-cancel-reason-option-no_longer_needed'),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'This trip has already started and can no longer be cancelled here.',
+        ),
+        findsOneWidget,
+      );
+      // The message itself must not also carry the support framing - that's
+      // a separate SnackBarAction, not part of the same sentence.
+      expect(
+        find.textContaining('if something'),
+        findsNothing,
+      );
+      expect(find.text('Contact support'), findsOneWidget);
+
+      await _disposeTracking(tester);
+    },
+  );
+
+  testWidgets(
+    'the reason sheet does not overflow when the on-screen keyboard opens '
+    'for the other note field',
+    (tester) async {
+      // Same lesson as the driver-app decline sheet: WidgetTester.view.viewInsets
+      // simulates the keyboard opening (widget tests don't open a real one).
+      _useSurface(tester);
+
+      final repository = _SequenceRepository(<Object>[
+        _record(status: 'requested'),
+      ]);
+      final gateway = _FakeCancellationGateway();
+
+      await _pumpTracking(
+        tester,
+        repository,
+        pollInterval: const Duration(hours: 1),
+        cancellationGateway: gateway,
+      );
+
+      await tester.tap(find.byKey(const Key('open-cancel-confirmation')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('passenger-cancel-reason-option-other')),
+      );
+      await tester.pump();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 500);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+
+      await tester.enterText(
+        find.byKey(const Key('passenger-cancel-reason-other-note')),
+        'Driver asked me to cancel and rebook at a lower fare.',
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const Key('passenger-cancel-reason-confirm')),
+        findsOneWidget,
+      );
+
+      await _disposeTracking(tester);
+    },
+  );
 
   testWidgets('history card title uses From to To and Book again callback', (
     tester,
@@ -1790,6 +2007,7 @@ Future<void> _pumpTracking(
       const PlatformPassengerSafetyUriLauncher(),
   PassengerSafetyShareGateway safetyShareGateway =
       const PlatformPassengerSafetyShareGateway(),
+  PassengerCancellationGateway? cancellationGateway,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -1803,6 +2021,7 @@ Future<void> _pumpTracking(
         trustedContactRepository: trustedContactRepository,
         safetyUriLauncher: safetyUriLauncher,
         safetyShareGateway: safetyShareGateway,
+        cancellationGateway: cancellationGateway,
       ),
     ),
   );
@@ -1940,6 +2159,7 @@ PassengerTripRecord _trip({
   String? vehicleType,
   String? vehicleColour,
   double? driverDistanceKm,
+  String? fareAmount,
 }) {
   return PassengerTripRecord(
     tripReference: 'TRIP-SWITCH-001',
@@ -1949,7 +2169,65 @@ PassengerTripRecord _trip({
     vehicleType: vehicleType,
     vehicleColour: vehicleColour,
     driverDistanceKm: driverDistanceKm,
+    fareAmount: fareAmount,
   );
+}
+
+class _FakeCancellationGateway implements PassengerCancellationGateway {
+  _FakeCancellationGateway({this.error});
+
+  final PassengerCancellationException? error;
+
+  int rideRequestCalls = 0;
+  int tripCalls = 0;
+  final List<PassengerCancellationReason> rideRequestReasons =
+      <PassengerCancellationReason>[];
+  final List<String?> rideRequestNotes = <String?>[];
+  final List<PassengerCancellationReason> tripReasons =
+      <PassengerCancellationReason>[];
+  final List<String?> tripNotes = <String?>[];
+
+  @override
+  Future<PassengerCancellationResult> cancelRideRequest({
+    required String requestReference,
+    required PassengerCancellationReason reason,
+    String? reasonNote,
+    required String idempotencyKey,
+  }) async {
+    rideRequestCalls += 1;
+    rideRequestReasons.add(reason);
+    rideRequestNotes.add(reasonNote);
+    final currentError = error;
+    if (currentError != null) {
+      throw currentError;
+    }
+    return PassengerCancellationResult(
+      reference: requestReference,
+      status: 'cancelled',
+      duplicate: false,
+    );
+  }
+
+  @override
+  Future<PassengerCancellationResult> cancelTripBooking({
+    required String tripReference,
+    required PassengerCancellationReason reason,
+    String? reasonNote,
+    required String idempotencyKey,
+  }) async {
+    tripCalls += 1;
+    tripReasons.add(reason);
+    tripNotes.add(reasonNote);
+    final currentError = error;
+    if (currentError != null) {
+      throw currentError;
+    }
+    return PassengerCancellationResult(
+      reference: tripReference,
+      status: 'cancelled_by_passenger',
+      duplicate: false,
+    );
+  }
 }
 
 class _TripSequenceRepository implements PassengerTripLifecycleRepository {
@@ -1973,6 +2251,7 @@ class _TripSequenceRepository implements PassengerTripLifecycleRepository {
         tripReference: tripReference,
         status: result.status,
         controlCenterMessage: result.controlCenterMessage,
+        fareAmount: result.fareAmount,
         plateNumber: result.plateNumber,
         vehicleLatitude: result.vehicleLatitude,
         vehicleLongitude: result.vehicleLongitude,

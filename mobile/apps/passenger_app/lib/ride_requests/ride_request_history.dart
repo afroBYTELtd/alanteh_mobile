@@ -51,6 +51,7 @@ class PassengerRideRequestRecord {
     this.tripReference,
     this.specialRequest,
     this.fareDisplay,
+    this.fareAmount,
     this.plateNumber,
     this.vehicleLatitude,
     this.vehicleLongitude,
@@ -75,6 +76,11 @@ class PassengerRideRequestRecord {
   final String? tripReference;
   final String? specialRequest;
   final String? fareDisplay;
+  // The Trip's live fare_amount (distinct from fareDisplay, which is a
+  // separately-formatted historical value shown for completed trips).
+  // Null until the trip reaches FARE_CONFIRMED - used to decide whether
+  // "Concerned about the fare" belongs in the cancellation reason list.
+  final String? fareAmount;
   final String? plateNumber;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
@@ -94,6 +100,11 @@ class PassengerRideRequestRecord {
   String? get normalizedTripReference {
     final value = tripReference?.trim();
     return value == null || value.isEmpty ? null : value;
+  }
+
+  bool get hasFare {
+    final value = fareAmount?.trim();
+    return value != null && value.isNotEmpty;
   }
 
   PassengerRideState get passengerState => PassengerRideState.fromStatus(
@@ -119,6 +130,7 @@ class PassengerRideRequestRecord {
       tripReference: trip.tripReference,
       specialRequest: specialRequest,
       fareDisplay: fareDisplay,
+      fareAmount: trip.fareAmount ?? fareAmount,
       plateNumber: trip.plateNumber ?? plateNumber,
       vehicleLatitude: trip.vehicleLatitude ?? vehicleLatitude,
       vehicleLongitude: trip.vehicleLongitude ?? vehicleLongitude,
@@ -132,6 +144,7 @@ class PassengerRideRequestRecord {
   bool get isTerminal =>
       passengerState == PassengerRideState.arrived ||
       passengerState == PassengerRideState.cancelledByOperations ||
+      passengerState == PassengerRideState.cancelledByPassenger ||
       passengerState == PassengerRideState.rejected;
 
   String get safeMessage {
@@ -278,6 +291,7 @@ final class PassengerTripRecord {
     required this.tripReference,
     required this.status,
     this.controlCenterMessage,
+    this.fareAmount,
     this.plateNumber,
     this.vehicleLatitude,
     this.vehicleLongitude,
@@ -290,6 +304,7 @@ final class PassengerTripRecord {
   final String tripReference;
   final String status;
   final String? controlCenterMessage;
+  final String? fareAmount;
   final String? plateNumber;
   final double? vehicleLatitude;
   final double? vehicleLongitude;
@@ -303,7 +318,8 @@ final class PassengerTripRecord {
   bool get isTerminal =>
       normalizedStatus == 'completed_pending_review' ||
       normalizedStatus == 'completed_confirmed' ||
-      normalizedStatus == 'cancelled_by_operations';
+      normalizedStatus == 'cancelled_by_operations' ||
+      normalizedStatus == 'cancelled_by_passenger';
 
   PassengerRideState get passengerState =>
       PassengerRideState.fromStatus(status, message: controlCenterMessage);
@@ -333,6 +349,7 @@ final class PassengerTripRecord {
       tripReference: returnedReference ?? expectedReference,
       status: _requiredString(map, 'trip_status'),
       controlCenterMessage: _optionalString(map, 'control_center_message'),
+      fareAmount: _optionalString(map, 'fare_amount'),
       plateNumber:
           _optionalString(map, 'plate_number') ??
           _optionalString(map, 'vehicle_plate_number'),
@@ -382,6 +399,7 @@ enum PassengerRideState {
   arrived,
   reassigned,
   cancelledByOperations,
+  cancelledByPassenger,
   rejected;
 
   factory PassengerRideState.fromStatus(
@@ -397,6 +415,11 @@ enum PassengerRideState {
       'arrived_at_pickup' => PassengerRideState.driverArrived,
       'in_progress' => PassengerRideState.inProgress,
       'cancelled_by_operations' => PassengerRideState.cancelledByOperations,
+      // 'cancelled' is the pre-conversion RideRequest status; 'cancelled_by_passenger'
+      // is the post-conversion Trip status. Both are written exclusively by the
+      // passenger-initiated cancellation endpoints - never by any staff/system path.
+      'cancelled' ||
+      'cancelled_by_passenger' => PassengerRideState.cancelledByPassenger,
       'completed_pending_review' ||
       'completed_confirmed' => PassengerRideState.arrived,
       _ => null,
@@ -453,6 +476,7 @@ enum PassengerRideState {
     PassengerRideState.reassigned => 'A new vehicle is now handling your ride.',
     PassengerRideState.cancelledByOperations =>
       'Your trip was cancelled by ALANTEH support.',
+    PassengerRideState.cancelledByPassenger => 'You cancelled this trip.',
     PassengerRideState.rejected =>
       'Please try booking again or contact support.',
   };
