@@ -431,9 +431,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(repository.tripCalls, isEmpty);
+      expect(repository.tripCalls, <String>['TRIP-ENRICHED-ACTIVE']);
       expect(openedRecord, isNotNull);
-      expect(openedRecord!.status, 'converted');
+      expect(openedRecord!.status, 'in_progress');
       expect(openedRecord!.tripReference, 'TRIP-ENRICHED-ACTIVE');
       expect(find.byKey(const Key('ride-request-detail-loaded')), findsNothing);
     },
@@ -642,6 +642,46 @@ void main() {
   });
 
   testWidgets(
+    'a converted record for a cancelled trip is enriched to the real '
+    'cancelled status, not left showing a generic placeholder',
+    (tester) async {
+      // Reproduces the live-device bug: a request that was long ago
+      // converted to a Trip, then declined/cancelled, still carries
+      // status "converted" on the RideRequest forever - only the linked
+      // Trip knows it was actually cancelled.
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-APP-CANCELLED-HISTORY',
+            status: 'converted',
+            tripCreated: true,
+            latestStaffState: 'Trip record created.',
+            tripReference: 'TRIP-CANCELLED-HISTORY',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'cancelled_by_operations',
+          controlCenterMessage: 'This trip was cancelled by ALANTEH.',
+        ),
+      );
+
+      await _pumpHistory(tester, repository);
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>['TRIP-CANCELLED-HISTORY']);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-cancelled_by_operations'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Request update'), findsNothing);
+      expect(find.text('Trip record created.'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'test_converted_record_trip_fetch_failure_shows_fallback_gracefully',
     (tester) async {
       final repository = _TripAwareFakeRepository(
@@ -662,7 +702,7 @@ void main() {
       await _pumpHistory(tester, repository);
       await tester.pumpAndSettle();
 
-      expect(repository.tripCalls, isEmpty);
+      expect(repository.tripCalls, <String>['TRIP-FAIL']);
       expect(find.text('Request update'), findsOneWidget);
       expect(find.text('Trip record created.'), findsOneWidget);
       expect(find.byKey(const Key('ride-request-history-error')), findsNothing);
@@ -886,8 +926,8 @@ void main() {
     await _pumpHistory(tester, repository);
     await tester.pumpAndSettle();
 
-    expect(repository.tripCalls, isEmpty);
-    expect(find.text('Completed'), findsOneWidget);
+    expect(repository.tripCalls, <String>['TRIP-SHARED', 'TRIP-UNIQUE']);
+    expect(find.text('Completed'), findsNWidgets(3));
   });
 
   testWidgets(

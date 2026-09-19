@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -348,6 +349,106 @@ void main() {
       await _disposeTracking(tester);
     },
   );
+
+  group('converted-status placeholder never renders as a real state', () {
+    testWidgets(
+      'a raw "converted" initialRecord shows a neutral checking-status '
+      'view, not "Looking for a driver", before the trip fetch resolves',
+      (tester) async {
+        _useSurface(tester);
+
+        final tripCompleter = Completer<PassengerTripRecord>();
+        final requestRepository = _SequenceRepository(<Object>[
+          _record(status: 'converted', tripReference: 'TRIP-FIRSTFRAME-001'),
+        ]);
+        final tripRepository = _CompleterTripRepository(
+          tripCompleter.future,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AsmThemes.passenger,
+            home: RideTrackingScreen(
+              repository: requestRepository,
+              requestReference: 'RR-APP-MUX3-TEST',
+              tripRepository: tripRepository,
+              initialRecord: _record(
+                status: 'converted',
+                tripReference: 'TRIP-FIRSTFRAME-001',
+              ),
+              pollInterval: const Duration(hours: 1),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // The trip fetch is deliberately held open (via the Completer)
+        // so this frame is guaranteed to be pre-resolution - exactly
+        // the frame a passenger opening a historical trip card actually
+        // sees first.
+        expect(
+          find.byKey(const Key('checking-trip-status-state')),
+          findsOneWidget,
+        );
+        expect(find.text('Checking your trip'), findsOneWidget);
+        expect(find.text('Looking for a driver'), findsNothing);
+        expect(
+          find.byKey(const Key('looking-for-driver-state')),
+          findsNothing,
+        );
+
+        tripCompleter.complete(
+          _trip(status: 'cancelled_by_operations'),
+        );
+        await tester.pumpAndSettle();
+
+        // Once the fetch resolves, the real (here: terminal) status
+        // takes over and the placeholder is gone.
+        expect(find.text('Trip cancelled'), findsOneWidget);
+        expect(
+          find.byKey(const Key('checking-trip-status-state')),
+          findsNothing,
+        );
+
+        await _disposeTracking(tester);
+      },
+    );
+
+    testWidgets(
+      'a reconnect attempt on a not-yet-enriched record still shows the '
+      'reconnecting banner, not a blank spinner screen',
+      (tester) async {
+        _useSurface(tester);
+
+        final requestRepository = _SequenceRepository(<Object>[
+          _record(status: 'converted', tripReference: 'TRIP-RECONNECT-001'),
+        ]);
+        final tripRepository = _TripSequenceRepository(<Object>[
+          const PassengerRideRequestHistoryException.network(),
+          _trip(status: 'arrived_at_pickup'),
+        ]);
+
+        await _pumpTracking(
+          tester,
+          requestRepository,
+          tripRepository: tripRepository,
+          pollInterval: const Duration(milliseconds: 100),
+        );
+
+        expect(find.text('Reconnecting…'), findsOneWidget);
+        expect(find.text('Checking your trip'), findsOneWidget);
+        expect(find.text('Looking for a driver'), findsNothing);
+
+        await tester.pump(const Duration(milliseconds: 110));
+        await tester.pump();
+
+        expect(find.byKey(const Key('driver-arrived-state')), findsOneWidget);
+        expect(find.text('Reconnecting…'), findsNothing);
+
+        await _disposeTracking(tester);
+      },
+    );
+  });
 
   testWidgets('tracking shows only static last-known CC5C GPS data', (
     tester,
@@ -2366,6 +2467,18 @@ class _TripSequenceRepository implements PassengerTripLifecycleRepository {
 
     throw result;
   }
+}
+
+/// Holds a trip fetch open until the test explicitly resolves it, so a
+/// pre-resolution frame can be observed deterministically rather than
+/// racing the fake repository's own (near-instant) Future resolution.
+class _CompleterTripRepository implements PassengerTripLifecycleRepository {
+  _CompleterTripRepository(this.result);
+
+  final Future<PassengerTripRecord> result;
+
+  @override
+  Future<PassengerTripRecord> fetchTrip(String tripReference) => result;
 }
 
 class _TrackingPaymentRatingRepository
