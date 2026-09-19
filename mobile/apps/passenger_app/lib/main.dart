@@ -152,6 +152,7 @@ class PassengerApp extends StatelessWidget {
             paymentRatingRepository: resolvedPaymentRatingRepository,
             fareEstimateRepository: resolvedFareEstimateRepository,
             trustedContactRepository: resolvedTrustedContactRepository,
+            cancellationGateway: resolvedCancellationGateway,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             localQaEnabled: configuration.localQaEnabled,
           )
@@ -288,6 +289,7 @@ class PassengerLoginShell extends StatefulWidget {
     required this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.trustedContactRepository,
+    this.cancellationGateway,
     this.pushDeviceRegistrarFactory,
     this.localQaEnabled = false,
     super.key,
@@ -303,6 +305,7 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerPaymentRatingRepository paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final PassengerTrustedContactRepository? trustedContactRepository;
+  final PassengerCancellationGateway? cancellationGateway;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final bool localQaEnabled;
 
@@ -609,6 +612,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           record: record!,
           paymentRatingRepository: widget.paymentRatingRepository,
           trustedContactRepository: widget.trustedContactRepository,
+          cancellationGateway: widget.cancellationGateway,
           phoneNumber: _passengerPhoneNumber,
           onSignInRequired: _returnToSignIn,
         ),
@@ -901,6 +905,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         paymentRatingRepository: widget.paymentRatingRepository,
         fareEstimateRepository: widget.fareEstimateRepository,
         trustedContactRepository: widget.trustedContactRepository,
+        cancellationGateway: widget.cancellationGateway,
         phoneNumber: _passengerPhoneNumber,
         passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,

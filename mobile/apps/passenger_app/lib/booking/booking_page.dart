@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../account/passenger_payment_setup_screen.dart';
 import '../map/osrm_route.dart';
+import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import 'booking_draft.dart';
 import 'booking_form.dart';
@@ -31,6 +32,7 @@ class BookingPage extends StatefulWidget {
     this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.trustedContactRepository,
+    this.cancellationGateway,
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.routeService = const OsrmPassengerRouteService(),
@@ -50,6 +52,7 @@ class BookingPage extends StatefulWidget {
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final PassengerTrustedContactRepository? trustedContactRepository;
+  final PassengerCancellationGateway? cancellationGateway;
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final PassengerRouteService routeService;
@@ -261,6 +264,7 @@ class _BookingPageState extends State<BookingPage> {
               requestReference: reference,
               paymentRatingRepository: widget.paymentRatingRepository,
               trustedContactRepository: widget.trustedContactRepository,
+              cancellationGateway: widget.cancellationGateway,
               phoneNumber: widget.phoneNumber,
               initialPaymentNetwork: widget.initialPaymentNetwork,
               onSignInRequired: widget.onSignInRequired,

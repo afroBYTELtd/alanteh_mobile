@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
@@ -29,6 +30,7 @@ Widget buildPassengerPushTripDestination({
   required PassengerRideRequestRecord record,
   PassengerPaymentRatingRepository? paymentRatingRepository,
   PassengerTrustedContactRepository? trustedContactRepository,
+  PassengerCancellationGateway? cancellationGateway,
   String? phoneNumber,
   VoidCallback? onSignInRequired,
 }) {
@@ -41,6 +43,7 @@ Widget buildPassengerPushTripDestination({
         : null,
     paymentRatingRepository: paymentRatingRepository,
     trustedContactRepository: trustedContactRepository,
+    cancellationGateway: cancellationGateway,
     phoneNumber: phoneNumber,
     onSignInRequired: onSignInRequired,
   );
