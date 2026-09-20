@@ -183,6 +183,72 @@ void main() {
     );
   });
 
+  test(
+    'fromStatus resolves the full real Trip status enum canonically, not '
+    'via heuristic substring matches that silently miss underscored values',
+    () {
+      // driver_en_route and arrived_at_destination previously fell through
+      // to PassengerRideState.looking because the heuristic checked for
+      // 'en route'/'arrived at destination' (spaces) against a status
+      // string that only ever contains underscores - the exact "Looking
+      // for a driver" bug class, on two statuses nobody had tested.
+      expect(
+        PassengerRideState.fromStatus('driver_en_route'),
+        PassengerRideState.vehicleEnRoute,
+      );
+      expect(
+        PassengerRideState.fromStatus('arrived_at_destination'),
+        PassengerRideState.arrived,
+      );
+      // passenger_onboard had no heuristic match at all.
+      expect(
+        PassengerRideState.fromStatus('passenger_onboard'),
+        PassengerRideState.inProgress,
+      );
+      // driver_declined and cancelled_by_passenger already resolved
+      // correctly (one by heuristic luck, one canonically), verified here
+      // alongside the newly-fixed ones so a future change can't silently
+      // regress either.
+      expect(
+        PassengerRideState.fromStatus('driver_declined'),
+        PassengerRideState.rejected,
+      );
+      expect(
+        PassengerRideState.fromStatus('cancelled_by_passenger'),
+        PassengerRideState.cancelledByPassenger,
+      );
+      expect(
+        PassengerRideState.fromStatus('no_show'),
+        PassengerRideState.cancelledByOperations,
+      );
+      expect(
+        PassengerRideState.fromStatus('disputed'),
+        PassengerRideState.arrived,
+      );
+
+      for (final status in <String>[
+        'driver_en_route',
+        'arrived_at_destination',
+        'passenger_onboard',
+        'driver_declined',
+        'cancelled_by_passenger',
+        'no_show',
+        'disputed',
+      ]) {
+        expect(
+          PassengerRideState.hasCanonicalStatus(status),
+          isTrue,
+          reason: '$status should resolve canonically, not by heuristic',
+        );
+      }
+
+      // Deliberately left unmapped - no client code currently drives a
+      // trip through these, so there is no evidence for what they should
+      // show; see the comment on _canonicalStateFor.
+      expect(PassengerRideState.hasCanonicalStatus('fare_confirmed'), isFalse);
+    },
+  );
+
   testWidgets('request history shows loading state', (tester) async {
     final pending = Completer<List<PassengerRideRequestRecord>>();
 
@@ -682,6 +748,93 @@ void main() {
   );
 
   testWidgets(
+    'a converted record for a driver-declined trip shows the real declined '
+    'outcome, not a generic placeholder',
+    (tester) async {
+      // PASSENGER-TRIP-DETAIL-STATUS-DISPLAY-FIX: driver_declined has no
+      // literal case in _statusLabel/_safeStatusMessage, so before
+      // generalizing the canonical-status override this fell through to
+      // the generic "Request update" default even after enrichment
+      // correctly set record.status to 'driver_declined'.
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-APP-DECLINED-HISTORY',
+            status: 'converted',
+            tripCreated: true,
+            latestStaffState: 'Trip record created.',
+            tripReference: 'TRIP-DECLINED-HISTORY',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'driver_declined',
+        ),
+      );
+
+      await _pumpHistory(tester, repository);
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>['TRIP-DECLINED-HISTORY']);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-driver_declined'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Could not be accepted'), findsOneWidget);
+      expect(
+        find.text('Please try booking again or contact support.'),
+        findsOneWidget,
+      );
+      expect(find.text('Request update'), findsNothing);
+      expect(find.text('Trip record created.'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a converted record for a passenger-cancelled trip shows Cancelled, '
+    'not the stale pre-conversion staff state',
+    (tester) async {
+      // cancelled_by_passenger is a real, already-shipped status (from the
+      // passenger trip-cancellation feature) that _statusLabel/
+      // _safeStatusMessage never had a case for - only 'cancelled' and
+      // 'canceled' were handled, so this fell to "Request update" even
+      // though PassengerRideState.fromStatus already resolved it correctly.
+      final repository = _TripAwareFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          _record(
+            reference: 'RR-APP-PASSENGER-CANCELLED-HISTORY',
+            status: 'converted',
+            tripCreated: true,
+            latestStaffState: 'Trip record created.',
+            tripReference: 'TRIP-PASSENGER-CANCELLED-HISTORY',
+          ),
+        ],
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'cancelled_by_passenger',
+        ),
+      );
+
+      await _pumpHistory(tester, repository);
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>['TRIP-PASSENGER-CANCELLED-HISTORY']);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-cancelled_by_passenger'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Cancelled'), findsOneWidget);
+      expect(find.text('You cancelled this trip.'), findsOneWidget);
+      expect(find.text('Request update'), findsNothing);
+      expect(find.text('Trip record created.'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'test_converted_record_trip_fetch_failure_shows_fallback_gracefully',
     (tester) async {
       final repository = _TripAwareFakeRepository(
@@ -1118,6 +1271,161 @@ void main() {
     expect(find.text('Accra Mall'), findsOneWidget);
     expect(find.text('Kotoka International Airport'), findsOneWidget);
   });
+
+  testWidgets(
+    'opening a driver-declined trip detail page shows the real declined '
+    'outcome instantly from initialRecord, then again after its own '
+    'refetch resolves',
+    (tester) async {
+      // Reproduces the live-device bug: PassengerRideRequestDetailPage did
+      // its own separate fetchRequest() call and was never wired to trip
+      // enrichment at all - GET /api/rides/requests/<ref>/ is exactly as
+      // raw/unenriched as the list endpoint (confirmed against the
+      // backend's _passenger_ride_request_payload), so it always showed
+      // the RideRequest's own frozen "converted" status/message regardless
+      // of the trip's real, current outcome.
+      PassengerRideRequestRecord requestFor(String reference) => _record(
+        reference: reference,
+        status: 'converted',
+        tripCreated: true,
+        controlCenterMessage:
+            'Your request has been converted into a trip record.',
+        tripReference: 'TRIP-DECLINED-DETAIL',
+      );
+
+      // A Completer, not a bare async loader, is needed here: a plain
+      // `async => ...` with no internal await resolves within the same
+      // microtask a single tester.pump() drains, which would make it
+      // impossible to reliably observe the pre-refetch frame this test
+      // exists to check (the same timing trap hit earlier tonight with
+      // RideTrackingScreen's own first-frame test).
+      final requestCompleter = Completer<PassengerRideRequestRecord>();
+      var requestLoaderCalls = 0;
+
+      final repository = _RequestAndTripFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          requestFor('RR-APP-DECLINED-DETAIL'),
+        ],
+        requestLoader: (reference) {
+          requestLoaderCalls += 1;
+          return requestCompleter.future;
+        },
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'driver_declined',
+        ),
+      );
+
+      await _pumpHistory(tester, repository, onReturn: (_) {});
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('history-card-view-details')));
+      // Two bare pumps (no fixed duration - a duration would risk racing
+      // the page-transition animation) are enough for Navigator to build
+      // the pushed route: the first processes the push itself, the second
+      // builds the new route's subtree. pumpAndSettle can't be used at this
+      // checkpoint - the spinner _load() would show without initialRecord
+      // animates indefinitely, so it would never settle.
+      await tester.pump();
+      await tester.pump();
+
+      // The detail page's own _load() is now blocked on requestCompleter,
+      // but it should already show the real declined outcome from
+      // initialRecord - the already-enriched list record it was pushed
+      // with - not a spinner or the raw "converted" placeholder. The
+      // loading-spinner key is unambiguous (it only ever exists on this
+      // page); the history list card behind the new route is still in the
+      // tree mid-transition, so status text/key checks below use
+      // findsWidgets rather than findsOneWidget.
+      expect(requestLoaderCalls, 1);
+      expect(find.text('Trip details'), findsWidgets);
+      expect(
+        find.byKey(const Key('ride-request-detail-loading')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-driver_declined'),
+        ),
+        findsWidgets,
+      );
+      expect(find.text('Could not be accepted'), findsWidgets);
+
+      requestCompleter.complete(requestFor('RR-APP-DECLINED-DETAIL'));
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>[
+        'TRIP-DECLINED-DETAIL',
+        'TRIP-DECLINED-DETAIL',
+      ]);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-driver_declined'),
+        ),
+        findsWidgets,
+      );
+      expect(find.text('Could not be accepted'), findsWidgets);
+      expect(
+        find.text('Please try booking again or contact support.'),
+        findsWidgets,
+      );
+      expect(find.text('Request update'), findsNothing);
+      expect(
+        find.text('Your request has been converted into a trip record.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'opening a completed trip detail page shows the real completed outcome '
+    'via the same enrichment path',
+    (tester) async {
+      PassengerRideRequestRecord requestFor(String reference) => _record(
+        reference: reference,
+        status: 'converted',
+        tripCreated: true,
+        controlCenterMessage:
+            'Your request has been converted into a trip record.',
+        tripReference: 'TRIP-COMPLETED-DETAIL',
+      );
+
+      final repository = _RequestAndTripFakeRepository(
+        listLoader: () async => <PassengerRideRequestRecord>[
+          requestFor('RR-APP-COMPLETED-DETAIL'),
+        ],
+        requestLoader: (reference) async => requestFor(reference),
+        tripLoader: (tripReference) async => PassengerTripRecord(
+          tripReference: tripReference,
+          status: 'completed_confirmed',
+        ),
+      );
+
+      await _pumpHistory(tester, repository, onReturn: (_) {});
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('history-card-view-details')));
+      await tester.pumpAndSettle();
+
+      expect(repository.tripCalls, <String>[
+        'TRIP-COMPLETED-DETAIL',
+        'TRIP-COMPLETED-DETAIL',
+      ]);
+      expect(
+        find.byKey(
+          const ValueKey<String>('ride-request-status-completed_confirmed'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('Thank you for riding with ALANTEH.'), findsWidgets);
+      expect(find.text('Request update'), findsNothing);
+      expect(
+        find.text('Your request has been converted into a trip record.'),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('test_tab_filter_all_shows_everything', (tester) async {
     await _pumpHistory(
@@ -1603,6 +1911,41 @@ class _TripAwareFakeRepository
       const PassengerRideRequestHistoryException.notFound(),
     );
   }
+
+  @override
+  Future<PassengerTripRecord> fetchTrip(String tripReference) {
+    tripCalls.add(tripReference);
+    return tripLoader(tripReference);
+  }
+}
+
+/// Backs both the list and a single request's own fetch with the SAME raw,
+/// unenriched record for a given reference (mirroring the real backend,
+/// where `GET /api/rides/requests/<ref>/` is just as unenriched as the list
+/// endpoint - see PASSENGER-TRIP-DETAIL-STATUS-DISPLAY-FIX investigation),
+/// plus trip enrichment via fetchTrip.
+class _RequestAndTripFakeRepository
+    implements
+        PassengerRideRequestHistoryRepository,
+        PassengerTripLifecycleRepository {
+  _RequestAndTripFakeRepository({
+    required this.listLoader,
+    required this.requestLoader,
+    required this.tripLoader,
+  });
+
+  final Future<List<PassengerRideRequestRecord>> Function() listLoader;
+  final Future<PassengerRideRequestRecord> Function(String requestReference)
+  requestLoader;
+  final Future<PassengerTripRecord> Function(String tripReference) tripLoader;
+  final List<String> tripCalls = <String>[];
+
+  @override
+  Future<List<PassengerRideRequestRecord>> fetchRequests() => listLoader();
+
+  @override
+  Future<PassengerRideRequestRecord> fetchRequest(String requestReference) =>
+      requestLoader(requestReference);
 
   @override
   Future<PassengerTripRecord> fetchTrip(String tripReference) {

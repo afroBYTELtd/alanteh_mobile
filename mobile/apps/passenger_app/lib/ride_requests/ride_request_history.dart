@@ -131,7 +131,15 @@ class PassengerRideRequestRecord {
       tripCreated: true,
       requestedPickupTime: requestedPickupTime,
       latestStaffState: latestStaffState,
-      controlCenterMessage: trip.controlCenterMessage ?? controlCenterMessage,
+      // Deliberately NOT falling back to the pre-enrichment
+      // controlCenterMessage here (unlike the other trip.x ?? x fields
+      // above): that text was written for the RideRequest's own frozen
+      // "converted" status, so once a trip is linked it's either replaced
+      // by the trip's own current message or left null so callers fall
+      // through to PassengerRideState's canonical, status-accurate default
+      // - never a stale message describing a moment before the trip's
+      // real, current outcome was known.
+      controlCenterMessage: trip.controlCenterMessage,
       tripReference: trip.tripReference,
       specialRequest: specialRequest,
       fareDisplay: fareDisplay,
@@ -159,6 +167,9 @@ class PassengerRideRequestRecord {
       return passengerState.defaultMessage;
     }
 
+    // Unlike latestStaffState (see _historyStatusMessage), withTrip() keeps
+    // controlCenterMessage fresh from the linked trip's own message when one
+    // exists, so it's still trusted over the canonical default here.
     final preferred = controlCenterMessage?.trim();
     if (preferred != null &&
         preferred.isNotEmpty &&
@@ -420,23 +431,7 @@ enum PassengerRideState {
     String? latestStaffState,
     String? message,
   }) {
-    final normalizedStatus = status.trim().toLowerCase();
-    final canonicalState = switch (normalizedStatus) {
-      'assigned' => PassengerRideState.driverAssigned,
-      'driver_offer_sent' => PassengerRideState.looking,
-      'driver_accepted' => PassengerRideState.vehicleEnRoute,
-      'arrived_at_pickup' => PassengerRideState.driverArrived,
-      'in_progress' => PassengerRideState.inProgress,
-      'cancelled_by_operations' => PassengerRideState.cancelledByOperations,
-      // 'cancelled' is the pre-conversion RideRequest status; 'cancelled_by_passenger'
-      // is the post-conversion Trip status. Both are written exclusively by the
-      // passenger-initiated cancellation endpoints - never by any staff/system path.
-      'cancelled' ||
-      'cancelled_by_passenger' => PassengerRideState.cancelledByPassenger,
-      'completed_pending_review' ||
-      'completed_confirmed' => PassengerRideState.arrived,
-      _ => null,
-    };
+    final canonicalState = _canonicalStateFor(status);
     if (canonicalState != null) {
       return canonicalState;
     }
@@ -475,6 +470,60 @@ enum PassengerRideState {
     return PassengerRideState.looking;
   }
 
+  // The full real Trip.TripStatus / RideRequest.RequestStatus enum, mapped
+  // wherever a canonical (non-heuristic) meaning is known. Every status here
+  // is trusted over a possibly-stale latest_staff_state/control_center_message
+  // string by _statusLabel/_safeStatusMessage/safeMessage - see
+  // hasCanonicalStatus. Deliberately NOT mapped: fare_confirmed,
+  // awaiting_payment, payment_confirmed - no client code (driver or
+  // passenger app) currently drives a trip through these, so there's no
+  // evidence for what they should display; they fall through to the
+  // heuristic default (looking) unchanged rather than guessing.
+  static PassengerRideState? _canonicalStateFor(String status) {
+    return switch (status.trim().toLowerCase()) {
+      'assigned' => PassengerRideState.driverAssigned,
+      'driver_offer_sent' => PassengerRideState.looking,
+      'driver_accepted' || 'dispatched' || 'driver_en_route' =>
+        PassengerRideState.vehicleEnRoute,
+      'arrived_at_pickup' => PassengerRideState.driverArrived,
+      // passenger_onboard is the driver-app stage between "arrived at
+      // pickup" and "in_progress" (confirming the passenger is in the
+      // vehicle) - closest passenger-facing state is inProgress, since the
+      // passenger is already aboard.
+      'in_progress' || 'passenger_onboard' => PassengerRideState.inProgress,
+      'driver_declined' => PassengerRideState.rejected,
+      'cancelled_by_operations' => PassengerRideState.cancelledByOperations,
+      // no_show is a platform/operations determination, not a
+      // passenger-initiated cancellation.
+      'no_show' => PassengerRideState.cancelledByOperations,
+      // 'cancelled' is the pre-conversion RideRequest status; 'canceled' is
+      // an alternate spelling seen from some callers; 'cancelled_by_passenger'
+      // is the post-conversion Trip status. All are written exclusively by
+      // the passenger-initiated cancellation endpoints - never by any
+      // staff/system path.
+      'cancelled' ||
+      'canceled' ||
+      'cancelled_by_passenger' => PassengerRideState.cancelledByPassenger,
+      // arrived_at_destination/review_overdue/disputed all mean the ride
+      // portion of the trip has already happened; review_overdue is treated
+      // as completed by the driver app's own visual-state mapping, and a
+      // disputed trip is a completed trip under support review, not one
+      // still being matched.
+      'completed_pending_review' ||
+      'completed_confirmed' ||
+      'arrived_at_destination' ||
+      'review_overdue' ||
+      'disputed' => PassengerRideState.arrived,
+      _ => null,
+    };
+  }
+
+  /// True when [status] has a definitive, non-heuristic mapping above -
+  /// safe for callers to trust this state's label/message over a possibly
+  /// stale staff-entered string for that status.
+  static bool hasCanonicalStatus(String status) =>
+      _canonicalStateFor(status) != null;
+
   String get defaultMessage => switch (this) {
     PassengerRideState.looking =>
       'We are reviewing your request and matching a nearby vehicle.',
@@ -492,6 +541,22 @@ enum PassengerRideState {
     PassengerRideState.cancelledByPassenger => 'You cancelled this trip.',
     PassengerRideState.rejected =>
       'Please try booking again or contact support.',
+  };
+
+  /// Short chip/label text for the history list and detail page - kept
+  /// separate from [defaultMessage] since chip wording is deliberately
+  /// terser (e.g. "Active" covers several in-flight states).
+  String get historyLabel => switch (this) {
+    PassengerRideState.looking => 'Active',
+    PassengerRideState.driverAssigned => 'Active',
+    PassengerRideState.vehicleEnRoute => 'Active',
+    PassengerRideState.driverArrived => 'Active',
+    PassengerRideState.inProgress => 'Active',
+    PassengerRideState.arrived => 'Completed',
+    PassengerRideState.reassigned => 'Active',
+    PassengerRideState.cancelledByOperations => 'Cancelled',
+    PassengerRideState.cancelledByPassenger => 'Cancelled',
+    PassengerRideState.rejected => 'Could not be accepted',
   };
 }
 
@@ -1022,6 +1087,7 @@ class _PassengerRideRequestHistoryPageState
           requestReference: record.requestReference,
           repository: widget.repository,
           paymentRatingRepository: widget.paymentRatingRepository,
+          initialRecord: record,
         ),
       ),
     );
@@ -1456,6 +1522,7 @@ class PassengerRideRequestDetailPage extends StatefulWidget {
     required this.requestReference,
     this.onSignInRequired,
     this.paymentRatingRepository,
+    this.initialRecord,
     super.key,
   });
 
@@ -1464,6 +1531,14 @@ class PassengerRideRequestDetailPage extends StatefulWidget {
   final VoidCallback? onSignInRequired;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
 
+  /// An already-fetched (and, if applicable, already trip-enriched) record
+  /// for this request - typically the one the history list just rendered.
+  /// Lets this page paint instantly instead of showing a spinner while it
+  /// re-fetches, without skipping that re-fetch: [_load] always runs so the
+  /// page still reflects the live, current status rather than a stale
+  /// snapshot from whenever the list was loaded.
+  final PassengerRideRequestRecord? initialRecord;
+
   @override
   State<PassengerRideRequestDetailPage> createState() =>
       _PassengerRideRequestDetailPageState();
@@ -1471,8 +1546,8 @@ class PassengerRideRequestDetailPage extends StatefulWidget {
 
 class _PassengerRideRequestDetailPageState
     extends State<PassengerRideRequestDetailPage> {
-  bool _loading = true;
-  PassengerRideRequestRecord? _record;
+  late bool _loading = widget.initialRecord == null;
+  late PassengerRideRequestRecord? _record = widget.initialRecord;
   PassengerRideRequestHistoryException? _error;
 
   @override
@@ -1481,14 +1556,27 @@ class _PassengerRideRequestDetailPageState
     _load();
   }
 
+  PassengerTripLifecycleRepository? get _tripRepository {
+    final repository = widget.repository;
+    return repository is PassengerTripLifecycleRepository
+        ? repository as PassengerTripLifecycleRepository
+        : null;
+  }
+
+  // Mirrors RideTrackingScreen._load()'s enrichment sequence: a "converted"
+  // request record is only the RideRequest's own frozen placeholder status,
+  // so it's resolved to the linked Trip's real, current status before
+  // being shown - the same fix applied to the history list, so this page
+  // stays correct for any future entry point that doesn't already hand it
+  // an enriched initialRecord.
   Future<void> _load() async {
     setState(() {
-      _loading = true;
+      _loading = _record == null;
       _error = null;
     });
 
     try {
-      final record = await widget.repository.fetchRequest(
+      final requestRecord = await widget.repository.fetchRequest(
         widget.requestReference,
       );
 
@@ -1496,9 +1584,35 @@ class _PassengerRideRequestDetailPageState
         return;
       }
 
+      final tripReference =
+          requestRecord.status.trim().toLowerCase() == 'converted'
+          ? requestRecord.normalizedTripReference
+          : null;
+      final tripRepository = _tripRepository;
+
+      if (tripReference != null && tripRepository != null) {
+        try {
+          final trip = await tripRepository.fetchTrip(tripReference);
+          if (!mounted) {
+            return;
+          }
+
+          setState(() {
+            _loading = false;
+            _record = requestRecord.withTrip(trip);
+            _error = null;
+          });
+          return;
+        } on Object {
+          // Enrichment is fail-soft, same as the history list - fall back
+          // to the unenriched request record below rather than treating a
+          // trip-fetch failure as a failure to load the request at all.
+        }
+      }
+
       setState(() {
         _loading = false;
-        _record = record;
+        _record = requestRecord;
         _error = null;
       });
     } on PassengerRideRequestHistoryException catch (error) {
@@ -1754,6 +1868,17 @@ String _historyStatusMessage(PassengerRideRequestRecord record) {
     return PassengerRideState.arrived.defaultMessage;
   }
 
+  // latestStaffState is a ride-request-level field that withTrip() (see
+  // PassengerRideRequestRecord.withTrip) deliberately leaves unchanged once
+  // a record is enriched with its linked trip's real status - so once the
+  // real status is confidently known, it's trusted over that now-stale
+  // text rather than the other way around. This is unlike controlCenterMessage
+  // (used by _safeStatusMessage's other callers), which withTrip() does keep
+  // fresh from the trip's own message.
+  if (PassengerRideState.hasCanonicalStatus(record.status)) {
+    return record.passengerState.defaultMessage;
+  }
+
   return _safeStatusMessage(
     record.status,
     preferredMessage: record.latestStaffState,
@@ -1791,38 +1916,33 @@ String _safeStatusMessage(String status, {String? preferredMessage}) {
     return safePreferredMessage;
   }
 
+  if (PassengerRideState.hasCanonicalStatus(status)) {
+    return PassengerRideState.fromStatus(status).defaultMessage;
+  }
+
   return switch (status.trim().toLowerCase()) {
     'requested' => 'Request received.',
     'under_review' => 'Being reviewed.',
     'accepted' ||
     'approved' ||
     'accepted_for_trip' => 'Accepted for trip preparation.',
-    'completed_confirmed' ||
-    'completed_pending_review' => PassengerRideState.arrived.defaultMessage,
     'rejected' || 'declined' => 'Could not be accepted.',
-    'cancelled_by_operations' =>
-      PassengerRideState.cancelledByOperations.defaultMessage,
-    'cancelled' || 'canceled' => 'Cancelled.',
     'trip_created' => 'Trip record created.',
     _ => 'Request update available.',
   };
 }
 
 String _statusLabel(String status) {
+  if (PassengerRideState.hasCanonicalStatus(status)) {
+    return PassengerRideState.fromStatus(status).historyLabel;
+  }
+
   return switch (status.trim().toLowerCase()) {
     'requested' => 'Received by ALANTEH',
     'under_review' => 'Being reviewed',
     'accepted' || 'approved' || 'accepted_for_trip' => 'Accepted',
-    'assigned' ||
-    'driver_offer_sent' ||
-    'driver_accepted' ||
-    'arrived_at_pickup' ||
-    'in_progress' => 'Active',
     'rejected' || 'declined' => 'Could not be accepted',
-    'cancelled_by_operations' => 'Cancelled',
-    'cancelled' || 'canceled' => 'Cancelled',
     'trip_created' => 'Trip record created',
-    'completed_confirmed' || 'completed_pending_review' => 'Completed',
     _ => 'Request update',
   };
 }
