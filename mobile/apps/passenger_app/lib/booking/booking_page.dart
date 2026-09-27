@@ -12,6 +12,7 @@ import 'booking_form.dart';
 import 'booking_review.dart';
 import 'booking_submission.dart';
 import 'passenger_fare_estimate.dart';
+import 'scheduled_pickup.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
 
@@ -36,6 +37,7 @@ class BookingPage extends StatefulWidget {
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.routeService = const OsrmPassengerRouteService(),
+    this.clock,
     super.key,
   });
 
@@ -56,6 +58,9 @@ class BookingPage extends StatefulWidget {
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final PassengerRouteService routeService;
+
+  /// Current time; injectable so scheduled-ride limits can be tested.
+  final DateTime Function()? clock;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -82,6 +87,17 @@ class _BookingPageState extends State<BookingPage> {
   String? _passengerCountErrorMessage;
   PassengerBookingFareEstimate? _fareEstimate;
   int _fareRequestGeneration = 0;
+
+  bool _scheduleForLater = false;
+  DateTime? _scheduledDate;
+  DateTime? _scheduledPickup;
+  String? _pickupTimeErrorMessage;
+  String? _pickupErrorCode;
+
+  DateTime _now() => (widget.clock ?? DateTime.now)();
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
 
   @override
   void initState() {
@@ -119,7 +135,34 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
+    DateTime? requestedPickupTime;
+    if (_scheduleForLater) {
+      final pickup = _scheduledPickup;
+      final problem = pickup == null
+          ? null
+          : checkScheduledPickup(pickup, _now());
+      final message = pickup == null
+          ? PassengerRideRequestSubmissionException.pickupTimeRequiredMessage
+          : switch (problem) {
+              ScheduledPickupProblem.tooSoon =>
+                PassengerRideRequestSubmissionException.pickupTooSoonMessage,
+              ScheduledPickupProblem.tooFar =>
+                PassengerRideRequestSubmissionException.pickupTooFarMessage,
+              null => null,
+            };
+      if (message != null) {
+        setState(() {
+          _pickupTimeErrorMessage = message;
+          _pickupErrorCode = null;
+        });
+        return;
+      }
+      requestedPickupTime = pickup;
+    }
+
     setState(() {
+      _pickupTimeErrorMessage = null;
+      _pickupErrorCode = null;
       _passengerCountErrorMessage = null;
       _fareRequestGeneration += 1;
       _fareEstimate = null;
@@ -133,8 +176,108 @@ class _BookingPageState extends State<BookingPage> {
         passengerCount: _passengerCount,
         assistanceNote: _assistanceController.text,
         passengerNote: _passengerNoteController.text,
+        requestedPickupTime: requestedPickupTime,
       );
     });
+  }
+
+  void _setScheduleForLater(bool value) {
+    setState(() {
+      _scheduleForLater = value;
+      _pickupTimeErrorMessage = null;
+      _pickupErrorCode = null;
+      if (value) {
+        _scheduledDate ??= _dateOnly(earliestScheduledPickup(_now()));
+      } else {
+        _scheduledDate = null;
+        _scheduledPickup = null;
+      }
+    });
+  }
+
+  Future<void> _pickScheduledDate() async {
+    final now = _now();
+    final firstDate = _dateOnly(earliestScheduledPickup(now));
+    final lastDate = _dateOnly(latestScheduledPickup(now));
+    final current = _scheduledDate;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current == null || current.isBefore(firstDate)
+          ? firstDate
+          : current,
+      firstDate: firstDate,
+      lastDate: lastDate,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _scheduledDate = _dateOnly(picked);
+      final pickup = _scheduledPickup;
+      if (pickup != null && _dateOnly(pickup) != _scheduledDate) {
+        _scheduledPickup = null;
+      }
+    });
+  }
+
+  Future<void> _pickScheduledTime() async {
+    final day = _scheduledDate ?? _dateOnly(earliestScheduledPickup(_now()));
+    final slots = scheduledPickupSlotsOn(day, _now());
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: slots.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No pickup times left on this day. Pick another date.',
+                ),
+              )
+            : ListView.builder(
+                itemCount: slots.length,
+                itemBuilder: (_, index) {
+                  final slot = slots[index];
+                  final label = formatScheduledPickupClock(slot);
+                  return ListTile(
+                    key: Key('pickup-slot-$label'),
+                    title: Text(label),
+                    selected: slot == _scheduledPickup,
+                    onTap: () => Navigator.of(sheetContext).pop(slot),
+                  );
+                },
+              ),
+      ),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _scheduledDate = _dateOnly(picked);
+      _scheduledPickup = picked;
+      _pickupTimeErrorMessage = null;
+      _pickupErrorCode = null;
+    });
+  }
+
+  /// Back to the form with the pickup time flagged, everything else kept.
+  void _returnToFormWithPickupError(String message, {String? code}) {
+    setState(() {
+      _draft = null;
+      _submissionStatus = BookingSubmissionStatus.idle;
+      _submissionResult = null;
+      _submissionErrorMessage = null;
+      _submissionRequiresSignIn = false;
+      _idempotencyKey = null;
+      _fareRequestGeneration += 1;
+      _fareEstimate = null;
+      _pickupTimeErrorMessage = message;
+      _pickupErrorCode = code;
+    });
+  }
+
+  void _openMyRides() {
+    Navigator.of(context).pop(true);
   }
 
   void _editDraft() {
@@ -201,6 +344,17 @@ class _BookingPageState extends State<BookingPage> {
       return;
     }
 
+    // Time passes on the review screen; don't send a pickup that has
+    // slipped under the hour.
+    final requestedPickupTime = draft.requestedPickupTime;
+    if (requestedPickupTime != null &&
+        checkScheduledPickup(requestedPickupTime, _now()) != null) {
+      _returnToFormWithPickupError(
+        PassengerRideRequestSubmissionException.pickupTooSoonMessage,
+      );
+      return;
+    }
+
     final key =
         _idempotencyKey ??
         (widget.idempotencyKeyFactory ??
@@ -230,6 +384,23 @@ class _BookingPageState extends State<BookingPage> {
           _submissionResult = null;
           _submissionErrorMessage =
               PassengerRideRequestSubmissionException.unknownErrorMessage;
+          _submissionRequiresSignIn = false;
+        });
+        return;
+      }
+
+      final echoedPickup = result.requestedPickupTime;
+      if (requestedPickupTime != null &&
+          (echoedPickup == null ||
+              !echoedPickup.isAtSameMomentAs(requestedPickupTime))) {
+        // The backend did not record the pickup time: it may have booked
+        // this as a ride now. Keep the idempotency key so "Try again"
+        // replays this same request instead of creating another.
+        setState(() {
+          _submissionStatus = BookingSubmissionStatus.failure;
+          _submissionResult = null;
+          _submissionErrorMessage =
+              PassengerRideRequestSubmissionException.pickupNotConfirmedMessage;
           _submissionRequiresSignIn = false;
         });
         return;
@@ -277,6 +448,11 @@ class _BookingPageState extends State<BookingPage> {
         return;
       }
 
+      if (error.isScheduledPickupError) {
+        _returnToFormWithPickupError(error.message, code: error.code);
+        return;
+      }
+
       setState(() {
         _submissionStatus = BookingSubmissionStatus.failure;
         _submissionErrorMessage = error.message;
@@ -316,6 +492,11 @@ class _BookingPageState extends State<BookingPage> {
       _passengerCountErrorMessage = null;
       _fareRequestGeneration += 1;
       _fareEstimate = null;
+      _scheduleForLater = false;
+      _scheduledDate = null;
+      _scheduledPickup = null;
+      _pickupTimeErrorMessage = null;
+      _pickupErrorCode = null;
     });
   }
 
@@ -349,6 +530,25 @@ class _BookingPageState extends State<BookingPage> {
                 },
                 onReview: _reviewDraft,
                 passengerCountErrorMessage: _passengerCountErrorMessage,
+                scheduleForLater: _scheduleForLater,
+                onScheduleChanged: _setScheduleForLater,
+                scheduledDate: _scheduledDate,
+                scheduledPickup: _scheduledPickup,
+                onPickDate: _pickScheduledDate,
+                onPickTime: _pickScheduledTime,
+                pickupTimeErrorMessage: _pickupTimeErrorMessage,
+                onBookForNow:
+                    _pickupErrorCode ==
+                        PassengerRideRequestSubmissionException
+                            .scheduledRideLimitCode
+                    ? () => _setScheduleForLater(false)
+                    : null,
+                onViewMyRides:
+                    _pickupErrorCode ==
+                        PassengerRideRequestSubmissionException
+                            .scheduledRideLimitCode
+                    ? _openMyRides
+                    : null,
               )
             : BookingReview(
                 draft: _draft!,

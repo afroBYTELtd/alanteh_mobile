@@ -2,6 +2,8 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'scheduled_pickup.dart';
+
 class BookingForm extends StatelessWidget {
   const BookingForm({
     required this.formKey,
@@ -13,6 +15,15 @@ class BookingForm extends StatelessWidget {
     required this.onPassengerCountChanged,
     required this.onReview,
     this.passengerCountErrorMessage,
+    this.scheduleForLater = false,
+    this.onScheduleChanged,
+    this.scheduledDate,
+    this.scheduledPickup,
+    this.onPickDate,
+    this.onPickTime,
+    this.pickupTimeErrorMessage,
+    this.onBookForNow,
+    this.onViewMyRides,
     super.key,
   });
 
@@ -25,6 +36,18 @@ class BookingForm extends StatelessWidget {
   final ValueChanged<int> onPassengerCountChanged;
   final VoidCallback onReview;
   final String? passengerCountErrorMessage;
+
+  /// Booking for later. The "When?" choice is shown only when
+  /// [onScheduleChanged] is set.
+  final bool scheduleForLater;
+  final ValueChanged<bool>? onScheduleChanged;
+  final DateTime? scheduledDate;
+  final DateTime? scheduledPickup;
+  final VoidCallback? onPickDate;
+  final VoidCallback? onPickTime;
+  final String? pickupTimeErrorMessage;
+  final VoidCallback? onBookForNow;
+  final VoidCallback? onViewMyRides;
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +127,20 @@ class BookingForm extends StatelessWidget {
               return null;
             },
           ),
+          if (onScheduleChanged case final onChanged?) ...[
+            const SizedBox(height: AsmSpacing.space20),
+            _WhenChoice(
+              scheduleForLater: scheduleForLater,
+              onChanged: onChanged,
+              scheduledDate: scheduledDate,
+              scheduledPickup: scheduledPickup,
+              onPickDate: onPickDate,
+              onPickTime: onPickTime,
+              errorMessage: pickupTimeErrorMessage,
+              onBookForNow: onBookForNow,
+              onViewMyRides: onViewMyRides,
+            ),
+          ],
           const SizedBox(height: AsmSpacing.space20),
           Row(
             children: [
@@ -206,6 +243,126 @@ class BookingForm extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WhenChoice extends StatelessWidget {
+  const _WhenChoice({
+    required this.scheduleForLater,
+    required this.onChanged,
+    required this.scheduledDate,
+    required this.scheduledPickup,
+    required this.onPickDate,
+    required this.onPickTime,
+    required this.errorMessage,
+    required this.onBookForNow,
+    required this.onViewMyRides,
+  });
+
+  final bool scheduleForLater;
+  final ValueChanged<bool> onChanged;
+  final DateTime? scheduledDate;
+  final DateTime? scheduledPickup;
+  final VoidCallback? onPickDate;
+  final VoidCallback? onPickTime;
+  final String? errorMessage;
+  final VoidCallback? onBookForNow;
+  final VoidCallback? onViewMyRides;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final date = scheduledDate;
+    final pickup = scheduledPickup;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('When?', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: AsmSpacing.space8),
+        SegmentedButton<bool>(
+          key: const Key('booking-when'),
+          segments: const <ButtonSegment<bool>>[
+            ButtonSegment<bool>(
+              value: false,
+              label: Text('Now'),
+              icon: Icon(Icons.bolt_outlined),
+            ),
+            ButtonSegment<bool>(
+              value: true,
+              label: Text('Schedule'),
+              icon: Icon(Icons.event_outlined),
+            ),
+          ],
+          selected: <bool>{scheduleForLater},
+          onSelectionChanged: (selection) => onChanged(selection.first),
+        ),
+        if (scheduleForLater) ...[
+          const SizedBox(height: AsmSpacing.space12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('booking-pickup-date'),
+                  onPressed: onPickDate,
+                  icon: const Icon(Icons.calendar_today_outlined),
+                  label: Text(
+                    date == null ? 'Date' : formatScheduledDate(date),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AsmSpacing.space12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('booking-pickup-time'),
+                  onPressed: onPickTime,
+                  icon: const Icon(Icons.schedule_outlined),
+                  label: Text(
+                    pickup == null
+                        ? 'Time'
+                        : formatScheduledPickupClock(pickup),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          Text(
+            'Pick a time between 1 hour and 7 days from now.',
+            style: textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (errorMessage case final message?) ...[
+          const SizedBox(height: AsmSpacing.space8),
+          Text(
+            message,
+            key: const Key('booking-pickup-time-error'),
+            style: textTheme.bodySmall?.copyWith(color: colors.error),
+          ),
+          if (onBookForNow != null || onViewMyRides != null)
+            Wrap(
+              spacing: AsmSpacing.space8,
+              children: [
+                if (onViewMyRides case final onView?)
+                  TextButton(
+                    key: const Key('booking-view-my-rides'),
+                    onPressed: onView,
+                    child: const Text('View my rides'),
+                  ),
+                if (onBookForNow case final onNow?)
+                  TextButton(
+                    key: const Key('booking-book-for-now'),
+                    onPressed: onNow,
+                    child: const Text('Book for now'),
+                  ),
+              ],
+            ),
+        ],
+      ],
     );
   }
 }

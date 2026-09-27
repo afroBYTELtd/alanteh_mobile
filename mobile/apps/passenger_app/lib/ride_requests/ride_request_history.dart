@@ -1,3 +1,4 @@
+import '../booking/scheduled_pickup.dart';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
@@ -558,6 +559,26 @@ enum PassengerRideState {
     PassengerRideState.cancelledByPassenger => 'Cancelled',
     PassengerRideState.rejected => 'Could not be accepted',
   };
+}
+
+/// The pickup time of a ride booked for later that no driver has taken
+/// yet, or null. A record still showing its request's "converted" status has
+/// not been matched to its trip, so its real state is unknown.
+DateTime? scheduledPickupAwaitingDriver(
+  PassengerRideRequestRecord record,
+  DateTime now,
+) {
+  final pickup = record.requestedPickupTime;
+  if (pickup == null || !pickup.isAfter(now)) {
+    return null;
+  }
+  if (record.status.trim().toLowerCase() == 'converted') {
+    return null;
+  }
+  if (record.passengerState != PassengerRideState.looking) {
+    return null;
+  }
+  return pickup;
 }
 
 bool _containsInternalWording(String value) {
@@ -1339,7 +1360,13 @@ class _RideRequestCard extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        _StatusChip(status: record.status),
+                        _StatusChip(
+                          status: record.status,
+                          scheduledPickup: scheduledPickupAwaitingDriver(
+                            record,
+                            DateTime.now(),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1698,7 +1725,13 @@ class _PassengerRideRequestDetailPageState
       key: const Key('ride-request-detail-loaded'),
       padding: const EdgeInsets.all(AsmSpacing.space16),
       children: [
-        _StatusChip(status: record.status),
+        _StatusChip(
+                          status: record.status,
+                          scheduledPickup: scheduledPickupAwaitingDriver(
+                            record,
+                            DateTime.now(),
+                          ),
+                        ),
         const SizedBox(height: AsmSpacing.space16),
         _DetailRow(label: 'From', value: record.pickupLocation),
         _DetailRow(label: 'To', value: record.destination),
@@ -1743,12 +1776,31 @@ class _PassengerRideRequestDetailPageState
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, this.scheduledPickup});
 
   final String status;
 
+  /// Set for a ride booked for later that no driver has taken yet.
+  final DateTime? scheduledPickup;
+
   @override
   Widget build(BuildContext context) {
+    if (scheduledPickup case final pickup?) {
+      return Chip(
+        key: const ValueKey<String>('ride-request-status-scheduled'),
+        backgroundColor: const Color(0xFFE2F0E7),
+        side: BorderSide.none,
+        visualDensity: VisualDensity.compact,
+        label: Text(
+          'Scheduled · ${formatScheduledPickup(pickup)}',
+          style: const TextStyle(
+            color: AsmColors.brandDeepGreen,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
     final normalized = status.trim().toLowerCase();
 
     final (background, foreground) = switch (normalized) {

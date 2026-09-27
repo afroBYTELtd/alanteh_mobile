@@ -142,7 +142,9 @@ final class PassengerRideRequestSubmission {
     required int passengerCount,
     String? assistanceNote,
     String? passengerNote,
-  }) : idempotencyKey = _requiredString(
+    DateTime? requestedPickupTime,
+  }) : requestedPickupTime = requestedPickupTime?.toUtc(),
+       idempotencyKey = _requiredString(
          idempotencyKey,
          'idempotencyKey',
          maxLength: 160,
@@ -180,6 +182,9 @@ final class PassengerRideRequestSubmission {
   final String? assistanceNote;
   final String? passengerNote;
 
+  /// Pickup time for a scheduled ride, in UTC; null books a ride now.
+  final DateTime? requestedPickupTime;
+
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'pickup_location': pickupLocation,
@@ -189,6 +194,10 @@ final class PassengerRideRequestSubmission {
       'passenger_count': passengerCount,
       if (assistanceNote != null) 'assistance_note': assistanceNote,
       if (passengerNote != null) 'passenger_note': passengerNote,
+      // Always UTC ("...Z"): a local DateTime serialises without an
+      // offset, which the backend rejects.
+      if (requestedPickupTime != null)
+        'requested_pickup_time': requestedPickupTime!.toIso8601String(),
     };
   }
 
@@ -283,11 +292,16 @@ final class PassengerRideRequestResult {
     this.requestReference,
     required this.status,
     required this.message,
+    this.requestedPickupTime,
   });
 
   final String? requestReference;
   final String status;
   final String message;
+
+  /// The scheduled pickup the backend recorded. Only a scheduled booking's
+  /// response carries it; null means the ride was booked for now.
+  final DateTime? requestedPickupTime;
 
   static PassengerRideRequestResult fromJson(Object? json) {
     if (json is! Map) {
@@ -299,6 +313,7 @@ final class PassengerRideRequestResult {
     final requestReference = json['request_reference'];
     final status = json['status'];
     final message = json['message'];
+    final requestedPickupTime = json['requested_pickup_time'];
 
     if (status is! String || status.trim().isEmpty) {
       throw const FormatException('Ride request response status is missing.');
@@ -314,6 +329,9 @@ final class PassengerRideRequestResult {
           : null,
       status: status.trim(),
       message: message.trim(),
+      requestedPickupTime: requestedPickupTime is String
+          ? DateTime.tryParse(requestedPickupTime)
+          : null,
     );
   }
 }

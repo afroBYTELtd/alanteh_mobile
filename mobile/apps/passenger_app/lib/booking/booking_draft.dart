@@ -28,6 +28,7 @@ class BookingDraft {
     required int passengerCount,
     String? assistanceNote,
     String? passengerNote,
+    DateTime? requestedPickupTime,
   }) {
     final RideDraftIdentity draftIdentity =
         identity ??
@@ -82,6 +83,7 @@ class BookingDraft {
           : normalizedPassengerNote,
       pickupLatitude,
       pickupLongitude,
+      requestedPickupTime?.toUtc(),
     );
   }
 
@@ -90,12 +92,16 @@ class BookingDraft {
     this.passengerNote,
     this.pickupLatitude,
     this.pickupLongitude,
+    this.requestedPickupTime,
   );
 
   final RideDraft rideDraft;
   final String? passengerNote;
   final double? pickupLatitude;
   final double? pickupLongitude;
+
+  /// Pickup time for a ride booked for later (UTC); null books a ride now.
+  final DateTime? requestedPickupTime;
 
   RideDraftIdentity get identity => rideDraft.identity;
   RideLifecycleState get lifecycleState => rideDraft.lifecycleState;
@@ -119,6 +125,8 @@ class BookingDraft {
     bool clearAssistanceNote = false,
     String? passengerNote,
     bool clearPassengerNote = false,
+    DateTime? requestedPickupTime,
+    bool clearRequestedPickupTime = false,
   }) {
     return BookingDraft(
       identity: identity ?? this.identity,
@@ -136,6 +144,9 @@ class BookingDraft {
       passengerNote: clearPassengerNote
           ? null
           : passengerNote ?? this.passengerNote,
+      requestedPickupTime: clearRequestedPickupTime
+          ? null
+          : requestedPickupTime ?? this.requestedPickupTime,
     );
   }
 }

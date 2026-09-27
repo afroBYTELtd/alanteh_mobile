@@ -1,3 +1,4 @@
+import '../booking/scheduled_pickup.dart';
 import 'dart:async';
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -46,6 +47,7 @@ class RideTrackingScreen extends StatefulWidget {
     this.initialRecord,
     this.tripRepository,
     this.pollInterval = const Duration(seconds: 10),
+    this.clock,
     this.paymentRatingRepository,
     this.trustedContactRepository,
     this.safetyUriLauncher = const PlatformPassengerSafetyUriLauncher(),
@@ -62,6 +64,9 @@ class RideTrackingScreen extends StatefulWidget {
   final PassengerRideRequestRecord? initialRecord;
   final PassengerTripLifecycleRepository? tripRepository;
   final Duration pollInterval;
+
+  /// Current time; injectable so scheduled rides can be tested.
+  final DateTime Function()? clock;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerTrustedContactRepository? trustedContactRepository;
   final PassengerSafetyUriLauncher safetyUriLauncher;
@@ -516,10 +521,23 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     // view here, rather than short-circuiting build() entirely, keeps the
     // reconnecting/offline banners and safety actions working normally
     // while this resolves.
-    final view = record.status.trim().toLowerCase() == 'converted'
+    final now = (widget.clock ?? DateTime.now)();
+    final scheduledPickup = scheduledPickupAwaitingDriver(record, now);
+    final pickupTime = record.requestedPickupTime;
+    final baseView = record.status.trim().toLowerCase() == 'converted'
         ? _TrackingView.checkingStatus()
         : _TrackingView.from(record);
-    final heading = record.status.trim().toLowerCase() == 'under_review'
+    final view = scheduledPickup != null
+        ? _TrackingView.scheduled(scheduledPickup)
+        // Accepted ahead of a scheduled pickup: not "on the way" yet.
+        : pickupTime != null &&
+              pickupTime.isAfter(now) &&
+              record.status.trim().toLowerCase() == 'driver_accepted'
+        ? baseView.confirmedFor(pickupTime)
+        : baseView;
+    final heading =
+        scheduledPickup == null &&
+            record.status.trim().toLowerCase() == 'under_review'
         ? 'Reviewing your request'
         : view.title;
 
@@ -1081,6 +1099,39 @@ class _TrackingView {
   final bool vehicleEnRoute;
   final bool reassigned;
   final bool rejected;
+
+  /// Booked for later; no driver is sought until an hour before pickup.
+  factory _TrackingView.scheduled(DateTime pickup) {
+    return _TrackingView(
+      key: 'ride-scheduled-state',
+      title: 'Ride scheduled',
+      message:
+          'Booked for ${formatScheduledPickup(pickup)}. We\'ll find you a '
+          'driver about an hour before pickup and notify you when one '
+          'accepts.',
+      icon: Icons.event_available_outlined,
+      color: AsmColors.brandDeepGreen,
+      route: const <LatLng>[],
+    );
+  }
+
+  /// A driver took a scheduled ride ahead of its pickup time.
+  _TrackingView confirmedFor(DateTime pickup) {
+    final clock = formatScheduledPickupClock(pickup);
+    return _TrackingView(
+      key: key,
+      title: 'Driver confirmed for $clock',
+      message: 'Your driver will meet you at the pickup at $clock.',
+      icon: icon,
+      color: color,
+      route: route,
+      vehicle: vehicle,
+      showDestination: showDestination,
+      vehicleEnRoute: vehicleEnRoute,
+      reassigned: reassigned,
+      rejected: rejected,
+    );
+  }
 
   factory _TrackingView.checkingStatus() {
     return const _TrackingView(
