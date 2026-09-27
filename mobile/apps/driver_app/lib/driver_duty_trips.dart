@@ -728,6 +728,109 @@ String _formatDriverDateTime(String? value) {
       '${twoDigits(utc.minute)} UTC';
 }
 
+const _driverWeekdays = <String>[
+  'Mon',
+  'Tue',
+  'Wed',
+  'Thu',
+  'Fri',
+  'Sat',
+  'Sun',
+];
+const _driverMonths = <String>[
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+String _driverClock(DateTime local) =>
+    '${local.hour.toString().padLeft(2, '0')}:'
+    '${local.minute.toString().padLeft(2, '0')}';
+
+String _driverDayAndClock(DateTime local) =>
+    '${_driverWeekdays[local.weekday - 1]} ${local.day} '
+    '${_driverMonths[local.month - 1]}, ${_driverClock(local)}';
+
+/// The requested pickup in device local time ("Mon 5 Oct, 09:30").
+String driverPickupTimeLabel(String? value) {
+  final normalized = value?.trim();
+  if (normalized == null || normalized.isEmpty) {
+    return driverEmptyValue;
+  }
+  final parsed = DateTime.tryParse(normalized);
+  if (parsed == null) {
+    return normalized;
+  }
+  return _driverDayAndClock(parsed.toLocal());
+}
+
+/// Badge for a ride booked for later, or null for a ride now. The backend
+/// only sends requested_pickup_time for scheduled trips.
+String? driverScheduledPickupBadge(DriverAssignedTrip trip, {DateTime? now}) {
+  final normalized = trip.requestedPickupTime?.trim();
+  final parsed = normalized == null || normalized.isEmpty
+      ? null
+      : DateTime.tryParse(normalized);
+  if (parsed == null) {
+    return null;
+  }
+  final pickup = parsed.toLocal();
+  final today = (now ?? DateTime.now()).toLocal();
+  final sameDay =
+      pickup.year == today.year &&
+      pickup.month == today.month &&
+      pickup.day == today.day;
+  return sameDay
+      ? 'Scheduled pickup · ${_driverClock(pickup)} today'
+      : 'Scheduled pickup · ${_driverDayAndClock(pickup)}';
+}
+
+class _DriverScheduledPickupBadge extends StatelessWidget {
+  const _DriverScheduledPickupBadge({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AsmSpacing.space12,
+        vertical: AsmSpacing.space8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4D6),
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+        border: Border.all(color: const Color(0xFFE0B64A)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.event_outlined, size: 18, color: Color(0xFF6B4E00)),
+          const SizedBox(width: AsmSpacing.space8),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF6B4E00),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 String maskDriverPhone(String? phone) {
   final normalized = phone?.replaceAll(RegExp(r'[\s-]'), '').trim();
   if (normalized == null || normalized.isEmpty) {
@@ -1666,12 +1769,21 @@ class _DriverTripCard extends StatelessWidget {
                   driverTripRelevantDateLabel(trip),
                 ),
               ] else ...[
+                if (driverScheduledPickupBadge(trip) case final badge?) ...[
+                  _DriverScheduledPickupBadge(
+                    key: ValueKey<String>(
+                      'driver-scheduled-pickup-${trip.reference}',
+                    ),
+                    label: badge,
+                  ),
+                  const SizedBox(height: AsmSpacing.space8),
+                ],
                 _DriverDetailRow('Status', driverStatusLabel(trip.status)),
                 _DriverDetailRow('Pickup', _safeText(trip.pickupLocation)),
                 _DriverDetailRow('Destination', _safeText(trip.destination)),
                 _DriverDetailRow(
                   'Requested pickup',
-                  _safeText(trip.requestedPickupTime),
+                  driverPickupTimeLabel(trip.requestedPickupTime),
                 ),
                 _DriverDetailRow('Vehicle', _safeText(trip.vehicleReference)),
                 _DriverDetailRow('Passengers', _safeCount(trip.passengerCount)),
@@ -1780,7 +1892,7 @@ class _DriverTripDetailCard extends StatelessWidget {
             _DriverDetailRow('Destination', _safeText(trip.destination)),
             _DriverDetailRow(
               'Requested pickup',
-              _safeText(trip.requestedPickupTime),
+              driverPickupTimeLabel(trip.requestedPickupTime),
             ),
             _DriverDetailRow('Created', _safeText(trip.createdTime)),
             _DriverDetailRow('Updated', _safeText(trip.updatedTime)),
@@ -1800,6 +1912,13 @@ class _DriverTripDetailCard extends StatelessWidget {
           ),
           if (offerPending) ...[
             const SizedBox(height: AsmSpacing.space12),
+            if (driverScheduledPickupBadge(trip) case final badge?) ...[
+              _DriverScheduledPickupBadge(
+                key: const Key('driver-offer-scheduled-pickup'),
+                label: badge,
+              ),
+              const SizedBox(height: AsmSpacing.space8),
+            ],
             Text(
               'A trip offer is waiting for your response.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(

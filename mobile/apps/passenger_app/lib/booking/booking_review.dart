@@ -1,3 +1,4 @@
+import 'scheduled_pickup.dart';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
@@ -83,6 +84,13 @@ class BookingReview extends StatelessWidget {
         const SizedBox(height: AsmSpacing.space16),
         PassengerFareEstimatePanel(estimate: fareEstimate),
         const SizedBox(height: AsmSpacing.space24),
+        // Only for a scheduled ride, so the ride-now review is unchanged.
+        if (draft.requestedPickupTime case final pickup?)
+          AsmRideDetailRow(
+            key: const Key('booking-review-pickup-time'),
+            label: 'Pickup time',
+            value: formatScheduledPickup(pickup),
+          ),
         AsmRideDetailRow(
           key: const Key('booking-review-from'),
           label: 'From',
@@ -219,7 +227,11 @@ class BookingReview extends StatelessWidget {
             onPressed: isSubmitting ? null : onConfirm,
             icon: const Icon(Icons.check_circle_outline),
             label: Text(
-              isSubmitting ? 'Sending request...' : 'Confirm and request',
+              isSubmitting
+                  ? 'Sending request...'
+                  : draft.requestedPickupTime == null
+                  ? 'Confirm and request'
+                  : 'Schedule ride',
             ),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),

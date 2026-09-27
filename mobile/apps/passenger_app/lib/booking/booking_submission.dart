@@ -138,6 +138,7 @@ class ApiPassengerRideRequestSubmitter
         passengerCount: draft.passengerCount.value,
         assistanceNote: draft.assistanceNote?.value,
         passengerNote: draft.passengerNote,
+        requestedPickupTime: draft.requestedPickupTime,
       ),
     );
   }
@@ -174,27 +175,33 @@ class PassengerRideRequestSubmissionException implements Exception {
   const PassengerRideRequestSubmissionException(
     this.message, {
     this.requiresSignIn = false,
+    this.code,
   });
 
   const PassengerRideRequestSubmissionException.signInRequired()
     : message = signInRequiredMessage,
-      requiresSignIn = true;
+      requiresSignIn = true,
+      code = null;
 
   const PassengerRideRequestSubmissionException.connectionNotConfigured()
     : message = AsmApiClient.connectionNotConfiguredMessage,
-      requiresSignIn = false;
+      requiresSignIn = false,
+      code = null;
 
   const PassengerRideRequestSubmissionException.network()
     : message = networkErrorMessage,
-      requiresSignIn = false;
+      requiresSignIn = false,
+      code = null;
 
   const PassengerRideRequestSubmissionException.serverUnavailable()
     : message = serverUnavailableMessage,
-      requiresSignIn = false;
+      requiresSignIn = false,
+      code = null;
 
   const PassengerRideRequestSubmissionException.unknown()
     : message = unknownErrorMessage,
-      requiresSignIn = false;
+      requiresSignIn = false,
+      code = null;
 
   static const signInRequiredMessage = 'Please sign in to request a ride.';
   static const networkErrorMessage =
@@ -206,8 +213,39 @@ class PassengerRideRequestSubmissionException implements Exception {
       'This ride request was already used with different details. Please review and try again.';
   static const unknownErrorMessage = 'Something went wrong. Please try again.';
 
+  // Scheduled-ride errors. The backend's own detail is shown where it is
+  // written for passengers; these are the fallbacks.
+  static const pickupTimeUnreadableMessage =
+      "We couldn't read that pickup time. Please choose it again.";
+  static const pickupTooSoonMessage =
+      "Scheduled rides need at least an hour's notice. Pick a later time, "
+      'or choose Now.';
+  static const pickupTooFarMessage =
+      'You can schedule up to 7 days ahead. Pick an earlier date.';
+  static const slotFullMessage =
+      'That time is fully booked. Try a time at least an hour earlier or '
+      'later.';
+  static const scheduledRideLimitMessage =
+      'You already have 3 upcoming scheduled rides.';
+  static const pickupTimeRequiredMessage = 'Choose a pickup time.';
+  static const pickupNotConfirmedMessage =
+      "We couldn't confirm your pickup time. Your request may have been "
+      'booked for now. Check it in My Ride Requests.';
+
+  static const pickupInvalidCode = 'requested_pickup_time_invalid';
+  static const pickupTimezoneCode = 'requested_pickup_time_timezone_required';
+  static const pickupTooSoonCode = 'requested_pickup_time_too_soon';
+  static const pickupTooFarCode = 'requested_pickup_time_too_far';
+  static const slotFullCode = 'scheduled_slot_full';
+  static const scheduledRideLimitCode = 'scheduled_ride_limit_reached';
+
   final String message;
   final bool requiresSignIn;
+
+  /// The backend's error code, when it sent one (scheduled-ride errors).
+  final String? code;
+
+  bool get isScheduledPickupError => code != null;
 
   factory PassengerRideRequestSubmissionException.fromAuthError(
     AuthException? error,
@@ -250,6 +288,13 @@ class PassengerRideRequestSubmissionException implements Exception {
       return const PassengerRideRequestSubmissionException.signInRequired();
     }
 
+    // Branch on the backend's code before the status: every 409 used to be
+    // an idempotency conflict, but capacity limits are 409s too.
+    final scheduledError = _scheduledPickupError(apiError?.cause);
+    if (scheduledError != null) {
+      return scheduledError;
+    }
+
     if (statusCode == 403) {
       return const PassengerRideRequestSubmissionException(
         passengerRequiredMessage,
@@ -278,6 +323,31 @@ class PassengerRideRequestSubmissionException implements Exception {
 
   @override
   String toString() => message;
+
+  static PassengerRideRequestSubmissionException? _scheduledPickupError(
+    Object? cause,
+  ) {
+    if (cause is! Map) {
+      return null;
+    }
+    final code = cause['code'];
+    if (code is! String) {
+      return null;
+    }
+    final detail = _safeDetailFromCause(cause);
+    final message = switch (code) {
+      pickupInvalidCode || pickupTimezoneCode => pickupTimeUnreadableMessage,
+      pickupTooSoonCode => detail ?? pickupTooSoonMessage,
+      pickupTooFarCode => detail ?? pickupTooFarMessage,
+      slotFullCode => detail ?? slotFullMessage,
+      scheduledRideLimitCode => detail ?? scheduledRideLimitMessage,
+      _ => null,
+    };
+    if (message == null) {
+      return null;
+    }
+    return PassengerRideRequestSubmissionException(message, code: code);
+  }
 
   static String? _safeDetailFromCause(Object? cause) {
     if (cause is! Map) {

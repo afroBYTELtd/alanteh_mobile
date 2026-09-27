@@ -310,6 +310,60 @@ void main() {
       expect(submission.toJson().containsKey('passenger_note'), isFalse);
     });
 
+    test('scheduled pickup time is sent as UTC with a Z offset', () {
+      // A local DateTime's toIso8601String() carries no offset, which the
+      // backend rejects; the submission must always send UTC.
+      final localPickup = DateTime(2026, 10, 3, 9, 0);
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-scheduled-pickup-test',
+        pickupLocation: 'Accra Mall',
+        destination: 'Osu',
+        passengerCount: 1,
+        requestedPickupTime: localPickup,
+      );
+
+      final sent = submission.toJson()['requested_pickup_time'] as String;
+
+      expect(sent, endsWith('Z'));
+      expect(DateTime.parse(sent).isAtSameMomentAs(localPickup), isTrue);
+    });
+
+    test('ride now sends no requested_pickup_time key', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-ride-now-test',
+        pickupLocation: 'Accra Mall',
+        destination: 'Osu',
+        passengerCount: 1,
+      );
+
+      expect(submission.requestedPickupTime, isNull);
+      expect(submission.toJson().containsKey('requested_pickup_time'), isFalse);
+    });
+
+    test('ride request result reads the echoed pickup time', () {
+      final scheduled = PassengerRideRequestResult.fromJson(<String, Object?>{
+        'request_reference': 'RR-APP-SCHEDULED',
+        'status': 'requested',
+        'message': 'Ride request received by the Control Center.',
+        'requested_pickup_time': '2026-10-03T09:00:00+00:00',
+      });
+      final rideNow = PassengerRideRequestResult.fromJson(<String, Object?>{
+        'request_reference': 'RR-APP-NOW',
+        'status': 'requested',
+        'message': 'Ride request received by the Control Center.',
+      });
+      final unreadable = PassengerRideRequestResult.fromJson(<String, Object?>{
+        'request_reference': 'RR-APP-BAD',
+        'status': 'requested',
+        'message': 'Ride request received by the Control Center.',
+        'requested_pickup_time': 'tomorrow',
+      });
+
+      expect(scheduled.requestedPickupTime, DateTime.utc(2026, 10, 3, 9));
+      expect(rideNow.requestedPickupTime, isNull);
+      expect(unreadable.requestedPickupTime, isNull);
+    });
+
     test('M3A locks passenger ride requests to accepted endpoint only', () {
       final source = File('lib/asm_api_client.dart').readAsStringSync();
 
