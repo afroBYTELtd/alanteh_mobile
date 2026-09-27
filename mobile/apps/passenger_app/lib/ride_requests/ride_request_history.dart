@@ -492,7 +492,9 @@ enum PassengerRideState {
       // vehicle) - closest passenger-facing state is inProgress, since the
       // passenger is already aboard.
       'in_progress' || 'passenger_onboard' => PassengerRideState.inProgress,
-      'driver_declined' => PassengerRideState.rejected,
+      // Auto-assignment re-offers a declined trip to other drivers, so a
+      // decline is still a driver search - not a rejection.
+      'driver_declined' => PassengerRideState.looking,
       'cancelled_by_operations' => PassengerRideState.cancelledByOperations,
       // no_show is a platform/operations determination, not a
       // passenger-initiated cancellation.
@@ -562,14 +564,16 @@ enum PassengerRideState {
 }
 
 /// The pickup time of a ride booked for later that no driver has taken
-/// yet, or null. A record still showing its request's "converted" status has
-/// not been matched to its trip, so its real state is unknown.
+/// yet and whose offers have not started (more than an hour away), or
+/// null. Once offers start it is an ordinary driver search. A record still
+/// showing its request's "converted" status has not been matched to its
+/// trip, so its real state is unknown.
 DateTime? scheduledPickupAwaitingDriver(
   PassengerRideRequestRecord record,
   DateTime now,
 ) {
   final pickup = record.requestedPickupTime;
-  if (pickup == null || !pickup.isAfter(now)) {
+  if (pickup == null || !pickup.isAfter(now.add(scheduledPickupMinimumLead))) {
     return null;
   }
   if (record.status.trim().toLowerCase() == 'converted') {
