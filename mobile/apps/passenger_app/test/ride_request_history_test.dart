@@ -205,13 +205,14 @@ void main() {
         PassengerRideState.fromStatus('passenger_onboard'),
         PassengerRideState.inProgress,
       );
-      // driver_declined and cancelled_by_passenger already resolved
-      // correctly (one by heuristic luck, one canonically), verified here
-      // alongside the newly-fixed ones so a future change can't silently
-      // regress either.
+      // driver_declined resolves canonically. It maps to looking, not
+      // rejected: auto-assignment re-offers a declined trip to other
+      // drivers, so it is still being filled (the backend's passenger
+      // message for it is "Still finding you a driver."). Kept here so a
+      // future change can't silently regress it.
       expect(
         PassengerRideState.fromStatus('driver_declined'),
-        PassengerRideState.rejected,
+        PassengerRideState.looking,
       );
       expect(
         PassengerRideState.fromStatus('cancelled_by_passenger'),
@@ -748,8 +749,8 @@ void main() {
   );
 
   testWidgets(
-    'a converted record for a driver-declined trip shows the real declined '
-    'outcome, not a generic placeholder',
+    'a converted record for a driver-declined trip shows its real status '
+    '(still looking for a driver), not a generic placeholder',
     (tester) async {
       // PASSENGER-TRIP-DETAIL-STATUS-DISPLAY-FIX: driver_declined has no
       // literal case in _statusLabel/_safeStatusMessage, so before
@@ -782,11 +783,20 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Could not be accepted'), findsOneWidget);
       expect(
-        find.text('Please try booking again or contact support.'),
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('ride-request-status-driver_declined'),
+          ),
+          matching: find.text('Active'),
+        ),
         findsOneWidget,
       );
+      expect(
+        find.text(PassengerRideState.looking.defaultMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Could not be accepted'), findsNothing);
       expect(find.text('Request update'), findsNothing);
       expect(find.text('Trip record created.'), findsNothing);
     },
@@ -1273,9 +1283,9 @@ void main() {
   });
 
   testWidgets(
-    'opening a driver-declined trip detail page shows the real declined '
-    'outcome instantly from initialRecord, then again after its own '
-    'refetch resolves',
+    'opening a driver-declined trip detail page shows its real status '
+    'instantly from initialRecord, then again after its own refetch '
+    'resolves',
     (tester) async {
       // Reproduces the live-device bug: PassengerRideRequestDetailPage did
       // its own separate fetchRequest() call and was never wired to trip
@@ -1349,7 +1359,15 @@ void main() {
         ),
         findsWidgets,
       );
-      expect(find.text('Could not be accepted'), findsWidgets);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('ride-request-status-driver_declined'),
+          ),
+          matching: find.text('Active'),
+        ),
+        findsWidgets,
+      );
 
       requestCompleter.complete(requestFor('RR-APP-DECLINED-DETAIL'));
       await tester.pumpAndSettle();
@@ -1364,11 +1382,20 @@ void main() {
         ),
         findsWidgets,
       );
-      expect(find.text('Could not be accepted'), findsWidgets);
       expect(
-        find.text('Please try booking again or contact support.'),
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('ride-request-status-driver_declined'),
+          ),
+          matching: find.text('Active'),
+        ),
         findsWidgets,
       );
+      expect(
+        find.text(PassengerRideState.looking.defaultMessage),
+        findsWidgets,
+      );
+      expect(find.text('Could not be accepted'), findsNothing);
       expect(find.text('Request update'), findsNothing);
       expect(
         find.text('Your request has been converted into a trip record.'),
