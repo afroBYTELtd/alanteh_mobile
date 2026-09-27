@@ -545,11 +545,10 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
     );
   }
 
-  Future<void> _openLostItem() {
+  Future<void> _openContactSupport() {
     return Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => NewMessageForm(
-          initialCategory: 'Lost item',
           initialPassengerName: widget.passengerName,
           tripHistoryRepository: widget.tripHistoryRepository,
           submitter:
@@ -763,11 +762,12 @@ class _PassengerSettingsScreenState extends State<PassengerSettingsScreen> {
             _settingsCard(
               children: [
                 ListTile(
-                  key: const Key('passenger-settings-lost-item'),
-                  leading: const Icon(Icons.help_outline),
-                  title: const Text('Lost Item'),
+                  key: const Key('passenger-settings-contact-support'),
+                  leading: const Icon(Icons.support_agent),
+                  title: const Text('Contact support'),
+                  subtitle: const Text('Lost items, trip issues and questions'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: _openLostItem,
+                  onTap: _openContactSupport,
                 ),
                 const Divider(height: 1),
                 ListTile(

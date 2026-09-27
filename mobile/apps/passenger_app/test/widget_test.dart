@@ -1303,9 +1303,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(
-      find.byKey(const Key('passenger-settings-lost-item')),
+      find.byKey(const Key('passenger-settings-contact-support')),
     );
-    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-contact-support')),
+    );
     await tester.pumpAndSettle();
 
     final nameField = tester.widget<TextFormField>(
@@ -1355,9 +1357,11 @@ void main() {
     await tester.tap(find.byKey(const Key('passenger-account-settings')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
-      find.byKey(const Key('passenger-settings-lost-item')),
+      find.byKey(const Key('passenger-settings-contact-support')),
     );
-    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-contact-support')),
+    );
     await tester.pumpAndSettle();
 
     final nameField = tester.widget<TextFormField>(
@@ -1396,9 +1400,11 @@ void main() {
     await tester.tap(find.byKey(const Key('passenger-account-settings')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
-      find.byKey(const Key('passenger-settings-lost-item')),
+      find.byKey(const Key('passenger-settings-contact-support')),
     );
-    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-contact-support')),
+    );
     await tester.pumpAndSettle();
 
     expect(

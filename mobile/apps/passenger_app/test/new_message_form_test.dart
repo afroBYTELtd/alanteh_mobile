@@ -170,14 +170,25 @@ void main() {
     expect(fetcher.calls, 1);
   });
 
-  testWidgets('test_lost_item_from_settings_prefills_category', (tester) async {
+  // Settings used to offer a "Lost Item" entry that opened this form
+  // locked to the Lost item category, hiding that the form handles any
+  // support message. It is now a general "Contact support" entry.
+  testWidgets('test_contact_support_from_settings_leaves_category_open', (
+    tester,
+  ) async {
     await _pumpSettings(
       tester,
       tripRepository: _FakeTripHistoryRepository(),
       submitter: _RecordingSupportMessageSubmitter(),
     );
 
-    await tester.tap(find.byKey(const Key('passenger-settings-lost-item')));
+    expect(find.text('Lost Item'), findsNothing);
+    expect(find.text('Contact support'), findsOneWidget);
+    expect(find.text('Lost items, trip issues and questions'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('passenger-settings-contact-support')),
+    );
     await tester.pumpAndSettle();
 
     final field = tester.widget<DropdownButtonFormField<String>>(
@@ -185,7 +196,19 @@ void main() {
     );
 
     expect(find.byType(NewMessageForm), findsOneWidget);
-    expect(field.initialValue, 'Lost item');
+    expect(field.initialValue, isNull);
+    expect(field.onChanged, isNotNull);
+
+    await tester.tap(find.byKey(const Key('new-message-category')));
+    await tester.pumpAndSettle();
+    for (final category in const <String>[
+      'Lost item',
+      'General enquiry',
+      'Trip issue',
+      'Other',
+    ]) {
+      expect(find.text(category), findsWidgets);
+    }
   });
 
   testWidgets('test_lost_item_category_locked_when_initial_category_provided', (
