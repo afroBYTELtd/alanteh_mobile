@@ -964,11 +964,17 @@ void main() {
     expect(find.text('Confirm your ride'), findsWidgets);
     expect(find.byKey(const Key('mtn-momo-selected')), findsOneWidget);
     expect(find.text('MTN Mobile Money'), findsOneWidget);
-    expect(find.text('Fare estimate'), findsOneWidget);
+    // The fixed-route fare estimate is off until destinations have real
+    // coordinates, so the review shows a neutral fare line instead.
     expect(
-      find.text('Fare confirmed when driver is assigned.'),
+      find.byKey(const Key('fare-confirmed-before-payment')),
       findsOneWidget,
     );
+    expect(
+      find.text('Your fare will be confirmed before you pay.'),
+      findsOneWidget,
+    );
+    expect(find.text('Fare estimate'), findsNothing);
     expect(find.text('Payment: MTN MoMo'), findsOneWidget);
     await _scrollUntilKey(tester, const Key('confirm-and-request'));
     expect(find.text('Confirm and request'), findsOneWidget);

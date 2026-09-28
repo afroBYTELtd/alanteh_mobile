@@ -374,6 +374,57 @@ class PassengerFareEstimatePanel extends StatelessWidget {
   }
 }
 
+/// Shown in place of [PassengerFareEstimatePanel] while estimates are off.
+class PassengerFareConfirmedLaterNotice extends StatelessWidget {
+  const PassengerFareConfirmedLaterNotice({super.key});
+
+  static const text = 'Your fare will be confirmed before you pay.';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('fare-confirmed-before-payment'),
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+        border: Border.all(color: AsmColors.passengerLine),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.receipt_long_outlined,
+                color: AsmColors.brandDeepGreen,
+              ),
+              SizedBox(width: AsmSpacing.space8),
+              Text(
+                'Fare',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          SizedBox(height: AsmSpacing.space12),
+          Text(
+            text,
+            style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+          ),
+          SizedBox(height: AsmSpacing.space12),
+          Text(
+            PassengerFareEstimatePanel.paymentText,
+            style: TextStyle(
+              color: AsmColors.brandDeepGreen,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FareEstimateLine extends StatelessWidget {
   const _FareEstimateLine({
     required this.label,
