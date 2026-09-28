@@ -227,6 +227,7 @@ class _PassengerShellState extends State<PassengerShell> {
       MaterialPageRoute<bool>(
         builder: (_) => BookingPage(
           market: widget.configuration.market,
+          passengerName: widget.passengerName,
           initialPickupDescription: _pickupDescription!,
           initialDestinationDescription: _destinationDescription!,
           rideRequestSubmitter: widget.rideRequestSubmitter,
@@ -264,6 +265,7 @@ class _PassengerShellState extends State<PassengerShell> {
       MaterialPageRoute<bool>(
         builder: (_) => BookingPage(
           market: widget.configuration.market,
+          passengerName: widget.passengerName,
           initialPickupDescription: selection.address,
           initialPickupLatitude: selection.coordinates.latitude,
           initialPickupLongitude: selection.coordinates.longitude,
@@ -298,6 +300,7 @@ class _PassengerShellState extends State<PassengerShell> {
       MaterialPageRoute<bool>(
         builder: (_) => BookingPage(
           market: widget.configuration.market,
+          passengerName: widget.passengerName,
           initialPickupDescription: record.pickupLocation,
           initialDestinationDescription: record.destination,
           rideRequestSubmitter: widget.rideRequestSubmitter,
@@ -320,6 +323,7 @@ class _PassengerShellState extends State<PassengerShell> {
       MaterialPageRoute<bool>(
         builder: (_) => BookingPage(
           market: widget.configuration.market,
+          passengerName: widget.passengerName,
           initialPickupDescription: record.destination,
           initialDestinationDescription: record.pickupLocation,
           rideRequestSubmitter: widget.rideRequestSubmitter,
@@ -357,6 +361,8 @@ class _PassengerShellState extends State<PassengerShell> {
           phoneNumber: widget.phoneNumber,
           initialPaymentNetwork: _paymentNetwork,
           onSignInRequired: widget.onSignInRequired,
+          onBookAgain: _openBookAgain,
+          passengerName: widget.passengerName,
         ),
       ),
     );

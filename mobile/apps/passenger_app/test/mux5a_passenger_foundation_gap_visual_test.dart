@@ -64,12 +64,18 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('request-rejected-state')), findsOneWidget);
-    expect(find.text('No vehicles available right now'), findsOneWidget);
+    // This screen now only shows for a request staff could not accept, so
+    // it says that rather than "No vehicles available right now", and its
+    // first button starts a fresh booking ("Book again", was "Try again").
+    expect(find.text("We couldn't accept this ride request"), findsOneWidget);
     expect(
-      find.textContaining('All ALANTEH vehicles nearby are currently in use.'),
+      find.text(
+        "You can book again, or contact support if you'd like to know more.",
+      ),
       findsOneWidget,
     );
-    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('No vehicles available right now'), findsNothing);
+    expect(find.text('Book again'), findsOneWidget);
     expect(find.text('Contact support'), findsOneWidget);
 
     final retryButton = find.byKey(const Key('rejected-book-again'));
