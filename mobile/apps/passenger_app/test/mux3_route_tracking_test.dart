@@ -189,7 +189,9 @@ void main() {
           (
             record: _record(status: 'rejected'),
             key: 'request-rejected-state',
-            title: 'No vehicles available right now',
+            // Was "No vehicles available right now": a rejected request is
+            // a staff decision, not a shortage of vehicles.
+            title: "We couldn't accept this ride request",
           ),
         ];
 

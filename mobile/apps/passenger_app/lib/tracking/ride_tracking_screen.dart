@@ -1,6 +1,7 @@
 import '../booking/scheduled_pickup.dart';
 import 'dart:async';
 
+import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +13,7 @@ import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
+import '../support/new_message_form.dart';
 
 /// Mirrors the backend's eligible-status sets exactly
 /// (RIDE_REQUEST_CANCEL_ELIGIBLE_STATUSES / TRIP_PASSENGER_CANCEL_ELIGIBLE_STATUSES
@@ -56,6 +58,9 @@ class RideTrackingScreen extends StatefulWidget {
     this.phoneNumber,
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.onSignInRequired,
+    this.onBookAgain,
+    this.passengerName,
+    this.supportMessageSubmitter,
     super.key,
   });
 
@@ -75,6 +80,14 @@ class RideTrackingScreen extends StatefulWidget {
   final String? phoneNumber;
   final PassengerMobileMoneyNetwork initialPaymentNetwork;
   final VoidCallback? onSignInRequired;
+
+  /// Opens a new booking pre-filled from a request staff could not accept.
+  /// When null, "Book again" just closes this screen.
+  final ValueChanged<PassengerRideRequestRecord>? onBookAgain;
+
+  /// Pre-fills the support form's name field.
+  final String? passengerName;
+  final PassengerSupportMessageSubmitter? supportMessageSubmitter;
 
   @override
   State<RideTrackingScreen> createState() => _RideTrackingScreenState();
@@ -494,6 +507,37 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     );
   }
 
+  /// A request staff rejected is final - it can never become a trip - so
+  /// booking again cannot duplicate it.
+  void _bookAgain(PassengerRideRequestRecord record) {
+    final navigator = Navigator.of(context);
+    // Close this screen first, synchronously, so the new booking opens in
+    // its place and backing out of it does not return here.
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+    widget.onBookAgain?.call(record);
+  }
+
+  void _contactSupport(PassengerRideRequestRecord record) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NewMessageForm(
+          initialPassengerName: widget.passengerName,
+          initialMessage:
+              'About my ride request ${record.requestReference}, which '
+              'could not be accepted: ',
+          tripHistoryRepository: widget.repository,
+          submitter:
+              widget.supportMessageSubmitter ??
+              ApiPassengerSupportMessageSubmitter.withDefaultClient(
+                baseUrl: AsmApiClient.defaultBaseUrl,
+              ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _record == null) {
@@ -545,8 +589,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Ride request')),
         body: PassengerNoVehiclesAvailableState(
-          onRetry: () => Navigator.of(context).maybePop(),
-          onContactSupport: () {},
+          onRetry: () => _bookAgain(record),
+          onContactSupport: () => _contactSupport(record),
         ),
       );
     }
@@ -891,18 +935,6 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       onPressed: () => Navigator.of(context).maybePop(),
                       child: const Text('Book again'),
                     ),
-                  ] else if (view.rejected) ...[
-                    const SizedBox(height: 18),
-                    FilledButton(
-                      key: const Key('rejected-book-again'),
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Book again'),
-                    ),
-                    TextButton(
-                      key: const Key('rejected-contact-support'),
-                      onPressed: () {},
-                      child: const Text('Contact support'),
-                    ),
                   ] else if (widget.cancellationGateway != null &&
                       passengerCanCancelTrip(
                         tripCreated: record.tripCreated,
@@ -959,6 +991,7 @@ String? _vehicleInfo(String? colour, String? type) {
   return parts.isEmpty ? null : parts.join(' · ');
 }
 
+/// Shown when staff could not accept a ride request (a final outcome).
 class PassengerNoVehiclesAvailableState extends StatelessWidget {
   const PassengerNoVehiclesAvailableState({
     required this.onRetry,
@@ -995,7 +1028,7 @@ class PassengerNoVehiclesAvailableState extends StatelessWidget {
                 ),
                 const SizedBox(height: AsmSpacing.space16),
                 const Text(
-                  'No vehicles available right now',
+                  "We couldn't accept this ride request",
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 24,
@@ -1005,8 +1038,8 @@ class PassengerNoVehiclesAvailableState extends StatelessWidget {
                 ),
                 const SizedBox(height: AsmSpacing.space12),
                 const Text(
-                  'All ALANTEH vehicles nearby are currently in use. '
-                  'Please try again shortly, or request for a later time.',
+                  "You can book again, or contact support if you'd like to "
+                  'know more.',
                   textAlign: TextAlign.center,
                   style: TextStyle(height: 1.45),
                 ),
@@ -1015,7 +1048,7 @@ class PassengerNoVehiclesAvailableState extends StatelessWidget {
                   key: const Key('rejected-book-again'),
                   onPressed: onRetry,
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
+                  label: const Text('Book again'),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(52),
                   ),

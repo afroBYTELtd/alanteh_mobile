@@ -399,6 +399,7 @@ class NewMessageForm extends StatefulWidget {
   const NewMessageForm({
     this.initialCategory,
     this.initialPassengerName,
+    this.initialMessage,
     required this.tripHistoryRepository,
     required this.submitter,
     this.imagePicker,
@@ -407,6 +408,9 @@ class NewMessageForm extends StatefulWidget {
 
   final String? initialCategory;
   final String? initialPassengerName;
+
+  /// Starting text for the message, which the passenger can edit.
+  final String? initialMessage;
   final PassengerRideRequestHistoryRepository tripHistoryRepository;
   final PassengerSupportMessageSubmitter submitter;
   final PassengerImagePicker? imagePicker;
@@ -449,6 +453,11 @@ class _NewMessageFormState extends State<NewMessageForm> {
     final initialName = widget.initialPassengerName?.trim();
     if (initialName != null && initialName.isNotEmpty) {
       _nameController.text = initialName;
+    }
+
+    final initialMessage = widget.initialMessage;
+    if (initialMessage != null && initialMessage.trim().isNotEmpty) {
+      _messageController.text = initialMessage;
     }
 
     _loadCategories();

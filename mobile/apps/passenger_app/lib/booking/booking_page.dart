@@ -38,6 +38,7 @@ class BookingPage extends StatefulWidget {
     this.initialPaymentNetwork = PassengerMobileMoneyNetwork.mtn,
     this.routeService = const OsrmPassengerRouteService(),
     this.clock,
+    this.passengerName,
     super.key,
   });
 
@@ -61,6 +62,9 @@ class BookingPage extends StatefulWidget {
 
   /// Current time; injectable so scheduled-ride limits can be tested.
   final DateTime Function()? clock;
+
+  /// Pre-fills support forms opened from the ride this page books.
+  final String? passengerName;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -428,7 +432,11 @@ class _BookingPageState extends State<BookingPage> {
           reference.isNotEmpty &&
           repository != null &&
           mounted) {
-        await Navigator.of(context).pushReplacement<void, void>(
+        // This page is replaced by the tracking screen, so "Book again"
+        // must not depend on this page's context.
+        final navigator = Navigator.of(context);
+        final page = widget;
+        await navigator.pushReplacement<void, void>(
           MaterialPageRoute<void>(
             builder: (_) => RideTrackingScreen(
               repository: repository,
@@ -439,6 +447,32 @@ class _BookingPageState extends State<BookingPage> {
               phoneNumber: widget.phoneNumber,
               initialPaymentNetwork: widget.initialPaymentNetwork,
               onSignInRequired: widget.onSignInRequired,
+              passengerName: widget.passengerName,
+              onBookAgain: (record) => navigator.push<bool>(
+                MaterialPageRoute<bool>(
+                  builder: (_) => BookingPage(
+                    market: page.market,
+                    initialPickupDescription: record.pickupLocation,
+                    initialDestinationDescription: record.destination,
+                    rideRequestSubmitter: page.rideRequestSubmitter,
+                    idempotencyKeyFactory: page.idempotencyKeyFactory,
+                    onSignInRequired: page.onSignInRequired,
+                    requestNotificationPermission:
+                        page.requestNotificationPermission,
+                    rideRequestHistoryRepository:
+                        page.rideRequestHistoryRepository,
+                    paymentRatingRepository: page.paymentRatingRepository,
+                    fareEstimateRepository: page.fareEstimateRepository,
+                    trustedContactRepository: page.trustedContactRepository,
+                    cancellationGateway: page.cancellationGateway,
+                    phoneNumber: page.phoneNumber,
+                    initialPaymentNetwork: page.initialPaymentNetwork,
+                    routeService: page.routeService,
+                    clock: page.clock,
+                    passengerName: page.passengerName,
+                  ),
+                ),
+              ),
             ),
           ),
         );
