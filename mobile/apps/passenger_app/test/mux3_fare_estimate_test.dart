@@ -145,6 +145,9 @@ void main() {
         theme: AsmThemes.passenger,
         home: BookingPage(
           market: MarketConfig.ghanaAccra,
+          // Estimates are off by default until destinations have real
+          // coordinates; this keeps the estimate path itself covered.
+          showFareEstimate: true,
           fareEstimateRepository: repository,
           routeService: const _FixedRouteService(
             PassengerRouteEstimate(
@@ -179,6 +182,8 @@ void main() {
         theme: AsmThemes.passenger,
         home: const BookingPage(
           market: MarketConfig.ghanaAccra,
+          // See above: the estimate path is opt-in for now.
+          showFareEstimate: true,
           fareEstimateRepository: _UnavailableFareRepository(),
           routeService: _FixedRouteService(
             PassengerRouteEstimate(

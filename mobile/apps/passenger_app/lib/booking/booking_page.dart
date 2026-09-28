@@ -39,6 +39,7 @@ class BookingPage extends StatefulWidget {
     this.routeService = const OsrmPassengerRouteService(),
     this.clock,
     this.passengerName,
+    this.showFareEstimate = false,
     super.key,
   });
 
@@ -65,6 +66,11 @@ class BookingPage extends StatefulWidget {
 
   /// Pre-fills support forms opened from the ride this page books.
   final String? passengerName;
+
+  /// Off until destinations have real coordinates: the route behind the
+  /// estimate is between two fixed Accra points, so every booking got the
+  /// same fare. The review shows a neutral fare line instead.
+  final bool showFareEstimate;
 
   @override
   State<BookingPage> createState() => _BookingPageState();
@@ -301,6 +307,10 @@ class _BookingPageState extends State<BookingPage> {
   void _handleAuthoritativeRouteEstimate(
     PassengerRouteEstimate? routeEstimate,
   ) {
+    if (!widget.showFareEstimate) {
+      return;
+    }
+
     final generation = ++_fareRequestGeneration;
 
     if (mounted) {
@@ -598,6 +608,7 @@ class _BookingPageState extends State<BookingPage> {
                 onAuthoritativeRouteEstimateChanged:
                     _handleAuthoritativeRouteEstimate,
                 fareEstimate: _fareEstimate,
+                showFareEstimate: widget.showFareEstimate,
                 onSignInRequired: _returnToSignIn,
               ),
       ),

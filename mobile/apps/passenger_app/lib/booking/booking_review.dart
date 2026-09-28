@@ -25,6 +25,7 @@ class BookingReview extends StatelessWidget {
     this.routeService = const OsrmPassengerRouteService(),
     this.onAuthoritativeRouteEstimateChanged,
     this.fareEstimate,
+    this.showFareEstimate = false,
     this.onSignInRequired,
     super.key,
   });
@@ -42,6 +43,7 @@ class BookingReview extends StatelessWidget {
   final ValueChanged<PassengerRouteEstimate?>?
   onAuthoritativeRouteEstimateChanged;
   final PassengerBookingFareEstimate? fareEstimate;
+  final bool showFareEstimate;
   final VoidCallback? onSignInRequired;
 
   @override
@@ -82,7 +84,10 @@ class BookingReview extends StatelessWidget {
           onAuthoritativeEstimateChanged: onAuthoritativeRouteEstimateChanged,
         ),
         const SizedBox(height: AsmSpacing.space16),
-        PassengerFareEstimatePanel(estimate: fareEstimate),
+        if (showFareEstimate)
+          PassengerFareEstimatePanel(estimate: fareEstimate)
+        else
+          const PassengerFareConfirmedLaterNotice(),
         const SizedBox(height: AsmSpacing.space24),
         // Only for a scheduled ride, so the ride-now review is unchanged.
         if (draft.requestedPickupTime case final pickup?)
