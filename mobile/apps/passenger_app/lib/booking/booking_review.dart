@@ -25,7 +25,7 @@ class BookingReview extends StatelessWidget {
     this.routeService = const OsrmPassengerRouteService(),
     this.onAuthoritativeRouteEstimateChanged,
     this.fareEstimate,
-    this.showFareEstimate = false,
+    this.showRouteAndFareEstimate = false,
     this.onSignInRequired,
     super.key,
   });
@@ -43,7 +43,7 @@ class BookingReview extends StatelessWidget {
   final ValueChanged<PassengerRouteEstimate?>?
   onAuthoritativeRouteEstimateChanged;
   final PassengerBookingFareEstimate? fareEstimate;
-  final bool showFareEstimate;
+  final bool showRouteAndFareEstimate;
   final VoidCallback? onSignInRequired;
 
   @override
@@ -79,12 +79,16 @@ class BookingReview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AsmSpacing.space20),
-        RoutePreviewCard(
-          routeService: routeService,
-          onAuthoritativeEstimateChanged: onAuthoritativeRouteEstimateChanged,
-        ),
-        const SizedBox(height: AsmSpacing.space16),
-        if (showFareEstimate)
+        // The route is between fixed points until destinations have real
+        // coordinates, so the card (and its route request) is left out.
+        if (showRouteAndFareEstimate) ...[
+          RoutePreviewCard(
+            routeService: routeService,
+            onAuthoritativeEstimateChanged: onAuthoritativeRouteEstimateChanged,
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+        ],
+        if (showRouteAndFareEstimate)
           PassengerFareEstimatePanel(estimate: fareEstimate)
         else
           const PassengerFareConfirmedLaterNotice(),

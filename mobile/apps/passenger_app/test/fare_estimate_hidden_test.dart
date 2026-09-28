@@ -8,9 +8,10 @@ import 'package:passenger_app/booking/passenger_fare_estimate.dart';
 import 'package:passenger_app/map/osrm_route.dart';
 import 'package:passenger_app/map/passenger_map.dart';
 
-// The route behind the fare estimate is always between two fixed Accra
-// points (the destination has no coordinates yet), so every booking showed
-// the same estimate. It stays off until real destination coordinates exist.
+// The route behind the review's route card and fare estimate is always
+// between two fixed Accra points (the destination has no coordinates yet),
+// so every booking showed the same route and estimate. Both stay off until
+// real destination coordinates exist.
 void main() {
   testWidgets('the review shows no fare estimate and asks for none', (
     tester,
@@ -19,6 +20,12 @@ void main() {
     await _pumpBookingReview(tester, fares: fares);
 
     expect(fares.tripKilometres, isEmpty);
+    // Nothing derived from the fixed points: no route card, drawn route,
+    // pins or distance, and no route request at all.
+    expect(_FixedRouteService.calls, 0);
+    expect(find.byKey(const Key('osrm-route-preview-card')), findsNothing);
+    expect(find.byKey(const Key('route-distance-duration')), findsNothing);
+    expect(find.textContaining('km ·'), findsNothing);
     expect(find.byKey(const Key('passenger-fare-estimate')), findsNothing);
     expect(find.text('Estimated total'), findsNothing);
     expect(find.textContaining('km ×'), findsNothing);
@@ -40,6 +47,7 @@ void main() {
 
     expect(fares.tripKilometres, <double>[10.2]);
     expect(find.text('Estimated total'), findsOneWidget);
+    expect(find.byKey(const Key('osrm-route-preview-card')), findsOneWidget);
     expect(
       find.byKey(const Key('fare-confirmed-before-payment')),
       findsNothing,
@@ -56,6 +64,7 @@ Future<void> _pumpBookingReview(
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
+  _FixedRouteService.calls = 0;
   await tester.pumpWidget(
     MaterialApp(
       theme: AsmThemes.passenger,
@@ -69,7 +78,7 @@ Future<void> _pumpBookingReview(
               market: MarketConfig.ghanaAccra,
               fareEstimateRepository: fares,
               routeService: const _FixedRouteService(),
-              showFareEstimate: showFareEstimate,
+              showRouteAndFareEstimate: showFareEstimate,
             ),
     ),
   );
@@ -108,11 +117,14 @@ class _RecordingFareRepository implements PassengerFareEstimateRepository {
 class _FixedRouteService implements PassengerRouteService {
   const _FixedRouteService();
 
+  static int calls = 0;
+
   @override
   Future<PassengerRouteEstimate> route({
     LatLng pickup = accraPickup,
     LatLng destination = accraDestination,
   }) async {
+    calls += 1;
     return const PassengerRouteEstimate(
       points: <LatLng>[accraPickup, accraDestination],
       distanceKilometres: 10.2,

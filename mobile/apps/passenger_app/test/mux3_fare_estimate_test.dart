@@ -147,7 +147,7 @@ void main() {
           market: MarketConfig.ghanaAccra,
           // Estimates are off by default until destinations have real
           // coordinates; this keeps the estimate path itself covered.
-          showFareEstimate: true,
+          showRouteAndFareEstimate: true,
           fareEstimateRepository: repository,
           routeService: const _FixedRouteService(
             PassengerRouteEstimate(
@@ -183,7 +183,7 @@ void main() {
         home: const BookingPage(
           market: MarketConfig.ghanaAccra,
           // See above: the estimate path is opt-in for now.
-          showFareEstimate: true,
+          showRouteAndFareEstimate: true,
           fareEstimateRepository: _UnavailableFareRepository(),
           routeService: _FixedRouteService(
             PassengerRouteEstimate(
