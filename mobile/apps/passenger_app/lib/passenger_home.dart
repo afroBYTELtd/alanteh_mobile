@@ -4,10 +4,11 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_maps/asm_maps.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+
+import 'map/measured_height.dart';
 
 const passengerHomePickupDefaultCenter = LatLng(5.6050, -0.1668);
 const passengerHomePickupInitialZoom = 16.0;
@@ -679,7 +680,7 @@ class _PassengerHomeState extends State<PassengerHome>
         ),
         Align(
           alignment: Alignment.bottomCenter,
-          child: _HeightReporter(
+          child: MeasuredHeight(
             onHeight: (height) {
               if (mounted && height != _bottomSheetHeight) {
                 setState(() => _bottomSheetHeight = height);
@@ -832,41 +833,4 @@ String _truncateAddress(String address) {
     return address;
   }
   return '${String.fromCharCodes(runes.take(57))}...';
-}
-
-/// Reports its child's height after each layout that changes it.
-class _HeightReporter extends SingleChildRenderObjectWidget {
-  const _HeightReporter({required this.onHeight, required super.child});
-
-  final ValueChanged<double> onHeight;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) {
-    return _RenderHeightReporter(onHeight);
-  }
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    _RenderHeightReporter renderObject,
-  ) {
-    renderObject.onHeight = onHeight;
-  }
-}
-
-class _RenderHeightReporter extends RenderProxyBox {
-  _RenderHeightReporter(this.onHeight);
-
-  ValueChanged<double> onHeight;
-  double? _reported;
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    final height = size.height;
-    if (height != _reported) {
-      _reported = height;
-      WidgetsBinding.instance.addPostFrameCallback((_) => onHeight(height));
-    }
-  }
 }

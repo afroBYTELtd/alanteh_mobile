@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -21,9 +22,7 @@ class GoogleAsmMap extends StatefulWidget {
 }
 
 class _GoogleAsmMapState extends State<GoogleAsmMap> {
-  late final GoogleCameraRelay _relay = GoogleCameraRelay(
-    widget.view.initialCamera,
-  );
+  late final GoogleCameraRelay _relay = GoogleCameraRelay.forView(widget.view);
   Map<AsmMapMarkerStyle, gm.BitmapDescriptor>? _icons;
   double? _iconPixelRatio;
 
@@ -35,6 +34,31 @@ class _GoogleAsmMapState extends State<GoogleAsmMap> {
       _iconPixelRatio = pixelRatio;
       _loadIcons(pixelRatio);
     }
+  }
+
+  @override
+  void didUpdateWidget(GoogleAsmMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.padding != widget.view.padding &&
+        _relay.paddingChanged()) {
+      // The plugin sends the new padding to the map from a microtask after
+      // this frame's build, so move the camera back to the target only
+      // after that has run; earlier, the padding lands after the move and
+      // shifts the target again (seen on a phone).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Timer.run(() {
+          if (mounted) {
+            _relay.restoreTarget();
+          }
+        });
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _relay.dispose();
+    super.dispose();
   }
 
   Future<void> _loadIcons(double pixelRatio) async {
@@ -50,23 +74,99 @@ class _GoogleAsmMapState extends State<GoogleAsmMap> {
       widget.view,
       relay: _relay,
       icons: _icons,
-      onMapCreated: (controller) => widget.view.onMapCreated?.call(
-        _GoogleAsmMapController(controller, _relay),
-      ),
+      onMapCreated: (controller) {
+        _relay.moveCameraTo = (target) =>
+            controller.moveCamera(gm.CameraUpdate.newLatLng(_google(target)));
+        widget.view.onMapCreated?.call(
+          _GoogleAsmMapController(controller, _relay),
+        );
+      },
     );
   }
 }
 
-/// Google's idle callback carries no position, so the camera is tracked
-/// from the moves and handed to idle.
+/// Passes Google's camera events to the view, with two corrections.
+///
+/// Google's idle carries no position, so the camera is tracked from the
+/// moves and handed to idle.
+///
+/// Padding must not move the camera target (it is the pickup on the home
+/// map), but Google keeps the view still when padding changes, so the
+/// target jumps to whatever is now at the padded centre. Measured on a
+/// phone: padding applied before the map has loaded shows up as a move
+/// (with no move started) and an idle at the shifted target; padding
+/// changed after loading moves the target with no events at all. Either
+/// way the adapter moves the camera back to the target and holds back the
+/// events of the shift and of that correction, apart from the final idle.
+/// A move started while waiting for the shift is a gesture or animation,
+/// so it cancels the hold and passes through.
 class GoogleCameraRelay {
-  GoogleCameraRelay(this._camera);
+  GoogleCameraRelay(this._camera, {bool paddingPending = false})
+    : _paddingPending = paddingPending;
+
+  /// Google applies initial padding after creating the map, so padding
+  /// present from the start is pending too.
+  GoogleCameraRelay.forView(AsmMapView view)
+    : this(view.initialCamera, paddingPending: view.padding != EdgeInsets.zero);
 
   AsmMapCamera _camera;
+  bool _paddingPending;
+  LatLng? _shiftedTo;
+  bool _restoring = false;
+  bool _loaded = false;
+  Timer? _restoreTimeout;
+
+  /// Moves the camera without animation; set once the map exists.
+  Future<void> Function(LatLng target)? moveCameraTo;
 
   AsmMapCamera get camera => _camera;
 
+  /// Returns true when the caller must call [restoreTarget] once the new
+  /// padding is applied; before loading, Google's own shift events are
+  /// awaited instead.
+  bool paddingChanged() {
+    if (_loaded) {
+      return true;
+    }
+    _paddingPending = true;
+    return false;
+  }
+
+  void restoreTarget() {
+    final restore = moveCameraTo;
+    if (restore != null) {
+      _startRestoring(restore);
+    }
+  }
+
+  void _startRestoring(Future<void> Function(LatLng target) restore) {
+    _restoring = true;
+    // If Google never reports the correction, stop holding events back
+    // rather than swallow the next gesture.
+    _restoreTimeout?.cancel();
+    _restoreTimeout = Timer(
+      const Duration(seconds: 1),
+      () => _restoring = false,
+    );
+    restore(_camera.center);
+  }
+
+  void moveStarted(AsmMapView view) {
+    if (_restoring) {
+      return;
+    }
+    _paddingPending = false;
+    view.onCameraMoveStarted?.call();
+  }
+
   void move(AsmMapView view, gm.CameraPosition position) {
+    if (_restoring) {
+      return;
+    }
+    if (_paddingPending) {
+      _shiftedTo = LatLng(position.target.latitude, position.target.longitude);
+      return;
+    }
     _camera = AsmMapCamera(
       center: LatLng(position.target.latitude, position.target.longitude),
       zoom: position.zoom,
@@ -74,7 +174,27 @@ class GoogleCameraRelay {
     view.onCameraMove?.call(_camera);
   }
 
-  void idle(AsmMapView view) => view.onCameraIdle?.call(_camera);
+  void idle(AsmMapView view) {
+    final shiftedTo = _shiftedTo;
+    final restore = moveCameraTo;
+    if (_paddingPending &&
+        shiftedTo != null &&
+        !_samePlace(shiftedTo, _camera.center) &&
+        restore != null) {
+      _paddingPending = false;
+      _shiftedTo = null;
+      _startRestoring(restore);
+      return;
+    }
+    _paddingPending = false;
+    _shiftedTo = null;
+    _restoring = false;
+    _loaded = true;
+    _restoreTimeout?.cancel();
+    view.onCameraIdle?.call(_camera);
+  }
+
+  void dispose() => _restoreTimeout?.cancel();
 }
 
 class _GoogleAsmMapController implements AsmMapController {
@@ -139,11 +259,16 @@ gm.GoogleMap googleMapFor(
         ),
     },
     onMapCreated: onMapCreated,
-    onCameraMoveStarted: view.onCameraMoveStarted,
+    onCameraMoveStarted: () => relay.moveStarted(view),
     onCameraMove: (position) => relay.move(view, position),
     onCameraIdle: () => relay.idle(view),
   );
 }
+
+// Within about a centimetre.
+bool _samePlace(LatLng a, LatLng b) =>
+    (a.latitude - b.latitude).abs() < 1e-7 &&
+    (a.longitude - b.longitude).abs() < 1e-7;
 
 gm.LatLng _google(LatLng point) => gm.LatLng(point.latitude, point.longitude);
 

@@ -10,6 +10,8 @@ const _accra = LatLng(5.6050, -0.1668);
 const _camera = AsmMapCamera(center: _accra, zoom: 16);
 
 void main() {
+  _paddingTests();
+
   group('stand-in map', () {
     setUp(() => AsmMapView.debugBuilderOverride = asmFakeMapBuilder);
     tearDown(() => AsmMapView.debugBuilderOverride = null);
@@ -260,6 +262,192 @@ void main() {
   });
 }
 
+void _paddingTests() {
+  // Google keeps the view still when padding changes, so the camera target
+  // jumps to whatever is now at the padded centre, reported as a move (with
+  // no move started) and an idle. The adapter undoes that, silently: the
+  // target is whatever the app last set or the user dragged to.
+  group('padding never moves the camera target', () {
+    const shifted = gm.CameraPosition(
+      target: gm.LatLng(5.6082, -0.1668),
+      zoom: 16,
+    );
+    const backAtStart = gm.CameraPosition(
+      target: gm.LatLng(5.6050, -0.1668),
+      zoom: 16,
+    );
+    const dragged = gm.CameraPosition(
+      target: gm.LatLng(5.6100, -0.1700),
+      zoom: 16,
+    );
+
+    test('the shift when padding arrives is undone without events', () {
+      final events = _Events();
+      final view = _view(events, padding: const EdgeInsets.only(bottom: 300));
+      final relay = GoogleCameraRelay.forView(view);
+      final restores = <LatLng>[];
+      relay.moveCameraTo = (target) async => restores.add(target);
+
+      relay.move(view, shifted);
+      relay.idle(view);
+      expect(events.log, isEmpty);
+      expect(restores, <LatLng>[_accra]);
+      expect(relay.camera.center, _accra);
+
+      // Google reports the correction like any camera move.
+      relay.moveStarted(view);
+      relay.move(view, backAtStart);
+      relay.idle(view);
+      expect(events.log, <String>['idle 5.6050,-0.1668']);
+      expect(relay.camera.center, _accra);
+
+      // Afterwards everything passes through.
+      relay.moveStarted(view);
+      relay.move(view, dragged);
+      relay.idle(view);
+      expect(events.log.skip(1), <String>[
+        'move started',
+        'move 5.6100,-0.1700',
+        'idle 5.6100,-0.1700',
+      ]);
+      expect(restores, hasLength(1));
+    });
+
+    test('without padding nothing is held back', () {
+      final events = _Events();
+      final view = _view(events);
+      final relay = GoogleCameraRelay.forView(view);
+      relay.moveCameraTo = (_) async => fail('no restore expected');
+
+      relay.idle(view);
+      expect(events.log, <String>['idle 5.6050,-0.1668']);
+    });
+
+    test('a gesture while padding is pending is never swallowed', () {
+      final events = _Events();
+      final view = _view(events, padding: const EdgeInsets.only(bottom: 300));
+      final relay = GoogleCameraRelay.forView(view);
+      final restores = <LatLng>[];
+      relay.moveCameraTo = (target) async => restores.add(target);
+
+      relay.moveStarted(view);
+      relay.move(view, dragged);
+      relay.idle(view);
+
+      expect(events.log, <String>[
+        'move started',
+        'move 5.6100,-0.1700',
+        'idle 5.6100,-0.1700',
+      ]);
+      expect(restores, isEmpty);
+    });
+
+    // Measured on a phone: after the map has loaded, Google reports
+    // nothing at all when padding changes, yet the target moves. So the
+    // adapter re-asserts the target itself once the padding is applied.
+    test('after loading, a padding change re-asserts the target', () {
+      final events = _Events();
+      final view = _view(events);
+      final relay = GoogleCameraRelay.forView(view);
+      final restores = <LatLng>[];
+      relay.moveCameraTo = (target) async => restores.add(target);
+
+      relay.moveStarted(view);
+      relay.move(view, dragged);
+      relay.idle(view);
+      events.log.clear();
+
+      expect(relay.paddingChanged(), isTrue);
+      relay.restoreTarget();
+      expect(restores, const <LatLng>[LatLng(5.6100, -0.1700)]);
+
+      // The correction is reported like any camera move; only its idle
+      // reaches the view.
+      relay.moveStarted(view);
+      relay.move(view, dragged);
+      relay.idle(view);
+      expect(events.log, <String>['idle 5.6100,-0.1700']);
+
+      relay.moveStarted(view);
+      expect(events.log.last, 'move started');
+    });
+
+    test('before loading, a padding change waits for Google\'s shift', () {
+      final events = _Events();
+      final view = _view(events);
+      final relay = GoogleCameraRelay.forView(view);
+      final restores = <LatLng>[];
+      relay.moveCameraTo = (target) async => restores.add(target);
+
+      expect(relay.paddingChanged(), isFalse);
+      relay.move(view, shifted);
+      relay.idle(view);
+
+      expect(events.log, isEmpty);
+      expect(restores, <LatLng>[_accra]);
+    });
+
+    test('padding that leaves the target in place needs no correction', () {
+      final events = _Events();
+      final view = _view(events, padding: const EdgeInsets.only(bottom: 300));
+      final relay = GoogleCameraRelay.forView(view);
+      relay.moveCameraTo = (_) async => fail('no restore expected');
+
+      relay.move(view, backAtStart);
+      relay.idle(view);
+
+      expect(events.log, <String>['idle 5.6050,-0.1668']);
+    });
+
+    testWidgets('a correction Google never reports stops holding after 1 s', (
+      tester,
+    ) async {
+      final events = _Events();
+      final view = _view(events, padding: const EdgeInsets.only(bottom: 300));
+      final relay = GoogleCameraRelay.forView(view);
+      addTearDown(relay.dispose);
+      final restores = <LatLng>[];
+      relay.moveCameraTo = (target) async => restores.add(target);
+
+      relay.move(view, shifted);
+      relay.idle(view);
+      expect(restores, <LatLng>[_accra]);
+
+      await tester.pump(const Duration(seconds: 1));
+      relay.moveStarted(view);
+      relay.move(view, dragged);
+      relay.idle(view);
+
+      expect(events.log, <String>[
+        'move started',
+        'move 5.6100,-0.1700',
+        'idle 5.6100,-0.1700',
+      ]);
+    });
+
+    testWidgets('the stand-in keeps its target and stays quiet', (
+      tester,
+    ) async {
+      AsmMapView.debugBuilderOverride = asmFakeMapBuilder;
+      addTearDown(() => AsmMapView.debugBuilderOverride = null);
+      final events = _Events();
+      await tester.pumpWidget(_map(events));
+      await tester.pump();
+      events.log.clear();
+
+      await tester.pumpWidget(
+        _map(events, padding: const EdgeInsets.only(bottom: 300)),
+      );
+      await tester.pump();
+
+      expect(events.log, isEmpty);
+      final map = tester.state<AsmFakeMapState>(find.byType(AsmFakeMap));
+      expect(map.camera, _camera);
+      expect(map.view.padding, const EdgeInsets.only(bottom: 300));
+    });
+  });
+}
+
 class _Events {
   final log = <String>[];
   AsmMapController? controller;
@@ -272,10 +460,12 @@ class _Events {
 AsmMapView _view(
   _Events events, {
   List<AsmMapMarker> markers = const <AsmMapMarker>[],
+  EdgeInsets padding = EdgeInsets.zero,
 }) {
   return AsmMapView(
     initialCamera: _camera,
     markers: markers,
+    padding: padding,
     onMapCreated: (controller) {
       events.controller = controller;
       events.log.add('created');
@@ -289,8 +479,11 @@ AsmMapView _view(
 Widget _map(
   _Events events, {
   List<AsmMapMarker> markers = const <AsmMapMarker>[],
+  EdgeInsets padding = EdgeInsets.zero,
 }) {
   return MaterialApp(
-    home: Scaffold(body: _view(events, markers: markers)),
+    home: Scaffold(
+      body: _view(events, markers: markers, padding: padding),
+    ),
   );
 }

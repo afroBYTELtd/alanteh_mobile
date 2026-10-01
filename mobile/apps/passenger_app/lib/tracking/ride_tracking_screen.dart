@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../account/passenger_payment_setup_screen.dart';
+import '../map/measured_height.dart';
 import '../map/passenger_map.dart';
 import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
@@ -101,6 +102,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   bool _loading = true;
   bool _offline = false;
   bool _reconnecting = false;
+  double _bottomSheetHeight = 0;
   bool _cancelling = false;
 
   @override
@@ -605,6 +607,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
               destination: view.showDestination ? accraDestination : null,
               vehicle: view.vehicle,
               route: view.route,
+              // Keeps the Google logo and the camera target above the sheet.
+              padding: EdgeInsets.only(bottom: _bottomSheetHeight),
             ),
           ),
           SafeArea(
@@ -661,305 +665,313 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
             ),
           Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              key: Key(view.key),
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                boxShadow: [
-                  BoxShadow(color: Color(0x26000000), blurRadius: 28),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AsmColors.passengerLine,
-                        borderRadius: BorderRadius.circular(99),
+            child: MeasuredHeight(
+              key: const Key('tracking-bottom-sheet'),
+              onHeight: (height) {
+                if (mounted && height != _bottomSheetHeight) {
+                  setState(() => _bottomSheetHeight = height);
+                }
+              },
+              child: Container(
+                key: Key(view.key),
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  boxShadow: [
+                    BoxShadow(color: Color(0x26000000), blurRadius: 28),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AsmColors.passengerLine,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Icon(view.icon, color: view.color, size: 30),
-                  const SizedBox(height: 10),
-                  Text(
-                    heading,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
+                    const SizedBox(height: 16),
+                    Icon(view.icon, color: view.color, size: 30),
+                    const SizedBox(height: 10),
+                    Text(
+                      heading,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(view.message),
-                  if (driverFirstName != null ||
-                      vehicleInfo != null ||
-                      record.plateNumber != null ||
-                      record.pickupVerificationCode != null) ...[
-                    const SizedBox(height: AsmSpacing.space16),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        if (driverFirstName != null) ...[
-                          CircleAvatar(
-                            key: const Key('tracking-driver-avatar'),
-                            radius: 32,
-                            backgroundColor: AsmColors.brandDeepGreen,
-                            child: Text(
-                              driverFirstName.substring(0, 1).toUpperCase(),
-                              key: const Key('tracking-driver-avatar-initial'),
-                              style: const TextStyle(
-                                color: AsmColors.brandWhite,
-                                fontSize: 25,
-                                fontWeight: FontWeight.w900,
+                    const SizedBox(height: 6),
+                    Text(view.message),
+                    if (driverFirstName != null ||
+                        vehicleInfo != null ||
+                        record.plateNumber != null ||
+                        record.pickupVerificationCode != null) ...[
+                      const SizedBox(height: AsmSpacing.space16),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (driverFirstName != null) ...[
+                            CircleAvatar(
+                              key: const Key('tracking-driver-avatar'),
+                              radius: 32,
+                              backgroundColor: AsmColors.brandDeepGreen,
+                              child: Text(
+                                driverFirstName.substring(0, 1).toUpperCase(),
+                                key: const Key('tracking-driver-avatar-initial'),
+                                style: const TextStyle(
+                                  color: AsmColors.brandWhite,
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: AsmSpacing.space16),
-                        ],
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (driverFirstName != null)
-                                Text(
-                                  driverFirstName,
-                                  key: const Key('tracking-driver-first-name'),
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              if (driverFirstName != null &&
-                                  vehicleInfo != null)
-                                const SizedBox(height: AsmSpacing.space4),
-                              if (vehicleInfo != null)
-                                Text(
-                                  vehicleInfo,
-                                  key: const Key('tracking-vehicle-info'),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              if (record.plateNumber != null) ...[
-                                if (driverFirstName != null ||
-                                    vehicleInfo != null)
-                                  const SizedBox(height: AsmSpacing.space12),
-                                Container(
-                                  key: const Key('tracking-plate-badge'),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AsmSpacing.space12,
-                                    vertical: AsmSpacing.space8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AsmColors.passengerSurface,
-                                    borderRadius: BorderRadius.circular(
-                                      AsmRadii.radius16,
-                                    ),
-                                    border: Border.all(
-                                      color: AsmColors.passengerLine,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    record.plateNumber!,
-                                    key: const Key(
-                                      'tracking-safe-plate-number',
-                                    ),
-                                    style: const TextStyle(
-                                      fontSize: 24,
+                            const SizedBox(width: AsmSpacing.space16),
+                          ],
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (driverFirstName != null)
+                                  Text(
+                                    driverFirstName,
+                                    key: const Key('tracking-driver-first-name'),
+                                    style: theme.textTheme.titleLarge?.copyWith(
                                       fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                ),
-                              ],
-                              if (record.pickupVerificationCode != null) ...[
-                                const SizedBox(height: AsmSpacing.space12),
-                                Container(
-                                  key: const Key(
-                                    'tracking-pickup-verification-code-badge',
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AsmSpacing.space12,
-                                    vertical: AsmSpacing.space8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AsmColors.passengerSurface,
-                                    borderRadius: BorderRadius.circular(
-                                      AsmRadii.radius16,
-                                    ),
-                                    border: Border.all(
-                                      color: AsmColors.passengerLine,
+                                if (driverFirstName != null &&
+                                    vehicleInfo != null)
+                                  const SizedBox(height: AsmSpacing.space4),
+                                if (vehicleInfo != null)
+                                  Text(
+                                    vehicleInfo,
+                                    key: const Key('tracking-vehicle-info'),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Pickup code',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                if (record.plateNumber != null) ...[
+                                  if (driverFirstName != null ||
+                                      vehicleInfo != null)
+                                    const SizedBox(height: AsmSpacing.space12),
+                                  Container(
+                                    key: const Key('tracking-plate-badge'),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AsmSpacing.space12,
+                                      vertical: AsmSpacing.space8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AsmColors.passengerSurface,
+                                      borderRadius: BorderRadius.circular(
+                                        AsmRadii.radius16,
                                       ),
-                                      Text(
-                                        record.pickupVerificationCode!,
-                                        key: const Key(
-                                          'tracking-pickup-verification-code',
-                                        ),
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: 4,
-                                        ),
+                                      border: Border.all(
+                                        color: AsmColors.passengerLine,
                                       ),
-                                      Text(
-                                        'Share this with your driver to start the trip.',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
+                                    ),
+                                    child: Text(
+                                      record.plateNumber!,
+                                      key: const Key(
+                                        'tracking-safe-plate-number',
                                       ),
-                                    ],
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                ],
+                                if (record.pickupVerificationCode != null) ...[
+                                  const SizedBox(height: AsmSpacing.space12),
+                                  Container(
+                                    key: const Key(
+                                      'tracking-pickup-verification-code-badge',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AsmSpacing.space12,
+                                      vertical: AsmSpacing.space8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AsmColors.passengerSurface,
+                                      borderRadius: BorderRadius.circular(
+                                        AsmRadii.radius16,
+                                      ),
+                                      border: Border.all(
+                                        color: AsmColors.passengerLine,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Pickup code',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                        Text(
+                                          record.pickupVerificationCode!,
+                                          key: const Key(
+                                            'tracking-pickup-verification-code',
+                                          ),
+                                          style: const TextStyle(
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 4,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Share this with your driver to start the trip.',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                                color: theme
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: AsmSpacing.space16),
-
-                  Container(
-                    key: const Key('tracking-safety-card'),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(AsmSpacing.space16),
-                    decoration: BoxDecoration(
-                      color: AsmColors.passengerCard,
-                      borderRadius: BorderRadius.circular(AsmRadii.radius20),
-                      border: Border.all(color: AsmColors.passengerLine),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Safety',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: AsmSpacing.space12),
-                        OutlinedButton.icon(
-                          key: const Key('tracking-safety-emergency'),
-                          onPressed: _openEmergency191,
-                          icon: const Icon(Icons.emergency_outlined),
-                          label: const Text('Emergency 191'),
-                        ),
-                        const SizedBox(height: AsmSpacing.space8),
-                        OutlinedButton.icon(
-                          key: const Key('tracking-safety-share'),
-                          onPressed: _showShareTripChoices,
-                          icon: const Icon(Icons.share_outlined),
-                          label: const Text('Share trip'),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  if (driverDistanceKm != null) ...[
-                    const SizedBox(height: AsmSpacing.space12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          key: Key('tracking-driver-distance-icon'),
-                          color: AsmColors.brandDeepGreen,
-                        ),
-                        const SizedBox(width: AsmSpacing.space8),
-                        Expanded(
-                          child: Text(
-                            'Driver is approximately ${driverDistanceKm.toStringAsFixed(1)} km away',
-                            key: const Key('tracking-driver-distance'),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  if (view.reassigned) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Your vehicle has been reassigned.',
-                      key: Key('vehicle-reassigned-state'),
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ],
-                  if (record.passengerState == PassengerRideState.arrived &&
-                      widget.paymentRatingRepository != null) ...[
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      key: const Key('open-payment-rating-from-tracking'),
-                      onPressed: _openPaymentRating,
-                      icon: const Icon(Icons.payments_outlined),
-                      label: const Text('Payment and rating'),
-                    ),
-                  ],
-                  if (record.passengerState ==
-                      PassengerRideState.cancelledByOperations) ...[
-                    const SizedBox(height: 18),
-                    FilledButton(
-                      key: const Key('cancelled-by-operations-book-again'),
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      child: const Text('Book again'),
-                    ),
-                  ] else if (record.passengerState ==
-                      PassengerRideState.cancelledByPassenger) ...[
-                    const SizedBox(height: 18),
-                    FilledButton(
-                      key: const Key('cancelled-by-passenger-book-again'),
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      child: const Text('Book again'),
-                    ),
-                  ] else if (widget.cancellationGateway != null &&
-                      passengerCanCancelTrip(
-                        tripCreated: record.tripCreated,
-                        rawStatus: record.status,
-                      )) ...[
-                    const SizedBox(height: 18),
-                    OutlinedButton.icon(
-                      key: const Key('open-cancel-confirmation'),
-                      onPressed: _cancelling
-                          ? null
-                          : () => _openCancelFlow(
-                              vehicleEnRoute: view.vehicleEnRoute,
                             ),
-                      icon: _cancelling
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.close),
-                      label: Text(
-                        _cancelling ? 'Cancelling...' : 'Cancel request',
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: AsmSpacing.space16),
+
+                    Container(
+                      key: const Key('tracking-safety-card'),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AsmSpacing.space16),
+                      decoration: BoxDecoration(
+                        color: AsmColors.passengerCard,
+                        borderRadius: BorderRadius.circular(AsmRadii.radius20),
+                        border: Border.all(color: AsmColors.passengerLine),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Safety',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: AsmSpacing.space12),
+                          OutlinedButton.icon(
+                            key: const Key('tracking-safety-emergency'),
+                            onPressed: _openEmergency191,
+                            icon: const Icon(Icons.emergency_outlined),
+                            label: const Text('Emergency 191'),
+                          ),
+                          const SizedBox(height: AsmSpacing.space8),
+                          OutlinedButton.icon(
+                            key: const Key('tracking-safety-share'),
+                            onPressed: _showShareTripChoices,
+                            icon: const Icon(Icons.share_outlined),
+                            label: const Text('Share trip'),
+                          ),
+                        ],
                       ),
                     ),
+
+                    if (driverDistanceKm != null) ...[
+                      const SizedBox(height: AsmSpacing.space12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            key: Key('tracking-driver-distance-icon'),
+                            color: AsmColors.brandDeepGreen,
+                          ),
+                          const SizedBox(width: AsmSpacing.space8),
+                          Expanded(
+                            child: Text(
+                              'Driver is approximately ${driverDistanceKm.toStringAsFixed(1)} km away',
+                              key: const Key('tracking-driver-distance'),
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (view.reassigned) ...[
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your vehicle has been reassigned.',
+                        key: Key('vehicle-reassigned-state'),
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                    if (record.passengerState == PassengerRideState.arrived &&
+                        widget.paymentRatingRepository != null) ...[
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        key: const Key('open-payment-rating-from-tracking'),
+                        onPressed: _openPaymentRating,
+                        icon: const Icon(Icons.payments_outlined),
+                        label: const Text('Payment and rating'),
+                      ),
+                    ],
+                    if (record.passengerState ==
+                        PassengerRideState.cancelledByOperations) ...[
+                      const SizedBox(height: 18),
+                      FilledButton(
+                        key: const Key('cancelled-by-operations-book-again'),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        child: const Text('Book again'),
+                      ),
+                    ] else if (record.passengerState ==
+                        PassengerRideState.cancelledByPassenger) ...[
+                      const SizedBox(height: 18),
+                      FilledButton(
+                        key: const Key('cancelled-by-passenger-book-again'),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        child: const Text('Book again'),
+                      ),
+                    ] else if (widget.cancellationGateway != null &&
+                        passengerCanCancelTrip(
+                          tripCreated: record.tripCreated,
+                          rawStatus: record.status,
+                        )) ...[
+                      const SizedBox(height: 18),
+                      OutlinedButton.icon(
+                        key: const Key('open-cancel-confirmation'),
+                        onPressed: _cancelling
+                            ? null
+                            : () => _openCancelFlow(
+                                vehicleEnRoute: view.vehicleEnRoute,
+                              ),
+                        icon: _cancelling
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.close),
+                        label: Text(
+                          _cancelling ? 'Cancelling...' : 'Cancel request',
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

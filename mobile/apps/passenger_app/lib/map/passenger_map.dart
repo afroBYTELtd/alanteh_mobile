@@ -21,6 +21,7 @@ class AsmPassengerMap extends StatelessWidget {
     this.route = const <LatLng>[],
     this.borderRadius,
     this.interactive = true,
+    this.padding = EdgeInsets.zero,
     super.key,
   });
 
@@ -34,11 +35,15 @@ class AsmPassengerMap extends StatelessWidget {
   final BorderRadius? borderRadius;
   final bool interactive;
 
+  /// Space covered by overlays; see [AsmMapView.padding].
+  final EdgeInsets padding;
+
   @override
   Widget build(BuildContext context) {
     final map = AsmMapView(
       initialCamera: AsmMapCamera(center: center, zoom: zoom),
       interactive: interactive,
+      padding: padding,
       polylines: [
         if (route.length > 1)
           AsmMapPolyline(
