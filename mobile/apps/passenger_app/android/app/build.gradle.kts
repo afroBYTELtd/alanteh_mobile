@@ -1,8 +1,23 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Release signing. The properties file holds storeFile, storePassword,
+// keyAlias and keyPassword; it is never committed. android/key.properties
+// (git-ignored) wins; otherwise ~/.config/alanteh/signing/passenger.properties,
+// which lives outside every checkout so all worktrees on the Mac share it.
+val releaseSigningFile: File? = listOf(
+    rootProject.file("key.properties"),
+    File(System.getProperty("user.home"), ".config/alanteh/signing/passenger.properties"),
+).firstOrNull { it.isFile }
+val releaseSigning = Properties().apply {
+    releaseSigningFile?.let { file -> FileInputStream(file).use { load(it) } }
 }
 
 android {
@@ -26,12 +41,41 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningFile != null) {
+            create("release") {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Never the debug key: Google Maps API keys are restricted to the
+            // release certificate's SHA-1.
+            signingConfig = signingConfigs.findByName("release")
         }
+    }
+}
+
+// Fail a release build up front, rather than producing an unsigned or
+// debug-signed APK, when no release signing file is present.
+gradle.taskGraph.whenReady {
+    val buildsRelease = allTasks.any { task ->
+        task.project == project &&
+            (task.name.startsWith("assemble") ||
+                task.name.startsWith("bundle") ||
+                task.name.startsWith("package")) &&
+            task.name.endsWith("Release")
+    }
+    if (buildsRelease && releaseSigningFile == null) {
+        throw GradleException(
+            "No release signing configured. Create android/key.properties or " +
+                "~/.config/alanteh/signing/passenger.properties (see DEVELOPMENT.md).",
+        )
     }
 }
 

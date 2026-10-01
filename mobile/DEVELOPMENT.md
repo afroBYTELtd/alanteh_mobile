@@ -92,3 +92,39 @@ flutter run \
 ```
 
 Keep the relevant `flutter run` session attached during authorized physical QA unless the QA procedure explicitly directs otherwise.
+
+## 6. Android release signing
+
+Release builds of both apps are signed with each app's own release key,
+never the debug key: the Google Maps API keys are restricted to the
+release certificate's SHA-1. A release build fails with "No release
+signing configured" until a signing file exists.
+
+Gradle reads the first of these that exists (never commit either):
+
+1. `apps/<app>/android/key.properties` (git-ignored), or
+2. `~/.config/alanteh/signing/passenger.properties` /
+   `~/.config/alanteh/signing/driver.properties` — outside every checkout,
+   so all worktrees on the Mac share them.
+
+Each file holds:
+
+```text
+storeFile=/Users/<you>/.config/alanteh/keystores/alanteh-passenger-release.jks
+storePassword=<password>
+keyAlias=passenger-release
+keyPassword=<password>
+```
+
+The keystores live in `~/.config/alanteh/keystores/` (mode 700), outside
+every repository. Back each keystore and its password up somewhere safe:
+losing them means a new key, a new SHA-1 and new Maps key restrictions.
+
+Check what a build is signed with:
+
+```bash
+cd apps/passenger_app/android && ./gradlew signingReport
+```
+
+A release-signed build cannot be installed over a debug-signed one on a
+device: uninstall the old app first (this signs the passenger out).
