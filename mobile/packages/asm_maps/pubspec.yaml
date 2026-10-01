@@ -1,0 +1,23 @@
+name: asm_maps
+description: Map view for ALANTEH apps, backed by Google Maps, with a stand-in for widget tests.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  asm_design_system:
+    path: ../asm_design_system
+  flutter:
+    sdk: flutter
+  # 2.18.2 needs Flutter 3.47; the toolchain is 3.44.
+  google_maps_flutter: 2.18.1
+  latlong2: ^0.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

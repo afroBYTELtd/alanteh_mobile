@@ -40,19 +40,22 @@ dependencies:
     path: ../../packages/asm_auth
   asm_design_system:
     path: ../../packages/asm_design_system
+  asm_maps:
+    path: ../../packages/asm_maps
   asm_ride_domain:
     path: ../../packages/asm_ride_domain
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  flutter_map: ^8.1.1
   connectivity_plus: ^7.3.0
   latlong2: ^0.9.1
   pinput: ^5.0.0
   flutter_rating_bar: ^4.0.1
   geocoding: ^4.0.0
   geolocator: ^14.0.3
+  # Google Maps SDK 9 for iOS (needs iOS 15); Android uses the default.
+  google_maps_flutter_ios_sdk9: ^2.19.0
   image_picker: ^1.2.3
   in_app_review: ^2.0.12
   url_launcher: ^6.3.2

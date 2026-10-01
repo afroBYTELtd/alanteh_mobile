@@ -128,3 +128,37 @@ cd apps/passenger_app/android && ./gradlew signingReport
 
 A release-signed build cannot be installed over a debug-signed one on a
 device: uninstall the old app first (this signs the passenger out).
+
+## 7. Google Maps keys (passenger app)
+
+The passenger map is a Google map (`packages/asm_maps`). Each platform
+has its own key, restricted to the app; neither is ever committed. Without
+a key the app builds and runs, but the map stays blank.
+
+- **Android:** add to the git-ignored
+  `apps/passenger_app/android/local.properties`:
+
+  ```text
+  MAPS_API_KEY=<Android Maps key>
+  ```
+
+  Restrict the key to Maps SDK for Android, package `io.alanteh.passenger`
+  and the release SHA-1 from `./gradlew signingReport` (section 6). Debug
+  builds need the debug SHA-1 added as well. `local.properties` belongs to
+  one checkout, so each new worktree needs the line again.
+
+- **iOS:** create the git-ignored
+  `apps/passenger_app/ios/Flutter/Secrets.xcconfig`:
+
+  ```text
+  MAPS_API_KEY = <iOS Maps key>
+  ```
+
+  Restrict the key to Maps SDK for iOS and the app's bundle ID. The app
+  needs iOS 15 or later (Google Maps SDK 9).
+
+In widget tests the map is a stand-in (`package:asm_maps/testing.dart`),
+installed for every test by `test/flutter_test_config.dart`.
+
+Device checks from China need the phone's VPN on: Google Maps, Places and
+OpenStreetMap are blocked there, while the ALANTEH backend is not.
