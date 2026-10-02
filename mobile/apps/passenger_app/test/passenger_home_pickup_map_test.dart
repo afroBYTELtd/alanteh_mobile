@@ -566,8 +566,14 @@ void main() {
     expect(geolocatorFiles, ['lib/passenger_home.dart']);
 
     final source = File('lib/passenger_home.dart').readAsStringSync();
-    expect(source, contains('Geolocator.getCurrentPosition()'));
-    expect(source, contains('Geolocator.getPositionStream()'));
+    // Both calls carry settings: a bare getCurrentPosition() asked for a
+    // GPS fix with no time limit, which never answered indoors.
+    expect(source, contains('Geolocator.getCurrentPosition('));
+    expect(source, contains('Geolocator.getPositionStream('));
+    expect(source, isNot(contains('Geolocator.getCurrentPosition()')));
+    expect(source, isNot(contains('Geolocator.getPositionStream()')));
+    expect(source, contains('timeLimit: timeLimit'));
+    expect(source, contains('accuracy: LocationAccuracy.medium'));
     expect(source, isNot(contains('driverPosition')));
     expect(source, isNot(contains('driver tracking')));
     expect(source, isNot(contains('fakeGps')));
@@ -1110,6 +1116,9 @@ class _GrantedLocationPermissionService
 
   @override
   Future<bool> openAppSettings() async => true;
+
+  @override
+  Future<bool> openLocationSettings() async => true;
 }
 
 class _FakeLocationPermissionService
@@ -1128,6 +1137,9 @@ class _FakeLocationPermissionService
     openAppSettingsCalls += 1;
     return true;
   }
+
+  @override
+  Future<bool> openLocationSettings() async => true;
 }
 
 class _FixedDeviceLocationService
@@ -1136,19 +1148,41 @@ class _FixedDeviceLocationService
 
   final LatLng position;
 
-  @override
-  Stream<LatLng> get devicePositionStream => const Stream<LatLng>.empty();
+  PassengerDevicePosition get _fix => PassengerDevicePosition(
+    coordinates: position,
+    accuracyMetres: 10,
+    timestamp: DateTime.now(),
+  );
 
   @override
-  Future<LatLng?> getCurrentDevicePosition() async => position;
+  Future<PassengerDevicePosition?> lastKnownPosition() async => _fix;
+
+  @override
+  Future<PassengerDevicePosition> currentPosition({
+    required bool precise,
+    required Duration timeLimit,
+  }) async => _fix;
+
+  @override
+  Stream<PassengerDevicePosition> get positionStream =>
+      const Stream<PassengerDevicePosition>.empty();
 }
 
 class _NoDeviceLocationService implements PassengerHomeDeviceLocationService {
   const _NoDeviceLocationService();
 
   @override
-  Stream<LatLng> get devicePositionStream => const Stream<LatLng>.empty();
+  Future<PassengerDevicePosition?> lastKnownPosition() async => null;
 
   @override
-  Future<LatLng?> getCurrentDevicePosition() async => null;
+  Future<PassengerDevicePosition> currentPosition({
+    required bool precise,
+    required Duration timeLimit,
+  }) async => throw const PassengerLocationException(
+    PassengerLocationFailure.unavailable,
+  );
+
+  @override
+  Stream<PassengerDevicePosition> get positionStream =>
+      const Stream<PassengerDevicePosition>.empty();
 }
