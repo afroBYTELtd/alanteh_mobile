@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
@@ -17,6 +18,20 @@ const _centrePinSize = 52.0;
 // Icons.location_pin's tip sits at y = 22 on its 24-unit grid; lifting the
 // icon by this much puts the tip, not the icon's middle, on the target.
 const _centrePinTipLift = _centrePinSize * (22 / 24 - 1 / 2);
+// Measured on the test phone indoors: a high-accuracy (GPS) fix never came,
+// a balanced (Wi-Fi/cell) one in under 50 ms. So recenter answers from a
+// recent known position or a balanced fix, then refines with GPS, each
+// within a limit, and the blue dot follows a balanced stream.
+const passengerHomeRecentPositionMaxAge = Duration(seconds: 60);
+const passengerHomeRecentPositionMaxAccuracyMetres = 150.0;
+const passengerHomeQuickFixLimit = Duration(seconds: 5);
+const passengerHomePreciseFixLimit = Duration(seconds: 15);
+const _refineMinDistanceMetres = 20.0;
+const passengerHomeLocatingCopy = 'Finding your location…';
+const passengerHomeLocationNotFoundCopy =
+    "Couldn't find your location. Move the pin to your pickup.";
+const passengerHomeLocationServicesOffCopy =
+    'Location is turned off. Turn it on to find where you are.';
 const passengerHomeLocationRecoveryCopy =
     'Location access is off.\n'
     'Tap to enable in Settings → ALANTEH → Location';
@@ -91,6 +106,8 @@ abstract interface class PassengerHomeLocationPermissionService {
   Future<PassengerHomeLocationPermissionState> ensurePermission();
 
   Future<bool> openAppSettings();
+
+  Future<bool> openLocationSettings();
 }
 
 class GeolocatorPassengerHomeLocationPermissionService
@@ -119,58 +136,118 @@ class GeolocatorPassengerHomeLocationPermissionService
 
   @override
   Future<bool> openAppSettings() => Geolocator.openAppSettings();
+
+  @override
+  Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
+}
+
+/// A device position and how good it is.
+@immutable
+class PassengerDevicePosition {
+  const PassengerDevicePosition({
+    required this.coordinates,
+    required this.accuracyMetres,
+    required this.timestamp,
+  });
+
+  final LatLng coordinates;
+  final double accuracyMetres;
+  final DateTime timestamp;
+}
+
+enum PassengerLocationFailure {
+  permissionDenied,
+  servicesOff,
+  timedOut,
+  unavailable,
+}
+
+class PassengerLocationException implements Exception {
+  const PassengerLocationException(this.failure);
+
+  final PassengerLocationFailure failure;
+
+  @override
+  String toString() => 'PassengerLocationException($failure)';
 }
 
 abstract interface class PassengerHomeDeviceLocationService {
-  Future<LatLng?> getCurrentDevicePosition();
+  /// The device's last known position, at once; null when it has none.
+  Future<PassengerDevicePosition?> lastKnownPosition();
 
-  Stream<LatLng> get devicePositionStream;
+  /// A fresh fix within [timeLimit]: balanced (Wi-Fi and cell, about
+  /// 100 m) or [precise] (GPS). Fails with a [PassengerLocationException].
+  Future<PassengerDevicePosition> currentPosition({
+    required bool precise,
+    required Duration timeLimit,
+  });
+
+  /// Balanced-accuracy updates for the blue dot; errors are
+  /// [PassengerLocationException]s.
+  Stream<PassengerDevicePosition> get positionStream;
 }
 
 class GeolocatorPassengerHomeDeviceLocationService
     implements PassengerHomeDeviceLocationService {
   const GeolocatorPassengerHomeDeviceLocationService();
 
-  Future<bool> _ensurePermission() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      return false;
-    }
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    return permission == LocationPermission.whileInUse ||
-        permission == LocationPermission.always;
-  }
-
   @override
-  Future<LatLng?> getCurrentDevicePosition() async {
+  Future<PassengerDevicePosition?> lastKnownPosition() async {
     try {
-      if (!await _ensurePermission()) {
-        return null;
-      }
-      final position = await Geolocator.getCurrentPosition();
-      return LatLng(position.latitude, position.longitude);
+      final position = await Geolocator.getLastKnownPosition();
+      return position == null ? null : _devicePosition(position);
     } on Object {
       return null;
     }
   }
 
   @override
-  Stream<LatLng> get devicePositionStream async* {
+  Future<PassengerDevicePosition> currentPosition({
+    required bool precise,
+    required Duration timeLimit,
+  }) async {
     try {
-      if (!await _ensurePermission()) {
-        return;
-      }
-
-      await for (final position in Geolocator.getPositionStream()) {
-        yield LatLng(position.latitude, position.longitude);
-      }
-    } on Object {
-      return;
+      // On timeout the plugin cancels the platform request too.
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: precise ? LocationAccuracy.high : LocationAccuracy.medium,
+          timeLimit: timeLimit,
+        ),
+      );
+      return _devicePosition(position);
+    } on Object catch (error) {
+      throw _locationException(error);
     }
+  }
+
+  @override
+  Stream<PassengerDevicePosition> get positionStream {
+    return Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            distanceFilter: 10,
+          ),
+        )
+        .map(_devicePosition)
+        .handleError((Object error) => throw _locationException(error));
+  }
+
+  static PassengerDevicePosition _devicePosition(Position position) {
+    return PassengerDevicePosition(
+      coordinates: LatLng(position.latitude, position.longitude),
+      accuracyMetres: position.accuracy,
+      timestamp: position.timestamp,
+    );
+  }
+
+  static PassengerLocationException _locationException(Object error) {
+    return PassengerLocationException(switch (error) {
+      PermissionDeniedException() => PassengerLocationFailure.permissionDenied,
+      LocationServiceDisabledException() =>
+        PassengerLocationFailure.servicesOff,
+      TimeoutException() => PassengerLocationFailure.timedOut,
+      _ => PassengerLocationFailure.unavailable,
+    });
   }
 }
 
@@ -233,7 +310,15 @@ class _PassengerHomeState extends State<PassengerHome>
     with WidgetsBindingObserver {
   AsmMapController? _mapController;
   Timer? _geocodeTimer;
-  StreamSubscription<LatLng>? _positionSubscription;
+  StreamSubscription<PassengerDevicePosition>? _positionSubscription;
+  Timer? _streamRetryTimer;
+  int _streamFailures = 0;
+  PassengerDevicePosition? _deviceFix;
+  bool _locating = false;
+  String? _locationMessage;
+  bool _locationMessageOffersSettings = false;
+  bool _locationAccessLost = false;
+  int _recenterGeneration = 0;
 
   late LatLng _center;
   LatLng? _devicePosition;
@@ -268,7 +353,8 @@ class _PassengerHomeState extends State<PassengerHome>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _geocodeTimer?.cancel();
-    _positionSubscription?.cancel();
+    _recenterGeneration++;
+    _stopPositionStream();
     super.dispose();
   }
 
@@ -276,6 +362,11 @@ class _PassengerHomeState extends State<PassengerHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_initializeDevicePosition());
+    } else if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      // No location requests while the app is out of sight; returning
+      // starts exactly one stream again.
+      _stopPositionStream();
     }
   }
 
@@ -288,6 +379,9 @@ class _PassengerHomeState extends State<PassengerHome>
         _locationPermissionDeniedForever =
             permissionState ==
             PassengerHomeLocationPermissionState.deniedForever;
+        if (permissionState == PassengerHomeLocationPermissionState.granted) {
+          _locationAccessLost = false;
+        }
       });
     }
     return permissionState;
@@ -300,29 +394,105 @@ class _PassengerHomeState extends State<PassengerHome>
     }
 
     if (permissionState != PassengerHomeLocationPermissionState.granted) {
-      await _positionSubscription?.cancel();
-      _positionSubscription = null;
+      _stopPositionStream();
       return;
     }
 
-    final initialPosition = await widget.deviceLocationService
-        .getCurrentDevicePosition();
+    // The stream starts at once; nothing waits on a fresh fix.
+    _startPositionStream();
+    final lastKnown = await widget.deviceLocationService.lastKnownPosition();
+    if (!mounted || lastKnown == null || !_isRecent(lastKnown)) {
+      return;
+    }
+    final current = _deviceFix;
+    if (current == null || lastKnown.timestamp.isAfter(current.timestamp)) {
+      _setDeviceFix(lastKnown);
+    }
+  }
+
+  void _startPositionStream() {
+    _streamRetryTimer?.cancel();
+    _streamRetryTimer = null;
+    unawaited(_positionSubscription?.cancel());
+    _positionSubscription = widget.deviceLocationService.positionStream.listen(
+      (fix) {
+        _streamFailures = 0;
+        if (mounted) {
+          _setDeviceFix(fix);
+        }
+      },
+      onError: _handlePositionStreamError,
+      cancelOnError: true,
+    );
+  }
+
+  void _stopPositionStream() {
+    _streamRetryTimer?.cancel();
+    _streamRetryTimer = null;
+    unawaited(_positionSubscription?.cancel());
+    _positionSubscription = null;
+  }
+
+  void _handlePositionStreamError(Object error) {
+    _positionSubscription = null;
     if (!mounted) {
       return;
     }
-
-    if (initialPosition != null) {
-      setState(() => _devicePosition = initialPosition);
-    }
-
-    await _positionSubscription?.cancel();
-    _positionSubscription = widget.deviceLocationService.devicePositionStream
-        .listen((position) {
-          if (!mounted) {
-            return;
+    final failure = error is PassengerLocationException
+        ? error.failure
+        : PassengerLocationFailure.unavailable;
+    switch (failure) {
+      case PassengerLocationFailure.permissionDenied:
+        // Revoked while running: same banner as denied forever, no retry.
+        setState(() => _locationAccessLost = true);
+      case PassengerLocationFailure.servicesOff:
+        // Returning to the app checks again.
+        break;
+      case PassengerLocationFailure.timedOut:
+      case PassengerLocationFailure.unavailable:
+        final pause = Duration(seconds: math.min(60, 2 << _streamFailures));
+        _streamFailures += 1;
+        _streamRetryTimer = Timer(pause, () {
+          if (mounted) {
+            _startPositionStream();
           }
-          setState(() => _devicePosition = position);
         });
+    }
+  }
+
+  bool _isRecent(PassengerDevicePosition fix) {
+    return DateTime.now().difference(fix.timestamp) <=
+            passengerHomeRecentPositionMaxAge &&
+        fix.accuracyMetres <= passengerHomeRecentPositionMaxAccuracyMetres;
+  }
+
+  void _setDeviceFix(PassengerDevicePosition fix) {
+    setState(() {
+      _deviceFix = fix;
+      _devicePosition = fix.coordinates;
+    });
+  }
+
+  /// Stops an unfinished recenter from moving the camera.
+  void _cancelRecenter() {
+    _recenterGeneration++;
+    if (_locating) {
+      setState(() => _locating = false);
+    }
+  }
+
+  void _showLocationMessage(String message, {bool offersSettings = false}) {
+    setState(() {
+      _locating = false;
+      _locationMessage = message;
+      _locationMessageOffersSettings = offersSettings;
+    });
+  }
+
+  void _clearLocationMessage() {
+    if (_locationMessage != null) {
+      setState(() => _locationMessage = null);
+    }
   }
 
   bool get _canConfirmPickup =>
@@ -353,6 +523,7 @@ class _PassengerHomeState extends State<PassengerHome>
     if (!mounted) {
       return;
     }
+    _clearLocationMessage();
     _cameraMoving = true;
     _invalidateCurrentAddress();
     setState(() {
@@ -424,6 +595,7 @@ class _PassengerHomeState extends State<PassengerHome>
       return;
     }
 
+    _cancelRecenter();
     _invalidateCurrentAddress();
     setState(() {
       _address = selected.trim();
@@ -452,20 +624,120 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   Future<void> _recenter() async {
+    final generation = ++_recenterGeneration;
+    _clearLocationMessage();
     final permissionState = await _refreshLocationPermissionState();
-    if (!mounted ||
-        permissionState != PassengerHomeLocationPermissionState.granted) {
+    if (!mounted || generation != _recenterGeneration) {
       return;
     }
-
-    final devicePosition = await widget.deviceLocationService
-        .getCurrentDevicePosition();
-    if (!mounted || devicePosition == null) {
-      return;
+    switch (permissionState) {
+      case PassengerHomeLocationPermissionState.servicesDisabled:
+        _showLocationMessage(
+          passengerHomeLocationServicesOffCopy,
+          offersSettings: true,
+        );
+        return;
+      case PassengerHomeLocationPermissionState.denied:
+      case PassengerHomeLocationPermissionState.deniedForever:
+        setState(() => _locationAccessLost = true);
+        return;
+      case PassengerHomeLocationPermissionState.granted:
+        break;
+    }
+    // A stream stopped while location was off (or access was lost) comes
+    // back here too, not only on returning to the app.
+    if (_positionSubscription == null && _streamRetryTimer == null) {
+      _startPositionStream();
     }
 
-    setState(() => _devicePosition = devicePosition);
-    _animateMapTo(devicePosition);
+    // The camera moves only while it is where this recenter last left it,
+    // so a drag by the passenger always wins.
+    var leftAt = _center;
+    var located = false;
+    var accessLost = false;
+    bool stillOurs() =>
+        mounted &&
+        generation == _recenterGeneration &&
+        _samePlace(_center, leftAt);
+    void moveTo(PassengerDevicePosition fix) {
+      _setDeviceFix(fix);
+      located = true;
+      leftAt = fix.coordinates;
+      if (_locating) {
+        setState(() => _locating = false);
+      }
+      _animateMapTo(fix.coordinates);
+    }
+
+    Future<PassengerDevicePosition?> settle(
+      Future<PassengerDevicePosition> request,
+    ) async {
+      try {
+        return await request;
+      } on PassengerLocationException catch (error) {
+        if (error.failure == PassengerLocationFailure.permissionDenied) {
+          accessLost = true;
+        }
+        return null;
+      } on Object {
+        return null;
+      }
+    }
+
+    // A recent known position answers at once; otherwise a balanced fix
+    // and a GPS fix are both asked for now, each within its limit.
+    final service = widget.deviceLocationService;
+    final known = _deviceFix;
+    Future<PassengerDevicePosition?>? quick;
+    if (known != null && _isRecent(known)) {
+      moveTo(known);
+    } else {
+      setState(() => _locating = true);
+      quick = settle(
+        service.currentPosition(
+          precise: false,
+          timeLimit: passengerHomeQuickFixLimit,
+        ),
+      );
+    }
+    final precise = settle(
+      service.currentPosition(
+        precise: true,
+        timeLimit: passengerHomePreciseFixLimit,
+      ),
+    );
+
+    if (quick != null) {
+      final fix = await quick;
+      if (fix != null && stillOurs()) {
+        moveTo(fix);
+      }
+    }
+    final fix = await precise;
+    if (!mounted || generation != _recenterGeneration) {
+      return;
+    }
+    if (fix != null &&
+        stillOurs() &&
+        (!located ||
+            _distanceMetres(leftAt, fix.coordinates) >=
+                _refineMinDistanceMetres)) {
+      moveTo(fix);
+      return;
+    }
+    if (accessLost) {
+      // Revoked while running: same banner as denied forever.
+      setState(() {
+        _locating = false;
+        _locationAccessLost = true;
+      });
+      return;
+    }
+    if (!located && _samePlace(_center, leftAt)) {
+      _showLocationMessage(passengerHomeLocationNotFoundCopy);
+    } else if (_locating) {
+      setState(() => _locating = false);
+    }
   }
 
   void _animateMapTo(LatLng target) {
@@ -475,6 +747,51 @@ class _PassengerHomeState extends State<PassengerHome>
 
   Future<void> _openLocationSettings() async {
     await widget.locationPermissionService.openAppSettings();
+  }
+
+  Widget _buildLocationStatus() {
+    final locating = _locating;
+    return Material(
+      key: Key(
+        locating
+            ? 'passenger-home-locating'
+            : 'passenger-home-location-message',
+      ),
+      color: AsmColors.passengerCard,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space12,
+          vertical: AsmSpacing.space8,
+        ),
+        child: Row(
+          children: [
+            if (locating) ...[
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AsmSpacing.space8),
+            ],
+            Expanded(
+              child: Text(
+                locating ? passengerHomeLocatingCopy : _locationMessage!,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (!locating && _locationMessageOffersSettings)
+              TextButton(
+                key: const Key('passenger-home-location-settings-action'),
+                onPressed: () =>
+                    widget.locationPermissionService.openLocationSettings(),
+                child: const Text('Turn on'),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildLocationRecoveryBanner() {
@@ -516,6 +833,8 @@ class _PassengerHomeState extends State<PassengerHome>
     if (!_canConfirmPickup) {
       return;
     }
+
+    _cancelRecenter();
 
     final address = _addressMatchesCurrentCenter ? _address.trim() : '';
     widget.onConfirmPickup(
@@ -659,7 +978,8 @@ class _PassengerHomeState extends State<PassengerHome>
                     ],
                   ),
                 ),
-                if (_locationPermissionDeniedForever) ...[
+                if (_locationPermissionDeniedForever ||
+                    _locationAccessLost) ...[
                   const SizedBox(height: AsmSpacing.space8),
                   _buildLocationRecoveryBanner(),
                 ],
@@ -667,6 +987,14 @@ class _PassengerHomeState extends State<PassengerHome>
             ),
           ),
         ),
+        if (_locating || _locationMessage != null)
+          Positioned(
+            left: AsmSpacing.space16,
+            right: 72,
+            // Clear of the bottom sheet, whatever its height.
+            bottom: math.max(248, _bottomSheetHeight + AsmSpacing.space8),
+            child: _buildLocationStatus(),
+          ),
         Positioned(
           right: AsmSpacing.space16,
           bottom: 248,
@@ -821,6 +1149,12 @@ class _PassengerHomeState extends State<PassengerHome>
     );
   }
 }
+
+double _distanceMetres(LatLng a, LatLng b) {
+  return const Distance().as(LengthUnit.Meter, a, b);
+}
+
+bool _samePlace(LatLng a, LatLng b) => _distanceMetres(a, b) < 1;
 
 String _coordinateFallback(LatLng coordinates) {
   return '${coordinates.latitude.toStringAsFixed(5)}, '

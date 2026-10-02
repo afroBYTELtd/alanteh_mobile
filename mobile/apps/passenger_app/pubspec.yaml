@@ -64,6 +64,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Swap in a recording geolocator for the location adapter's tests.
+  geolocator_platform_interface: ^4.2.8
+  plugin_platform_interface: ^2.1.8
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
