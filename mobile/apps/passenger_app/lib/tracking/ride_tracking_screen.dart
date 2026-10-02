@@ -603,10 +603,9 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           Positioned.fill(
             child: AsmPassengerMap(
               center: view.vehicle ?? accraHomeCenter,
-              pickup: accraPickup,
-              destination: view.showDestination ? accraDestination : null,
+              // Ride data has no pickup or destination coordinates or road
+              // route yet, so only the vehicle is shown.
               vehicle: view.vehicle,
-              route: view.route,
               // Keeps the Google logo and the camera target above the sheet.
               padding: EdgeInsets.only(bottom: _bottomSheetHeight),
             ),
@@ -1125,9 +1124,7 @@ class _TrackingView {
     required this.message,
     required this.icon,
     required this.color,
-    required this.route,
     this.vehicle,
-    this.showDestination = false,
     this.vehicleEnRoute = false,
     this.reassigned = false,
     this.rejected = false,
@@ -1138,9 +1135,7 @@ class _TrackingView {
   final String message;
   final IconData icon;
   final Color color;
-  final List<LatLng> route;
   final LatLng? vehicle;
-  final bool showDestination;
   final bool vehicleEnRoute;
   final bool reassigned;
   final bool rejected;
@@ -1156,7 +1151,6 @@ class _TrackingView {
           'accepts.',
       icon: Icons.event_available_outlined,
       color: AsmColors.brandDeepGreen,
-      route: const <LatLng>[],
     );
   }
 
@@ -1169,9 +1163,7 @@ class _TrackingView {
       message: 'Your driver will meet you at the pickup at $clock.',
       icon: icon,
       color: color,
-      route: route,
       vehicle: vehicle,
-      showDestination: showDestination,
       vehicleEnRoute: vehicleEnRoute,
       reassigned: reassigned,
       rejected: rejected,
@@ -1185,7 +1177,6 @@ class _TrackingView {
       message: 'We are confirming your trip\'s current status.',
       icon: Icons.hourglass_top_outlined,
       color: Color(0xFF6B7280),
-      route: <LatLng>[],
     );
   }
 
@@ -1193,22 +1184,6 @@ class _TrackingView {
     final status = record.passengerState;
     final message = record.safeMessage;
     final vehicle = record.vehiclePosition;
-
-    List<LatLng> routeToPickup() {
-      if (vehicle == null) {
-        return const <LatLng>[];
-      }
-
-      return <LatLng>[vehicle, accraPickup];
-    }
-
-    List<LatLng> routeToDestination() {
-      if (vehicle == null) {
-        return const <LatLng>[accraPickup, accraDestination];
-      }
-
-      return <LatLng>[accraPickup, vehicle, accraDestination];
-    }
 
     switch (status) {
       case PassengerRideState.driverAssigned:
@@ -1218,7 +1193,6 @@ class _TrackingView {
           message: message,
           icon: Icons.person_pin_circle,
           color: AsmColors.brandDeepGreen,
-          route: routeToPickup(),
           vehicle: vehicle,
         );
 
@@ -1229,7 +1203,6 @@ class _TrackingView {
           message: message,
           icon: Icons.electric_car,
           color: AsmColors.brandDeepGreen,
-          route: routeToPickup(),
           vehicle: vehicle,
           vehicleEnRoute: true,
         );
@@ -1241,7 +1214,6 @@ class _TrackingView {
           message: message,
           icon: Icons.notifications_active_outlined,
           color: AsmColors.brandDeepGreen,
-          route: const <LatLng>[],
           vehicle: vehicle,
           vehicleEnRoute: true,
         );
@@ -1253,9 +1225,7 @@ class _TrackingView {
           message: message,
           icon: Icons.route,
           color: AsmColors.brandDeepGreen,
-          route: routeToDestination(),
           vehicle: vehicle,
-          showDestination: true,
         );
 
       case PassengerRideState.arrived:
@@ -1265,9 +1235,7 @@ class _TrackingView {
           message: message,
           icon: Icons.check_circle,
           color: AsmColors.brandDeepGreen,
-          route: const <LatLng>[accraPickup, accraDestination],
           vehicle: vehicle,
-          showDestination: true,
         );
 
       case PassengerRideState.reassigned:
@@ -1277,7 +1245,6 @@ class _TrackingView {
           message: message,
           icon: Icons.swap_horiz,
           color: AsmColors.brandDeepGreen,
-          route: routeToPickup(),
           vehicle: vehicle,
           vehicleEnRoute: true,
           reassigned: true,
@@ -1290,7 +1257,6 @@ class _TrackingView {
           message: message,
           icon: Icons.cancel_outlined,
           color: Colors.redAccent,
-          route: const <LatLng>[],
         );
 
       case PassengerRideState.cancelledByPassenger:
@@ -1300,7 +1266,6 @@ class _TrackingView {
           message: message,
           icon: Icons.cancel_outlined,
           color: Colors.redAccent,
-          route: const <LatLng>[],
         );
 
       case PassengerRideState.rejected:
@@ -1310,7 +1275,6 @@ class _TrackingView {
           message: message,
           icon: Icons.no_transfer_outlined,
           color: Colors.redAccent,
-          route: const <LatLng>[],
           rejected: true,
         );
 
@@ -1321,7 +1285,6 @@ class _TrackingView {
           message: message,
           icon: Icons.radar,
           color: const Color(0xFFC8971F),
-          route: const <LatLng>[],
         );
     }
   }

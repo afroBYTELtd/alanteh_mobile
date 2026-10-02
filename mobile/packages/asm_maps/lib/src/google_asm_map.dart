@@ -278,14 +278,12 @@ class _MarkerArt {
     required this.icon,
     required this.color,
     this.iconSize,
-    this.disc,
   });
 
   final double size;
   final IconData? icon;
   final Color color;
   final double? iconSize;
-  final Color? disc;
 }
 
 // Matches the markers the passenger map drew before Google Maps.
@@ -307,13 +305,6 @@ const _art = <AsmMapMarkerStyle, _MarkerArt>{
     iconSize: 40,
     color: Color(0xFF151A15),
   ),
-  AsmMapMarkerStyle.vehicle: _MarkerArt(
-    size: 48,
-    icon: Icons.electric_car,
-    iconSize: 27,
-    color: Colors.white,
-    disc: AsmColors.brandDeepGreen,
-  ),
 };
 
 // The destination pin's tip is near the bottom of its glyph box; dots and
@@ -331,8 +322,81 @@ Future<Map<AsmMapMarkerStyle, gm.BitmapDescriptor>> renderAsmMarkerIcons(
 ) async {
   return <AsmMapMarkerStyle, gm.BitmapDescriptor>{
     for (final style in AsmMapMarkerStyle.values)
-      style: await _render(_art[style]!, pixelRatio),
+      style: style == AsmMapMarkerStyle.vehicle
+          ? await _renderCar(pixelRatio)
+          : await _render(_art[style]!, pixelRatio),
   };
+}
+
+// A top-down electric car, nose up: white body, brand-green glass, side
+// mirrors and headlights, on a soft shadow. 32 x 52 logical pixels.
+Future<gm.BitmapDescriptor> _renderCar(double pixelRatio) async {
+  const width = 32.0;
+  const height = 52.0;
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder)..scale(pixelRatio);
+  final body = RRect.fromLTRBR(5, 4, 27, 48, const Radius.circular(9));
+  const glass = AsmColors.brandDeepGreen;
+  const outline = Color(0xFF2C2C2A);
+
+  canvas.drawRRect(
+    body.shift(const Offset(0, 1.5)),
+    Paint()
+      ..color = const Color(0x4D000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+  );
+  for (final x in <double>[2.5, 25.5]) {
+    canvas.drawRRect(
+      RRect.fromLTRBR(x, 16, x + 4, 20, const Radius.circular(1.5)),
+      Paint()..color = outline,
+    );
+  }
+  canvas.drawRRect(body, Paint()..color = Colors.white);
+  canvas.drawRRect(
+    body,
+    Paint()
+      ..color = outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2,
+  );
+  // Windscreen, wider at its base like a real one.
+  canvas.drawPath(
+    ui.Path()
+      ..moveTo(9.5, 14)
+      ..quadraticBezierTo(16, 11.5, 22.5, 14)
+      ..lineTo(24, 22)
+      ..quadraticBezierTo(16, 20.5, 8, 22)
+      ..close(),
+    Paint()..color = glass,
+  );
+  canvas.drawRRect(
+    RRect.fromLTRBR(9, 37, 23, 42, const Radius.circular(2.5)),
+    Paint()..color = glass,
+  );
+  // Side windows between the windscreen and the rear window.
+  for (final x in <double>[7.2, 23.3]) {
+    canvas.drawRRect(
+      RRect.fromLTRBR(x, 23.5, x + 1.5, 34.5, const Radius.circular(0.75)),
+      Paint()..color = glass,
+    );
+  }
+  for (final x in <double>[11, 21]) {
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, 7), width: 4.5, height: 2.2),
+      Paint()..color = const Color(0xFFFFE9A8),
+    );
+  }
+
+  final image = await recorder.endRecording().toImage(
+    (width * pixelRatio).ceil(),
+    (height * pixelRatio).ceil(),
+  );
+  final png = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  return gm.BitmapDescriptor.bytes(
+    png!.buffer.asUint8List(),
+    imagePixelRatio: pixelRatio,
+  );
 }
 
 Future<gm.BitmapDescriptor> _render(_MarkerArt art, double pixelRatio) async {
@@ -352,9 +416,6 @@ Future<gm.BitmapDescriptor> _render(_MarkerArt art, double pixelRatio) async {
     canvas.drawCircle(centre, art.size / 2 - 3, Paint()..color = Colors.white);
     canvas.drawCircle(centre, art.size / 2 - 6, Paint()..color = art.color);
   } else {
-    if (art.disc != null) {
-      canvas.drawCircle(centre, art.size / 2, Paint()..color = art.disc!);
-    }
     final glyph = TextPainter(
       textDirection: TextDirection.ltr,
       text: TextSpan(

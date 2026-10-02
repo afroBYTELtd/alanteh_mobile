@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:asm_maps/asm_maps.dart';
 import 'package:asm_maps/src/google_asm_map.dart';
 import 'package:asm_maps/testing.dart';
@@ -204,6 +206,22 @@ void main() {
       expect(markers['dot']!.anchor, const Offset(0.5, 0.5));
       expect(markers['drop']!.anchor.dx, 0.5);
       expect(markers['drop']!.anchor.dy, greaterThan(0.85));
+    });
+
+    // A top-down car, not a round badge: taller than wide, at the device's
+    // pixel ratio, centred on the vehicle's position.
+    testWidgets('the vehicle is drawn as a top-down car', (tester) async {
+      final icons = await tester.runAsync(() => renderAsmMarkerIcons(2));
+      final car = icons![AsmMapMarkerStyle.vehicle]! as gm.BytesMapBitmap;
+      final size = await tester.runAsync(() async {
+        final codec = await ui.instantiateImageCodec(car.byteData);
+        final image = (await codec.getNextFrame()).image;
+        return Size(image.width.toDouble(), image.height.toDouble());
+      });
+
+      expect(car.imagePixelRatio, 2);
+      expect(size!.height, greaterThan(size.width * 1.4));
+      expect(size.width / 2, inInclusiveRange(28, 40));
     });
 
     test('route lines keep their points, colour and width', () {
