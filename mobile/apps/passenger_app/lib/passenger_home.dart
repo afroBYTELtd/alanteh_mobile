@@ -986,7 +986,8 @@ class _PassengerHomeState extends State<PassengerHome>
           Positioned(
             left: AsmSpacing.space16,
             right: 72,
-            bottom: 248,
+            // Clear of the bottom sheet, whatever its height.
+            bottom: math.max(248, _bottomSheetHeight + AsmSpacing.space8),
             child: _buildLocationStatus(),
           ),
         Positioned(

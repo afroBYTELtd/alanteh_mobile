@@ -321,6 +321,28 @@ void main() {
     });
   });
 
+  testWidgets('the location message sits fully above the bottom sheet', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final location = _ScriptedLocation();
+    await _pumpHome(tester, location: location);
+    await _tapRecenter(tester);
+    location.fail(0, PassengerLocationFailure.timedOut);
+    location.fail(1, PassengerLocationFailure.timedOut);
+    await tester.pump();
+
+    final message = tester.getRect(
+      find.byKey(const Key('passenger-home-location-message')),
+    );
+    final sheet = tester.getRect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+    );
+    expect(message.bottom, lessThanOrEqualTo(sheet.top));
+  });
+
   group('permission revoked while the app is running', () {
     testWidgets('the stream reporting it shows the banner and stops', (
       tester,
