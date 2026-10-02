@@ -343,6 +343,22 @@ void main() {
     expect(message.bottom, lessThanOrEqualTo(sheet.top));
   });
 
+  testWidgets('recenter restarts a stream stopped while location was off', (
+    tester,
+  ) async {
+    final location = _ScriptedLocation();
+    await _pumpHome(tester, location: location);
+    location.streamError(PassengerLocationFailure.servicesOff);
+    await _deliver(tester);
+    expect(location.activeStreams, 0);
+
+    // Location is back on, but the app never left the screen.
+    await _tapRecenter(tester);
+
+    expect(location.activeStreams, 1);
+    expect(location.streamsStarted, 2);
+  });
+
   group('permission revoked while the app is running', () {
     testWidgets('the stream reporting it shows the banner and stops', (
       tester,

@@ -644,6 +644,11 @@ class _PassengerHomeState extends State<PassengerHome>
       case PassengerHomeLocationPermissionState.granted:
         break;
     }
+    // A stream stopped while location was off (or access was lost) comes
+    // back here too, not only on returning to the app.
+    if (_positionSubscription == null && _streamRetryTimer == null) {
+      _startPositionStream();
+    }
 
     // The camera moves only while it is where this recenter last left it,
     // so a drag by the passenger always wins.
