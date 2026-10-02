@@ -5,7 +5,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:asm_maps/asm_maps.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/account/passenger_account_screen.dart';
@@ -170,11 +170,11 @@ void main() {
     );
 
     expect(find.byType(AsmPassengerMap), findsOneWidget);
-    expect(find.byType(FlutterMap), findsOneWidget);
-    final map = tester.widget<FlutterMap>(find.byType(FlutterMap));
-    expect(map.options.initialCenter.latitude, accraHomeCenter.latitude);
-    expect(map.options.initialCenter.longitude, accraHomeCenter.longitude);
-    expect(map.options.initialZoom, initialZoom);
+    expect(find.byType(AsmMapView), findsOneWidget);
+    final map = tester.widget<AsmMapView>(find.byType(AsmMapView));
+    expect(map.initialCamera.center.latitude, accraHomeCenter.latitude);
+    expect(map.initialCamera.center.longitude, accraHomeCenter.longitude);
+    expect(map.initialCamera.zoom, initialZoom);
     expect(find.byKey(const Key('passenger-map-pickup-marker')), findsNothing);
   });
 
@@ -187,7 +187,7 @@ void main() {
       ),
     );
 
-    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(AsmMapView), findsOneWidget);
     expect(
       find.byKey(const Key('passenger-map-pickup-marker')),
       findsOneWidget,

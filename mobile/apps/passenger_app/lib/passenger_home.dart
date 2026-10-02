@@ -2,17 +2,21 @@ import 'dart:async';
 
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_maps/asm_maps.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
-import 'map/passenger_map.dart';
+import 'map/measured_height.dart';
 
 const passengerHomePickupDefaultCenter = LatLng(5.6050, -0.1668);
 const passengerHomePickupInitialZoom = 16.0;
 const passengerHomePickupGeocodeDebounce = Duration(milliseconds: 400);
+const _centrePinSize = 52.0;
+// Icons.location_pin's tip sits at y = 22 on its 24-unit grid; lifting the
+// icon by this much puts the tip, not the icon's middle, on the target.
+const _centrePinTipLift = _centrePinSize * (22 / 24 - 1 / 2);
 const passengerHomeLocationRecoveryCopy =
     'Location access is off.\n'
     'Tap to enable in Settings → ALANTEH → Location';
@@ -226,10 +230,8 @@ class PassengerHome extends StatefulWidget {
 }
 
 class _PassengerHomeState extends State<PassengerHome>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  final MapController _mapController = MapController();
-
-  late final AnimationController _recenterAnimationController;
+    with WidgetsBindingObserver {
+  AsmMapController? _mapController;
   Timer? _geocodeTimer;
   StreamSubscription<LatLng>? _positionSubscription;
 
@@ -238,6 +240,8 @@ class _PassengerHomeState extends State<PassengerHome>
   late String _address;
   LatLng? _addressCoordinates;
   bool _pinLifted = false;
+  bool _cameraMoving = false;
+  double _bottomSheetHeight = 0;
   bool _mapPinConfirmationRequired = false;
   bool _locationPermissionDeniedForever = false;
   int _geocodeGeneration = 0;
@@ -253,10 +257,6 @@ class _PassengerHomeState extends State<PassengerHome>
         : initialDescription;
     _addressCoordinates = initialDescription.isEmpty ? _center : null;
     _mapPinConfirmationRequired = initialDescription.isNotEmpty;
-    _recenterAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduleReverseGeocode(_center);
@@ -269,8 +269,6 @@ class _PassengerHomeState extends State<PassengerHome>
     WidgetsBinding.instance.removeObserver(this);
     _geocodeTimer?.cancel();
     _positionSubscription?.cancel();
-    _recenterAnimationController.dispose();
-    _mapController.dispose();
     super.dispose();
   }
 
@@ -351,36 +349,42 @@ class _PassengerHomeState extends State<PassengerHome>
     _addressCoordinates = coordinates;
   }
 
-  void _handleMapEvent(MapEvent event) {
-    if (event is MapEventMoveStart ||
-        event is MapEventMove ||
-        event is MapEventFlingAnimation) {
-      if (!mounted) {
-        return;
-      }
-      _invalidateCurrentAddress();
-      setState(() {
-        _center = event.camera.center;
-        _pinLifted = true;
-        _mapPinConfirmationRequired = true;
-      });
+  void _handleCameraMoveStarted() {
+    if (!mounted) {
       return;
     }
+    _cameraMoving = true;
+    _invalidateCurrentAddress();
+    setState(() {
+      _pinLifted = true;
+      _mapPinConfirmationRequired = true;
+    });
+  }
 
-    if (event is MapEventMoveEnd) {
-      if (!mounted) {
-        return;
-      }
-      final nextCenter = event.camera.center;
-      _invalidateCurrentAddress();
-      setState(() {
-        _center = nextCenter;
-        _pinLifted = false;
-        _mapPinConfirmationRequired = false;
-        _useCoordinateFallback(nextCenter);
-      });
-      _scheduleReverseGeocode(nextCenter);
+  void _handleCameraMove(AsmMapCamera camera) {
+    if (!mounted) {
+      return;
     }
+    _invalidateCurrentAddress();
+    setState(() => _center = camera.center);
+  }
+
+  void _handleCameraIdle(AsmMapCamera camera) {
+    // The map also reports idle after loading, without having moved; only
+    // the end of a real move sets the pickup.
+    if (!mounted || !_cameraMoving) {
+      return;
+    }
+    _cameraMoving = false;
+    final nextCenter = camera.center;
+    _invalidateCurrentAddress();
+    setState(() {
+      _center = nextCenter;
+      _pinLifted = false;
+      _mapPinConfirmationRequired = false;
+      _useCoordinateFallback(nextCenter);
+    });
+    _scheduleReverseGeocode(nextCenter);
   }
 
   void _scheduleReverseGeocode(LatLng coordinates) {
@@ -465,36 +469,8 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   void _animateMapTo(LatLng target) {
-    _recenterAnimationController.stop();
-    _recenterAnimationController.reset();
-
-    final start = _mapController.camera.center;
-    final zoom = _mapController.camera.zoom;
-
-    void listener() {
-      final t = Curves.easeOut.transform(_recenterAnimationController.value);
-      final next = LatLng(
-        start.latitude + (target.latitude - start.latitude) * t,
-        start.longitude + (target.longitude - start.longitude) * t,
-      );
-      _mapController.move(next, zoom, id: 'passenger-home-recenter');
-    }
-
-    _recenterAnimationController.addListener(listener);
-    _recenterAnimationController.forward().whenComplete(() {
-      _recenterAnimationController.removeListener(listener);
-      if (!mounted) {
-        return;
-      }
-      _invalidateCurrentAddress();
-      setState(() {
-        _center = target;
-        _pinLifted = false;
-        _mapPinConfirmationRequired = false;
-        _useCoordinateFallback(target);
-      });
-      _scheduleReverseGeocode(target);
-    });
+    // The camera events from the animation update the pickup.
+    unawaited(_mapController?.animateTo(target));
   }
 
   Future<void> _openLocationSettings() async {
@@ -561,62 +537,52 @@ class _PassengerHomeState extends State<PassengerHome>
             width: double.infinity,
             child: ColoredBox(
               color: const Color(0xFFE7F1EA),
-              child: FlutterMap(
+              child: AsmMapView(
                 key: const Key('passenger-home-flutter-map'),
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: widget.initialCenter,
-                  initialZoom: passengerHomePickupInitialZoom,
-                  minZoom: 5,
-                  maxZoom: 18,
-                  onMapEvent: _handleMapEvent,
+                initialCamera: AsmMapCamera(
+                  center: widget.initialCenter,
+                  zoom: passengerHomePickupInitialZoom,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate: osmTileUrl,
-                    userAgentPackageName: osmUserAgentPackageName,
-                  ),
-                  MarkerLayer(
-                    key: const Key('passenger-home-device-marker-layer'),
-                    markers: [
-                      if (_devicePosition != null)
-                        Marker(
-                          point: _devicePosition!,
-                          width: 30,
-                          height: 30,
-                          child: Container(
-                            key: const Key('passenger-home-device-blue-dot'),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1A73E8),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x33000000),
-                                  blurRadius: 6,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                // Keeps the Google logo above the bottom sheet; this also
+                // moves the camera target to the middle of the open map.
+                padding: EdgeInsets.only(bottom: _bottomSheetHeight),
+                onMapCreated: (controller) => _mapController = controller,
+                onCameraMoveStarted: _handleCameraMoveStarted,
+                onCameraMove: _handleCameraMove,
+                onCameraIdle: _handleCameraIdle,
+                markers: [
+                  if (_devicePosition != null)
+                    AsmMapMarker(
+                      id: 'passenger-home-device-blue-dot',
+                      position: _devicePosition!,
+                      style: AsmMapMarkerStyle.deviceLocation,
+                    ),
                 ],
               ),
             ),
           ),
         ),
-        Center(
-          child: IgnorePointer(
-            child: AnimatedSlide(
-              offset: Offset(0, _pinLifted ? -0.22 : 0),
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOut,
-              child: const Icon(
-                Icons.location_pin,
-                key: Key('passenger-home-centre-pin'),
-                size: 52,
-                color: AsmColors.brandDeepGreen,
+        // The pickup is the camera target, so the pin's tip is drawn on it.
+        Positioned(
+          left: 0,
+          top: 0,
+          right: 0,
+          bottom: _bottomSheetHeight,
+          child: Center(
+            child: Transform.translate(
+              offset: const Offset(0, -_centrePinTipLift),
+              child: IgnorePointer(
+                child: AnimatedSlide(
+                  offset: Offset(0, _pinLifted ? -0.22 : 0),
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  child: const Icon(
+                    Icons.location_pin,
+                    key: Key('passenger-home-centre-pin'),
+                    size: _centrePinSize,
+                    color: AsmColors.brandDeepGreen,
+                  ),
+                ),
               ),
             ),
           ),
@@ -714,113 +680,123 @@ class _PassengerHomeState extends State<PassengerHome>
         ),
         Align(
           alignment: Alignment.bottomCenter,
-          child: Container(
-            key: const Key('passenger-home-bottom-sheet'),
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(
-              AsmSpacing.space20,
-              AsmSpacing.space12,
-              AsmSpacing.space20,
-              AsmSpacing.space20,
-            ),
-            decoration: const BoxDecoration(
-              color: AsmColors.passengerCard,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(AsmRadii.radius28),
+          child: MeasuredHeight(
+            onHeight: (height) {
+              if (mounted && height != _bottomSheetHeight) {
+                setState(() => _bottomSheetHeight = height);
+              }
+            },
+            child: Container(
+              key: const Key('passenger-home-bottom-sheet'),
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(
+                AsmSpacing.space20,
+                AsmSpacing.space12,
+                AsmSpacing.space20,
+                AsmSpacing.space20,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x26000000),
-                  blurRadius: 28,
-                  offset: Offset(0, -10),
+              decoration: const BoxDecoration(
+                color: AsmColors.passengerCard,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(AsmRadii.radius28),
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AsmColors.passengerLine,
-                    borderRadius: BorderRadius.circular(99),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 28,
+                    offset: Offset(0, -10),
                   ),
-                ),
-                const SizedBox(height: AsmSpacing.space12),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Request ride',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-                  ),
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-                InkWell(
-                  key: const Key('passenger-home-pickup-address-row'),
-                  borderRadius: BorderRadius.circular(AsmRadii.radius16),
-                  onTap: _openLocationSearch,
-                  onLongPress: _showFullAddress,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AsmSpacing.space12,
-                      vertical: AsmSpacing.space8,
-                    ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF4F7F4),
-                      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                      color: AsmColors.passengerLine,
+                      borderRadius: BorderRadius.circular(99),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          color: AsmColors.brandDeepGreen,
-                        ),
-                        const SizedBox(width: AsmSpacing.space8),
-                        Expanded(
-                          child: Text(
-                            _truncateAddress(_address),
-                            key: const Key(
-                              'passenger-home-pickup-address-text',
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.clip,
+                  ),
+                  const SizedBox(height: AsmSpacing.space12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Request ride',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AsmSpacing.space8),
+                  InkWell(
+                    key: const Key('passenger-home-pickup-address-row'),
+                    borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                    onTap: _openLocationSearch,
+                    onLongPress: _showFullAddress,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AsmSpacing.space12,
+                        vertical: AsmSpacing.space8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF4F7F4),
+                        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: AsmColors.brandDeepGreen,
                           ),
-                        ),
-                        IconButton(
-                          key: const Key('passenger-home-edit-pickup'),
-                          onPressed: _openLocationSearch,
-                          icon: const Icon(Icons.edit_outlined),
-                          tooltip: 'Edit pickup address',
-                        ),
-                      ],
+                          const SizedBox(width: AsmSpacing.space8),
+                          Expanded(
+                            child: Text(
+                              _truncateAddress(_address),
+                              key: const Key(
+                                'passenger-home-pickup-address-text',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.clip,
+                            ),
+                          ),
+                          IconButton(
+                            key: const Key('passenger-home-edit-pickup'),
+                            onPressed: _openLocationSearch,
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Edit pickup address',
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-                KeyedSubtree(
-                  key: const Key('open-live-request'),
-                  child: FilledButton(
-                    key: const Key('confirm-pickup'),
-                    onPressed: _canConfirmPickup ? _confirmPickup : null,
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
+                  const SizedBox(height: AsmSpacing.space8),
+                  KeyedSubtree(
+                    key: const Key('open-live-request'),
+                    child: FilledButton(
+                      key: const Key('confirm-pickup'),
+                      onPressed: _canConfirmPickup ? _confirmPickup : null,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      child: const Text('Confirm Pick Up'),
                     ),
-                    child: const Text('Confirm Pick Up'),
                   ),
-                ),
-                const SizedBox(height: AsmSpacing.space8),
-                OutlinedButton.icon(
-                  key: const Key('open-ride-request-history'),
-                  onPressed: widget.onOpenRequests,
-                  icon: const Icon(Icons.route_outlined),
-                  label: const Text('My Ride Requests'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(46),
+                  const SizedBox(height: AsmSpacing.space8),
+                  OutlinedButton.icon(
+                    key: const Key('open-ride-request-history'),
+                    onPressed: widget.onOpenRequests,
+                    icon: const Icon(Icons.route_outlined),
+                    label: const Text('My Ride Requests'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

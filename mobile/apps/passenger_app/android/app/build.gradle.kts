@@ -20,6 +20,16 @@ val releaseSigning = Properties().apply {
     releaseSigningFile?.let { file -> FileInputStream(file).use { load(it) } }
 }
 
+// Google Maps key, from MAPS_API_KEY in the git-ignored local.properties.
+// Without it the app still builds but the map stays blank.
+val mapsApiKey: String = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }
+        ?.let { file -> FileInputStream(file).use { load(it) } }
+}.getProperty("MAPS_API_KEY").orEmpty()
+if (mapsApiKey.isEmpty()) {
+    logger.warn("MAPS_API_KEY is not set in android/local.properties; the map will be blank.")
+}
+
 android {
     namespace = "io.alanteh.passenger"
     compileSdk = flutter.compileSdkVersion
@@ -39,6 +49,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
 
     signingConfigs {

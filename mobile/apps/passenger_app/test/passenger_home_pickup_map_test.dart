@@ -5,7 +5,8 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:asm_maps/asm_maps.dart';
+import 'package:asm_maps/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:passenger_app/booking/booking_draft.dart';
@@ -26,19 +27,17 @@ void main() {
     final centrePin = find.byKey(const Key('passenger-home-centre-pin'));
     expect(centrePin, findsOneWidget);
     expect(
-      find.descendant(of: find.byType(FlutterMap), matching: centrePin),
+      find.descendant(of: find.byType(AsmMapView), matching: centrePin),
       findsNothing,
     );
 
-    final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('passenger-home-flutter-map')),
-    );
-    expect(map.children.whereType<MarkerLayer>(), hasLength(1));
-    final markerLayer = map.children.whereType<MarkerLayer>().single;
+    final map = _homeMap(tester);
     expect(
-      markerLayer.markers.any(
-        (marker) => marker.child.key == const Key('passenger-home-centre-pin'),
-      ),
+      map.markers.any((marker) => marker.id == 'passenger-home-centre-pin'),
+      isFalse,
+    );
+    expect(
+      map.markers.any((marker) => marker.style == AsmMapMarkerStyle.pickup),
       isFalse,
     );
   });
@@ -51,28 +50,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 401));
     geocoder.reset();
 
-    final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('passenger-home-flutter-map')),
-    );
-    final controller = map.mapController!;
-    final oldCamera = controller.camera;
-    final movedCamera = oldCamera.withPosition(
-      center: const LatLng(5.6100, -0.1700),
-    );
+    final map = _homeMap(tester);
 
-    map.options.onMapEvent!.call(
-      MapEventMove(
-        source: MapEventSource.onDrag,
-        oldCamera: oldCamera,
-        camera: movedCamera,
-      ),
-    );
+    map.dragTo(const LatLng(5.6100, -0.1700));
     await tester.pump(const Duration(milliseconds: 500));
     expect(geocoder.calls, isEmpty);
 
-    map.options.onMapEvent!.call(
-      MapEventMoveEnd(source: MapEventSource.dragEnd, camera: movedCamera),
-    );
+    map.release();
     await tester.pump(const Duration(milliseconds: 399));
     expect(geocoder.calls, isEmpty);
     await tester.pump(const Duration(milliseconds: 1));
@@ -86,25 +70,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 401));
     geocoder.reset();
 
-    final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('passenger-home-flutter-map')),
-    );
-    final controller = map.mapController!;
-    final firstCamera = controller.camera.withPosition(
-      center: const LatLng(5.6110, -0.1710),
-    );
-    final secondCamera = controller.camera.withPosition(
-      center: const LatLng(5.6120, -0.1720),
-    );
+    final map = _homeMap(tester);
 
-    map.options.onMapEvent!.call(
-      MapEventMoveEnd(source: MapEventSource.dragEnd, camera: firstCamera),
-    );
+    map
+      ..dragTo(const LatLng(5.6110, -0.1710))
+      ..release();
     await tester.pump(const Duration(milliseconds: 250));
 
-    map.options.onMapEvent!.call(
-      MapEventMoveEnd(source: MapEventSource.dragEnd, camera: secondCamera),
-    );
+    map
+      ..dragTo(const LatLng(5.6120, -0.1720))
+      ..release();
     await tester.pump(const Duration(milliseconds: 399));
     expect(geocoder.calls, isEmpty);
 
@@ -266,17 +241,17 @@ void main() {
         deviceLocationService: deviceLocationService,
       );
       await tester.pump();
+      // Long enough for any camera animation to finish.
+      await tester.pump(asmFakeMapAnimationDuration);
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
+      final map = _homeMap(tester);
 
       expect(
-        map.mapController!.camera.center.latitude,
+        map.camera.center.latitude,
         closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
       );
       expect(
-        map.mapController!.camera.center.longitude,
+        map.camera.center.longitude,
         closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
       );
     },
@@ -294,30 +269,29 @@ void main() {
       deviceLocationService: deviceLocationService,
     );
     await tester.pump();
+    // Long enough for any camera animation to finish.
+    await tester.pump(asmFakeMapAnimationDuration);
 
-    final map = tester.widget<FlutterMap>(
-      find.byKey(const Key('passenger-home-flutter-map')),
-    );
-    final markerLayer = map.children.whereType<MarkerLayer>().single;
-    final blueDotMarker = markerLayer.markers.singleWhere(
-      (marker) =>
-          marker.child.key == const Key('passenger-home-device-blue-dot'),
+    final map = _homeMap(tester);
+    final blueDotMarker = map.markers.singleWhere(
+      (marker) => marker.id == 'passenger-home-device-blue-dot',
     );
 
+    expect(blueDotMarker.style, AsmMapMarkerStyle.deviceLocation);
     expect(
-      map.mapController!.camera.center.latitude,
+      map.camera.center.latitude,
       closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
     );
     expect(
-      map.mapController!.camera.center.longitude,
+      map.camera.center.longitude,
       closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
     );
     expect(
-      blueDotMarker.point.latitude,
+      blueDotMarker.position.latitude,
       closeTo(farOutsideGhana.latitude, 0.000001),
     );
     expect(
-      blueDotMarker.point.longitude,
+      blueDotMarker.position.longitude,
       closeTo(farOutsideGhana.longitude, 0.000001),
     );
   });
@@ -333,15 +307,14 @@ void main() {
     );
     await tester.pump();
 
-    final mapFinder = find.byKey(const Key('passenger-home-flutter-map'));
-    var map = tester.widget<FlutterMap>(mapFinder);
+    final map = _homeMap(tester);
 
     expect(
-      map.mapController!.camera.center.latitude,
+      map.camera.center.latitude,
       closeTo(passengerHomePickupDefaultCenter.latitude, 0.000001),
     );
     expect(
-      map.mapController!.camera.center.longitude,
+      map.camera.center.longitude,
       closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
     );
 
@@ -350,13 +323,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump();
 
-    map = tester.widget<FlutterMap>(mapFinder);
     expect(
-      map.mapController!.camera.center.latitude,
+      map.camera.center.latitude,
       closeTo(farOutsideGhana.latitude, 0.000001),
     );
     expect(
-      map.mapController!.camera.center.longitude,
+      map.camera.center.longitude,
       closeTo(farOutsideGhana.longitude, 0.000001),
     );
   });
@@ -605,7 +577,7 @@ void main() {
   testWidgets('test_home_map_is_only_pickup_map_surface', (tester) async {
     await _pumpShell(tester);
 
-    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(AsmMapView), findsOneWidget);
     expect(
       find.byKey(const Key('passenger-home-full-screen-map-layout')),
       findsOneWidget,
@@ -629,7 +601,7 @@ void main() {
   testWidgets('test_no_navigation_to_second_pickup_map', (tester) async {
     await _pumpShell(tester);
 
-    expect(find.byType(FlutterMap), findsOneWidget);
+    expect(find.byType(AsmMapView), findsOneWidget);
     expect(
       find.byKey(const Key('passenger-home-pickup-address-row')),
       findsOneWidget,
@@ -655,21 +627,9 @@ void main() {
 
       expect(geocoder.calls, [passengerHomePickupDefaultCenter]);
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
-      final oldCamera = map.mapController!.camera;
-      final movedCamera = oldCamera.withPosition(
-        center: const LatLng(5.6100, -0.1700),
-      );
+      final map = _homeMap(tester);
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: oldCamera,
-          camera: movedCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6100, -0.1700));
       await tester.pump();
 
       geocoder.complete(0, 'Old center address');
@@ -694,27 +654,10 @@ void main() {
       geocoder.complete(0, 'Initial center address');
       await tester.pump();
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
-      final oldCamera = map.mapController!.camera;
-      final movedCamera = oldCamera.withPosition(
-        center: const LatLng(5.6110, -0.1710),
-      );
+      final map = _homeMap(tester);
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: oldCamera,
-          camera: movedCamera,
-        ),
-      );
-      map.options.onMapEvent!.call(
-        MapEventMoveEnd(
-          source: MapEventSource.dragEnd,
-          camera: movedCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6110, -0.1710));
+      map.release();
       await tester.pump(const Duration(milliseconds: 401));
 
       expect(geocoder.calls.last, const LatLng(5.6110, -0.1710));
@@ -778,32 +721,15 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 401));
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
-      final oldCamera = map.mapController!.camera;
-      final movedCamera = oldCamera.withPosition(
-        center: const LatLng(5.6120, -0.1720),
-      );
+      final map = _homeMap(tester);
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: oldCamera,
-          camera: movedCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6120, -0.1720));
       await tester.pump();
 
       geocoder.complete(0, 'Stale old address');
       await tester.pump();
 
-      map.options.onMapEvent!.call(
-        MapEventMoveEnd(
-          source: MapEventSource.dragEnd,
-          camera: movedCamera,
-        ),
-      );
+      map.release();
       await tester.pump();
 
       await tester.tap(find.byKey(const Key('confirm-pickup')));
@@ -844,21 +770,9 @@ void main() {
       );
       expect(confirmButton.onPressed, isNull);
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
-      final oldCamera = map.mapController!.camera;
-      final movedCamera = oldCamera.withPosition(
-        center: const LatLng(5.6130, -0.1730),
-      );
+      final map = _homeMap(tester);
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: oldCamera,
-          camera: movedCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6130, -0.1730));
       await tester.pump();
 
       confirmButton = tester.widget<FilledButton>(
@@ -866,12 +780,7 @@ void main() {
       );
       expect(confirmButton.onPressed, isNull);
 
-      map.options.onMapEvent!.call(
-        MapEventMoveEnd(
-          source: MapEventSource.dragEnd,
-          camera: movedCamera,
-        ),
-      );
+      map.release();
       await tester.pump();
 
       confirmButton = tester.widget<FilledButton>(
@@ -920,53 +829,22 @@ void main() {
       geocoder.complete(0, 'Initial address');
       await tester.pump();
 
-      final map = tester.widget<FlutterMap>(
-        find.byKey(const Key('passenger-home-flutter-map')),
-      );
-      final initialCamera = map.mapController!.camera;
-      final firstCamera = initialCamera.withPosition(
-        center: const LatLng(5.6140, -0.1740),
-      );
-      final secondCamera = initialCamera.withPosition(
-        center: const LatLng(5.6150, -0.1750),
-      );
+      final map = _homeMap(tester);
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: initialCamera,
-          camera: firstCamera,
-        ),
-      );
-      map.options.onMapEvent!.call(
-        MapEventMoveEnd(
-          source: MapEventSource.dragEnd,
-          camera: firstCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6140, -0.1740));
+      map.release();
       await tester.pump(const Duration(milliseconds: 401));
 
       expect(geocoder.calls.last, const LatLng(5.6140, -0.1740));
 
-      map.options.onMapEvent!.call(
-        MapEventMove(
-          source: MapEventSource.onDrag,
-          oldCamera: firstCamera,
-          camera: secondCamera,
-        ),
-      );
+      map.dragTo(const LatLng(5.6150, -0.1750));
       await tester.pump();
 
       geocoder.complete(1, 'Stale first-move address');
       await tester.pump();
       expect(find.text('Stale first-move address'), findsNothing);
 
-      map.options.onMapEvent!.call(
-        MapEventMoveEnd(
-          source: MapEventSource.dragEnd,
-          camera: secondCamera,
-        ),
-      );
+      map.release();
       await tester.pump(const Duration(milliseconds: 401));
 
       expect(geocoder.calls.last, const LatLng(5.6150, -0.1750));
@@ -978,6 +856,80 @@ void main() {
     },
   );
 
+  // The map is padded so the Google logo clears the bottom sheet, which
+  // moves the camera target up to the middle of the uncovered map. The
+  // pickup sent is the camera target, so the pin's tip must be drawn there.
+  testWidgets('test_centre_pin_tip_marks_the_camera_target', (tester) async {
+    await _pumpHome(
+      tester,
+      geocoder: _FakeReverseGeocoder(),
+      mediaSize: const Size(375, 812),
+    );
+    await tester.pump();
+
+    final map = _homeMap(tester);
+    final mapRect = tester.getRect(find.byType(AsmFakeMap));
+    final sheetRect = tester.getRect(
+      find.byKey(const Key('passenger-home-bottom-sheet')),
+    );
+    expect(map.view.padding.bottom, closeTo(sheetRect.height, 0.5));
+    expect(map.view.padding.top, 0);
+
+    final target = Offset(
+      mapRect.left + mapRect.width / 2,
+      mapRect.top + (mapRect.height - map.view.padding.bottom) / 2,
+    );
+    expect(target.dy, lessThan(sheetRect.top));
+
+    // Icons.location_pin's tip is at y = 22 on its 24-unit grid.
+    final pinRect = tester.getRect(
+      find.byKey(const Key('passenger-home-centre-pin')),
+    );
+    expect(pinRect.center.dx, closeTo(target.dx, 0.5));
+    expect(pinRect.top + pinRect.height * 22 / 24, closeTo(target.dy, 0.5));
+  });
+
+  // The Google map reports idle after loading, and can report idle again
+  // without moving. Only a real move confirms the pin.
+  testWidgets('test_idle_without_a_move_neither_confirms_nor_regeocodes', (
+    tester,
+  ) async {
+    final geocoder = _FakeReverseGeocoder(address: 'Idle address');
+    await _pumpHome(
+      tester,
+      geocoder: geocoder,
+      onOpenPickupSearch: (_) async => 'Search-only pickup label',
+    );
+    await tester.pump(const Duration(milliseconds: 401));
+    expect(geocoder.calls, [passengerHomePickupDefaultCenter]);
+
+    await tester.tap(
+      find.byKey(const Key('passenger-home-pickup-address-row')),
+    );
+    await tester.pump();
+
+    _homeMap(tester).release();
+    await tester.pump(const Duration(milliseconds: 401));
+
+    expect(geocoder.calls, [passengerHomePickupDefaultCenter]);
+    expect(find.text('Search-only pickup label'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('confirm-pickup')))
+          .onPressed,
+      isNull,
+    );
+  });
+}
+
+AsmFakeMapState _homeMap(WidgetTester tester) {
+  return tester.state<AsmFakeMapState>(
+    find.descendant(
+      of: find.byKey(const Key('passenger-home-flutter-map')),
+      matching: find.byType(AsmFakeMap),
+      matchRoot: true,
+    ),
+  );
 }
 
 Future<void> _pumpHome(
