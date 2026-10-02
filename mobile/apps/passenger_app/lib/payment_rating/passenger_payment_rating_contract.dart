@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../network/passenger_auth_service.dart';
 
 abstract interface class PassengerPaymentRatingRepository {
   Future<PassengerFareSnapshot> fetchFare(String requestReference);
@@ -476,7 +477,7 @@ final class ApiPassengerPaymentRatingRepository
         ),
       ),
       tokenStore: resolvedTokenStore,
-      authService: AuthService.withApiClient(
+      authService: passengerAuthService(
         client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
         tokenStore: resolvedTokenStore,
       ),
@@ -621,10 +622,9 @@ final class ApiPassengerPaymentRatingRepository
     }
 
     if (response.statusCode == 401) {
-      final refreshed = await _refreshAccessToken();
-
-      if (!refreshed) {
-        throw const PassengerPaymentRatingException.sessionExpired();
+      final refreshFailure = await _refreshAccessToken();
+      if (refreshFailure != null) {
+        throw refreshFailure;
       }
 
       final retryResponse = await request();
@@ -643,27 +643,33 @@ final class ApiPassengerPaymentRatingRepository
     throw PassengerPaymentRatingException.fromResponse(response);
   }
 
-  Future<bool> _refreshAccessToken() async {
+  /// Null when refreshed. A refresh that cannot reach the server keeps
+  /// the stored sign-in; only a rejection by the server clears it.
+  Future<PassengerPaymentRatingException?> _refreshAccessToken() async {
     final refreshToken = (await tokenStore.readRefreshToken())?.trim();
     final service = authService;
 
     if (refreshToken == null || refreshToken.isEmpty || service == null) {
       await tokenStore.clearTokens();
-      return false;
+      return const PassengerPaymentRatingException.sessionExpired();
     }
 
+    final AuthState state;
     try {
-      final state = await service.refresh();
-
-      if (state.isAuthenticated) {
-        return true;
-      }
+      state = await service.refresh();
     } on Object {
-      // User-facing error handling remains generic.
+      // Nothing was rejected, so the sign-in stays.
+      return const PassengerPaymentRatingException.network();
+    }
+    if (state.isAuthenticated) {
+      return null;
+    }
+    if (state.isTemporarilyUnavailable) {
+      return const PassengerPaymentRatingException.network();
     }
 
     await tokenStore.clearTokens();
-    return false;
+    return const PassengerPaymentRatingException.sessionExpired();
   }
 }
 

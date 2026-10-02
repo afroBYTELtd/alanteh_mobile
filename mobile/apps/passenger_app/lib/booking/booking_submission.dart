@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../network/passenger_auth_service.dart';
 import 'booking_draft.dart';
 
 enum BookingSubmissionStatus { idle, submitting, success, failure }
@@ -53,7 +54,7 @@ class ApiPassengerRideRequestSubmitter
       ),
       tokenStore: store,
       authService: connectionConfigured
-          ? AuthService.withApiClient(
+          ? passengerAuthService(
               client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
@@ -162,10 +163,14 @@ class ApiPassengerRideRequestSubmitter
         return null;
       }
 
-      await tokenStore?.clearTokens();
+      // Only a rejection by the server ends the session; a refresh that
+      // cannot reach it keeps the stored sign-in.
+      if (!state.isTemporarilyUnavailable) {
+        await tokenStore?.clearTokens();
+      }
       return PassengerRideRequestSubmissionException.fromAuthError(state.error);
     } catch (_) {
-      await tokenStore?.clearTokens();
+      // Nothing was rejected, so the sign-in stays.
       return const PassengerRideRequestSubmissionException.unknown();
     }
   }

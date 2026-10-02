@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../network/passenger_auth_service.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../payment_rating/passenger_payment_rating_page.dart';
 
@@ -625,7 +626,7 @@ class ApiPassengerRideRequestHistoryRepository
       ),
       tokenStore: store,
       authService: connectionConfigured
-          ? AuthService.withApiClient(
+          ? passengerAuthService(
               client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
@@ -695,9 +696,9 @@ class ApiPassengerRideRequestHistoryRepository
     }
 
     if (response.statusCode == 401) {
-      final refreshed = await _refreshAccessToken();
-      if (!refreshed) {
-        throw const PassengerRideRequestHistoryException.sessionExpired();
+      final refreshFailure = await _refreshAccessToken();
+      if (refreshFailure != null) {
+        throw refreshFailure;
       }
 
       final retryResponse = await apiGateway.get<T>(path, decoder: decoder);
@@ -716,27 +717,33 @@ class ApiPassengerRideRequestHistoryRepository
     throw PassengerRideRequestHistoryException.fromResponse(response);
   }
 
-  Future<bool> _refreshAccessToken() async {
+  /// Null when refreshed. A refresh that cannot reach the server keeps
+  /// the stored sign-in; only a rejection by the server clears it.
+  Future<PassengerRideRequestHistoryException?> _refreshAccessToken() async {
     final refreshToken = (await tokenStore.readRefreshToken())?.trim();
-
     final service = authService;
 
     if (refreshToken == null || refreshToken.isEmpty || service == null) {
       await tokenStore.clearTokens();
-      return false;
+      return const PassengerRideRequestHistoryException.sessionExpired();
     }
 
+    final AuthState state;
     try {
-      final state = await service.refresh();
-      if (state.isAuthenticated) {
-        return true;
-      }
+      state = await service.refresh();
     } on Object {
-      // The user-facing state below remains intentionally generic.
+      // Nothing was rejected, so the sign-in stays.
+      return const PassengerRideRequestHistoryException.network();
+    }
+    if (state.isAuthenticated) {
+      return null;
+    }
+    if (state.isTemporarilyUnavailable) {
+      return const PassengerRideRequestHistoryException.network();
     }
 
     await tokenStore.clearTokens();
-    return false;
+    return const PassengerRideRequestHistoryException.sessionExpired();
   }
 }
 

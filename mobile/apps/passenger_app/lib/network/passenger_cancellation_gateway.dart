@@ -4,6 +4,7 @@ import 'package:asm_auth/asm_auth.dart';
 import '../ride_requests/ride_request_history.dart'
     show ApiPassengerRideRequestHistoryRepository;
 import 'ghana_network_resilience.dart';
+import 'passenger_auth_service.dart';
 
 export '../booking/booking_submission.dart' show PassengerRideRequestIdempotencyKey;
 
@@ -311,7 +312,7 @@ final class ApiPassengerCancellationGateway
       ),
       tokenStore: store,
       authService: connectionConfigured
-          ? AuthService.withApiClient(
+          ? passengerAuthService(
               client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
@@ -491,10 +492,14 @@ final class ApiPassengerCancellationGateway
         return null;
       }
 
-      await tokenStore?.clearTokens();
+      // Only a rejection by the server ends the session; a refresh that
+      // cannot reach it keeps the stored sign-in.
+      if (!state.isTemporarilyUnavailable) {
+        await tokenStore?.clearTokens();
+      }
       return PassengerCancellationException.fromAuthError(state.error);
     } catch (_) {
-      await tokenStore?.clearTokens();
+      // Nothing was rejected, so the sign-in stays.
       return const PassengerCancellationException.unknown();
     }
   }
