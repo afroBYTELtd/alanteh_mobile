@@ -4,6 +4,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../network/passenger_auth_service.dart';
 
 abstract interface class PassengerFareEstimateRepository {
   Future<PassengerBookingFareEstimate> fetchEstimate(double tripKilometres);
@@ -166,7 +167,7 @@ final class ApiPassengerFareEstimateRepository
         ),
       ),
       tokenStore: resolvedTokenStore,
-      authService: AuthService.withApiClient(
+      authService: passengerAuthService(
         client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
         tokenStore: resolvedTokenStore,
       ),
@@ -209,10 +210,9 @@ final class ApiPassengerFareEstimateRepository
     }
 
     if (response.statusCode == 401) {
-      final refreshed = await _refreshAccessToken();
-
-      if (!refreshed) {
-        throw const PassengerFareEstimateException.sessionExpired();
+      final refreshFailure = await _refreshAccessToken();
+      if (refreshFailure != null) {
+        throw refreshFailure;
       }
 
       final retryResponse = await _request(queryParameters);
@@ -239,26 +239,33 @@ final class ApiPassengerFareEstimateRepository
     );
   }
 
-  Future<bool> _refreshAccessToken() async {
+  /// Null when refreshed. A refresh that cannot reach the server keeps
+  /// the stored sign-in; only a rejection by the server clears it.
+  Future<PassengerFareEstimateException?> _refreshAccessToken() async {
     final refreshToken = (await tokenStore.readRefreshToken())?.trim();
     final service = authService;
 
     if (refreshToken == null || refreshToken.isEmpty || service == null) {
       await tokenStore.clearTokens();
-      return false;
+      return const PassengerFareEstimateException.sessionExpired();
     }
 
+    final AuthState state;
     try {
-      final state = await service.refresh();
-      if (state.isAuthenticated) {
-        return true;
-      }
+      state = await service.refresh();
     } on Object {
-      // The confirmation screen uses its safe fallback wording.
+      // Nothing was rejected, so the sign-in stays.
+      return const PassengerFareEstimateException();
+    }
+    if (state.isAuthenticated) {
+      return null;
+    }
+    if (state.isTemporarilyUnavailable) {
+      return const PassengerFareEstimateException();
     }
 
     await tokenStore.clearTokens();
-    return false;
+    return const PassengerFareEstimateException.sessionExpired();
   }
 }
 

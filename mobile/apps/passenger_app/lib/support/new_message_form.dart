@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../network/ghana_network_resilience.dart';
+import '../network/passenger_auth_service.dart';
 import '../ride_requests/ride_request_history.dart';
 
 const passengerSupportMessageEndpoint = '/api/passenger/support-message/';
@@ -197,7 +198,7 @@ final class ApiPassengerSupportMessageSubmitter
       ),
       tokenStore: store,
       authService: connectionConfigured
-          ? AuthService.withApiClient(
+          ? passengerAuthService(
               client: GhanaResilientApiClient(baseUrl: resolvedBaseUrl),
               tokenStore: store,
             )
@@ -242,9 +243,9 @@ final class ApiPassengerSupportMessageSubmitter
     );
 
     if (response.statusCode == 401) {
-      final refreshed = await _refreshAccessToken();
-      if (!refreshed) {
-        throw const PassengerSupportMessageException.signInRequired();
+      final refreshFailure = await _refreshAccessToken();
+      if (refreshFailure != null) {
+        throw refreshFailure;
       }
 
       final retryResponse = await _post(
@@ -283,26 +284,37 @@ final class ApiPassengerSupportMessageSubmitter
     );
   }
 
-  Future<bool> _refreshAccessToken() async {
+  /// Null when refreshed. A refresh that cannot reach the server keeps
+  /// the stored sign-in; only a rejection by the server clears it.
+  Future<PassengerSupportMessageException?> _refreshAccessToken() async {
     final refreshToken = (await tokenStore.readRefreshToken())?.trim();
     final service = authService;
 
     if (refreshToken == null || refreshToken.isEmpty || service == null) {
       await tokenStore.clearTokens();
-      return false;
+      return const PassengerSupportMessageException.signInRequired();
     }
 
+    final AuthState state;
     try {
-      final state = await service.refresh();
-      if (state.isAuthenticated) {
-        return true;
-      }
+      state = await service.refresh();
     } on Object {
-      // The user-facing state remains intentionally generic.
+      // Nothing was rejected, so the sign-in stays.
+      return const PassengerSupportMessageException(
+        'Cannot reach the server. Check your connection and try again.',
+      );
+    }
+    if (state.isAuthenticated) {
+      return null;
+    }
+    if (state.isTemporarilyUnavailable) {
+      return const PassengerSupportMessageException(
+        'Cannot reach the server. Check your connection and try again.',
+      );
     }
 
     await tokenStore.clearTokens();
-    return false;
+    return const PassengerSupportMessageException.signInRequired();
   }
 
   PassengerSupportMessageResult _resultFromResponse(

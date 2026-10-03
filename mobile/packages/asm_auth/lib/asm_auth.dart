@@ -168,6 +168,19 @@ class AuthState {
   bool get isLoading => status == AuthStatus.loading;
   bool get isAuthenticated => status == AuthStatus.authenticated;
   bool get isUnauthenticated => status == AuthStatus.unauthenticated;
+
+  /// For a refresh: the server could not be reached; the sign-in was kept.
+  bool get isTemporarilyUnavailable =>
+      error?.type == AuthExceptionType.temporarilyUnavailable;
+
+  AuthRefreshOutcome get refreshOutcome {
+    if (isAuthenticated) {
+      return AuthRefreshOutcome.refreshed;
+    }
+    return isTemporarilyUnavailable
+        ? AuthRefreshOutcome.temporarilyUnavailable
+        : AuthRefreshOutcome.rejected;
+  }
 }
 
 /// Access and refresh token pair returned by future ASM auth endpoints.
@@ -207,7 +220,20 @@ enum AuthExceptionType {
   accountType,
   missingRefreshToken,
   storage,
+
+  /// A refresh could not reach the server (no network, timeout, server
+  /// error). The stored sign-in is kept.
+  temporarilyUnavailable,
 }
+
+/// What a refresh came to. Only [rejected] ends the session.
+enum AuthRefreshOutcome { refreshed, temporarilyUnavailable, rejected }
+
+/// Wraps the refresh request, for example to retry it on a weak network.
+typedef AuthRefreshRetry =
+    Future<ApiResponse<Map<String, Object?>>> Function(
+      Future<ApiResponse<Map<String, Object?>>> Function() attempt,
+    );
 
 /// Clear authentication exception for validation, API, and storage failures.
 class AuthException implements Exception {
@@ -433,19 +459,23 @@ class AuthService {
     required AuthApiGateway apiGateway,
     required AuthTokenStore tokenStore,
     AuthAppContext? appContext,
+    AuthRefreshRetry? refreshRetry,
   }) : _apiGateway = apiGateway,
        _tokenStore = tokenStore,
-       _appContext = appContext;
+       _appContext = appContext,
+       _refreshRetry = refreshRetry;
 
   factory AuthService.withApiClient({
     required AsmApiClient client,
     AuthTokenStore? tokenStore,
     AuthAppContext? appContext,
+    AuthRefreshRetry? refreshRetry,
   }) {
     return AuthService(
       apiGateway: AsmAuthApiGateway(client),
       tokenStore: tokenStore ?? SecureAuthTokenStore(),
       appContext: appContext,
+      refreshRetry: refreshRetry,
     );
   }
 
@@ -455,6 +485,7 @@ class AuthService {
   final AuthApiGateway _apiGateway;
   final AuthTokenStore _tokenStore;
   final AuthAppContext? _appContext;
+  final AuthRefreshRetry? _refreshRetry;
 
   Future<AuthState> login(String phone, String pin) async {
     final cleanPhone = phone.trim();
@@ -508,12 +539,35 @@ class AuthService {
       );
     }
 
-    final response = await _apiGateway.post(
-      refreshPath,
-      body: <String, Object?>{'refresh': storedRefreshToken},
-    );
+    Future<ApiResponse<Map<String, Object?>>> attempt() {
+      return _apiGateway.post(
+        refreshPath,
+        body: <String, Object?>{'refresh': storedRefreshToken},
+      );
+    }
+
+    final ApiResponse<Map<String, Object?>> response;
+    try {
+      final retry = _refreshRetry;
+      response = await (retry == null ? attempt() : retry(attempt));
+    } on Object catch (error) {
+      // Nothing came back from the server, so nothing was rejected.
+      return AuthState.unauthenticated(_temporarilyUnavailable(error));
+    }
+
+    // A sign-out or a new sign-in while the request was out replaced the
+    // session this refresh was for; its answer must not touch the new one.
+    final currentRefreshToken = (await _tokenStore.readRefreshToken())?.trim();
+    if (currentRefreshToken != storedRefreshToken) {
+      return currentSession();
+    }
 
     if (!response.isSuccess || response.data == null) {
+      if (_serverUnreachable(response)) {
+        return AuthState.unauthenticated(
+          _temporarilyUnavailable(response.error),
+        );
+      }
       await _tokenStore.clearTokens();
       return AuthState.unauthenticated(_authError(response));
     }
@@ -746,6 +800,24 @@ class AuthService {
       );
     }
     return null;
+  }
+
+  /// No network, a timeout, or the server failing: the refresh token was
+  /// not judged, so it is kept.
+  static bool _serverUnreachable(ApiResponse<dynamic> response) {
+    final type = response.error?.type;
+    return type == AsmApiExceptionType.network ||
+        type == AsmApiExceptionType.timeout ||
+        type == AsmApiExceptionType.server ||
+        const <int>{502, 503, 504}.contains(response.statusCode);
+  }
+
+  static AuthException _temporarilyUnavailable(Object? cause) {
+    return AuthException(
+      type: AuthExceptionType.temporarilyUnavailable,
+      message: 'Cannot reach ALANTEH right now. Your sign-in was kept.',
+      cause: cause,
+    );
   }
 
   AuthException _authError(ApiResponse<dynamic> response) {

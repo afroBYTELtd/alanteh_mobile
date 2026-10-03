@@ -17,6 +17,7 @@ import 'auth/passenger_registration_flow.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'network/ghana_network_resilience.dart';
+import 'network/passenger_auth_service.dart';
 import 'network/passenger_cancellation_gateway.dart';
 import 'notifications/passenger_push_navigation.dart';
 
@@ -398,27 +399,38 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       return;
     }
 
+    // Open with the stored sign-in at once and refresh behind it. Only a
+    // rejection by the server signs the passenger out; starting offline
+    // must not (seen on the test phone).
+    final stored = await _authService.currentSession();
+    if (!mounted || _localQaOpened || _signedIn) {
+      return;
+    }
+    if (stored.isAuthenticated) {
+      setState(() {
+        _signedIn = true;
+        _passengerPhoneNumber = _phoneNumberFromSession(stored.session);
+        _passengerName = _passengerNameFromSession(stored.session);
+        _otpRequired = false;
+        _isSigningIn = false;
+        _restoringSession = false;
+        _loginErrorMessage = null;
+      });
+    }
+
     AuthState state;
     try {
       state = await _authService.refresh();
     } on Object {
-      await _tokenStore.clearTokens();
-      if (!mounted || _localQaOpened) {
-        return;
-      }
-
-      setState(() {
-        _signedIn = false;
-        _passengerPhoneNumber = null;
-        _passengerName = null;
-        _isSigningIn = false;
-        _restoringSession = false;
-        _loginErrorMessage = 'Please sign in again to continue.';
-      });
+      // Nothing was rejected, so the sign-in stays.
       return;
     }
 
-    if (!mounted || _localQaOpened) {
+    // Signed out (or signed in afresh) meanwhile: this refresh is stale.
+    if (!mounted || _localQaOpened || !_signedIn) {
+      return;
+    }
+    if (state.isTemporarilyUnavailable) {
       return;
     }
 
@@ -426,13 +438,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     if (state.isAuthenticated &&
         (accountType == null || accountType == AuthAccountType.passenger)) {
       setState(() {
-        _signedIn = true;
-        _passengerPhoneNumber = _phoneNumberFromSession(state.session);
-        _passengerName = _passengerNameFromSession(state.session);
-        _otpRequired = false;
-        _isSigningIn = false;
-        _restoringSession = false;
-        _loginErrorMessage = null;
+        _passengerPhoneNumber =
+            _phoneNumberFromSession(state.session) ?? _passengerPhoneNumber;
+        _passengerName =
+            _passengerNameFromSession(state.session) ?? _passengerName;
       });
       unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
       return;
@@ -1173,7 +1182,7 @@ AuthService _authServiceFor({
     );
   }
 
-  return AuthService.withApiClient(
+  return passengerAuthService(
     client: GhanaResilientApiClient(baseUrl: baseUrl!),
     tokenStore: tokenStore,
     appContext: appContext,
