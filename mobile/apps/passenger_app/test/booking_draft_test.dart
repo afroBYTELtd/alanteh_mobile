@@ -1,6 +1,7 @@
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/booking/booking_draft.dart';
+import 'package:passenger_app/location/pickup_source.dart';
 
 void main() {
   group('BookingDraft', () {
@@ -129,6 +130,43 @@ void main() {
       );
     });
 
+    test('keeps the pin source and the place of a search', () {
+      final draft = _validDraft(
+        pickupLatitude: 5.6227,
+        pickupLongitude: -0.1737,
+        pickupSource: PassengerPickupSource.search,
+        pickupPlaceId: 'ChIJ_accra_mall',
+      );
+
+      expect(draft.pickupSource, PassengerPickupSource.search);
+      expect(draft.pickupPlaceId, 'ChIJ_accra_mall');
+      final copy = draft.copyWith(passengerCount: 2);
+      expect(copy.pickupSource, PassengerPickupSource.search);
+      expect(copy.pickupPlaceId, 'ChIJ_accra_mall');
+    });
+
+    test('a place belongs only to a search pin', () {
+      final draft = _validDraft(
+        pickupLatitude: 5.6227,
+        pickupLongitude: -0.1737,
+        pickupSource: PassengerPickupSource.dragged,
+        pickupPlaceId: 'ChIJ_accra_mall',
+      );
+
+      expect(draft.pickupSource, PassengerPickupSource.dragged);
+      expect(draft.pickupPlaceId, isNull);
+    });
+
+    test('no pin, no source and no place', () {
+      final draft = _validDraft(
+        pickupSource: PassengerPickupSource.search,
+        pickupPlaceId: 'ChIJ_accra_mall',
+      );
+
+      expect(draft.pickupSource, isNull);
+      expect(draft.pickupPlaceId, isNull);
+    });
+
     test('validates CC4B field length limits', () {
       expect(
         _validDraft(
@@ -212,12 +250,20 @@ BookingDraft _validDraft({
   String destinationDescription = 'Airport',
   int passengerCount = 1,
   String? assistanceNote,
+  double? pickupLatitude,
+  double? pickupLongitude,
+  PassengerPickupSource? pickupSource,
+  String? pickupPlaceId,
 }) {
   return BookingDraft(
     marketCode: marketCode,
     serviceContext: RideServiceContextCode.airportConnection,
     pickupDescription: pickupDescription,
     destinationDescription: destinationDescription,
+    pickupLatitude: pickupLatitude,
+    pickupLongitude: pickupLongitude,
+    pickupSource: pickupSource,
+    pickupPlaceId: pickupPlaceId,
     passengerCount: passengerCount,
     assistanceNote: assistanceNote,
   );

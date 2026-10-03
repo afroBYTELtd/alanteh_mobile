@@ -4,6 +4,7 @@ import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 
 import '../account/passenger_payment_setup_screen.dart';
+import '../location/pickup_source.dart';
 import '../map/osrm_route.dart';
 import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
@@ -24,6 +25,8 @@ class BookingPage extends StatefulWidget {
     this.initialPickupDescription = '',
     this.initialPickupLatitude,
     this.initialPickupLongitude,
+    this.initialPickupSource,
+    this.initialPickupPlaceId,
     this.initialDestinationDescription = '',
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
@@ -47,6 +50,10 @@ class BookingPage extends StatefulWidget {
   final String initialPickupDescription;
   final double? initialPickupLatitude;
   final double? initialPickupLongitude;
+
+  /// How the confirmed pin got there, and the place of a search pin.
+  final PassengerPickupSource? initialPickupSource;
+  final String? initialPickupPlaceId;
   final String initialDestinationDescription;
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;
@@ -184,6 +191,8 @@ class _BookingPageState extends State<BookingPage> {
         destinationDescription: _destinationController.text,
         pickupLatitude: widget.initialPickupLatitude,
         pickupLongitude: widget.initialPickupLongitude,
+        pickupSource: widget.initialPickupSource,
+        pickupPlaceId: widget.initialPickupPlaceId,
         passengerCount: _passengerCount,
         assistanceNote: _assistanceController.text,
         passengerNote: _passengerNoteController.text,

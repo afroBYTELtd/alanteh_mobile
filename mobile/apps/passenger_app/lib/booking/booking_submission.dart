@@ -135,6 +135,8 @@ class ApiPassengerRideRequestSubmitter
         pickupLocation: draft.pickupDescription.value,
         pickupLatitude: draft.pickupLatitude,
         pickupLongitude: draft.pickupLongitude,
+        pickupSource: draft.pickupSource?.wireValue,
+        pickupPlaceId: draft.pickupPlaceId,
         destination: draft.destinationDescription.value,
         passengerCount: draft.passengerCount.value,
         assistanceNote: draft.assistanceNote?.value,

@@ -138,6 +138,8 @@ final class PassengerRideRequestSubmission {
     required String pickupLocation,
     double? pickupLatitude,
     double? pickupLongitude,
+    String? pickupSource,
+    String? pickupPlaceId,
     required String destination,
     required int passengerCount,
     String? assistanceNote,
@@ -156,6 +158,8 @@ final class PassengerRideRequestSubmission {
        ),
        pickupLatitude = pickupLatitude,
        pickupLongitude = pickupLongitude,
+       pickupSource = pickupSource,
+       pickupPlaceId = pickupPlaceId,
        destination = _requiredString(
          destination,
          'destination',
@@ -177,6 +181,12 @@ final class PassengerRideRequestSubmission {
   final String pickupLocation;
   final double? pickupLatitude;
   final double? pickupLongitude;
+
+  /// How the pin got there: `gps`, `search` or `dragged`.
+  final String? pickupSource;
+
+  /// The Google place of a `search` pin.
+  final String? pickupPlaceId;
   final String destination;
   final int passengerCount;
   final String? assistanceNote;
@@ -190,6 +200,8 @@ final class PassengerRideRequestSubmission {
       'pickup_location': pickupLocation,
       if (pickupLatitude != null) 'pickup_latitude': pickupLatitude,
       if (pickupLongitude != null) 'pickup_longitude': pickupLongitude,
+      if (pickupSource != null) 'pickup_source': pickupSource,
+      if (pickupPlaceId != null) 'pickup_place_id': pickupPlaceId,
       'destination': destination,
       'passenger_count': passengerCount,
       if (assistanceNote != null) 'assistance_note': assistanceNote,

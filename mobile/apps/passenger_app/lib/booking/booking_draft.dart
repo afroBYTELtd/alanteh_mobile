@@ -1,5 +1,7 @@
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 
+import '../location/pickup_source.dart';
+
 extension PassengerRideServiceContextLabel on RideServiceContextCode {
   String get label {
     return switch (this) {
@@ -25,6 +27,8 @@ class BookingDraft {
     required String destinationDescription,
     double? pickupLatitude,
     double? pickupLongitude,
+    PassengerPickupSource? pickupSource,
+    String? pickupPlaceId,
     required int passengerCount,
     String? assistanceNote,
     String? passengerNote,
@@ -65,6 +69,14 @@ class BookingDraft {
       );
     }
 
+    // Source and place describe the pin: without one there are neither, and
+    // a place comes only from a search.
+    final hasPin = pickupLatitude != null && pickupLongitude != null;
+    final source = hasPin ? pickupSource : null;
+    final placeId = source == PassengerPickupSource.search
+        ? pickupPlaceId
+        : null;
+
     return BookingDraft._(
       _mapRideValidation(
         () => RideDraft(
@@ -83,6 +95,8 @@ class BookingDraft {
           : normalizedPassengerNote,
       pickupLatitude,
       pickupLongitude,
+      source,
+      placeId,
       requestedPickupTime?.toUtc(),
     );
   }
@@ -92,6 +106,8 @@ class BookingDraft {
     this.passengerNote,
     this.pickupLatitude,
     this.pickupLongitude,
+    this.pickupSource,
+    this.pickupPlaceId,
     this.requestedPickupTime,
   );
 
@@ -99,6 +115,12 @@ class BookingDraft {
   final String? passengerNote;
   final double? pickupLatitude;
   final double? pickupLongitude;
+
+  /// How the pin got where the passenger confirmed it.
+  final PassengerPickupSource? pickupSource;
+
+  /// The Google place a search pin came from.
+  final String? pickupPlaceId;
 
   /// Pickup time for a ride booked for later (UTC); null books a ride now.
   final DateTime? requestedPickupTime;
@@ -120,6 +142,8 @@ class BookingDraft {
     String? destinationDescription,
     double? pickupLatitude,
     double? pickupLongitude,
+    PassengerPickupSource? pickupSource,
+    String? pickupPlaceId,
     int? passengerCount,
     String? assistanceNote,
     bool clearAssistanceNote = false,
@@ -137,6 +161,8 @@ class BookingDraft {
           destinationDescription ?? this.destinationDescription.value,
       pickupLatitude: pickupLatitude ?? this.pickupLatitude,
       pickupLongitude: pickupLongitude ?? this.pickupLongitude,
+      pickupSource: pickupSource ?? this.pickupSource,
+      pickupPlaceId: pickupPlaceId ?? this.pickupPlaceId,
       passengerCount: passengerCount ?? this.passengerCount.value,
       assistanceNote: clearAssistanceNote
           ? null

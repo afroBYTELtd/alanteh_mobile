@@ -9,6 +9,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'location/passenger_places.dart';
+import 'location/pickup_source.dart';
 import 'map/measured_height.dart';
 
 const passengerHomePickupDefaultCenter = LatLng(5.6050, -0.1668);
@@ -32,6 +34,7 @@ const passengerHomeLocationNotFoundCopy =
     "Couldn't find your location. Move the pin to your pickup.";
 const passengerHomeLocationServicesOffCopy =
     'Location is turned off. Turn it on to find where you are.';
+const passengerHomePickupHintCopy = 'Move the map to your pickup';
 const passengerHomeLocationRecoveryCopy =
     'Location access is off.\n'
     'Tap to enable in Settings → ALANTEH → Location';
@@ -40,10 +43,27 @@ class PassengerPickupSelection {
   const PassengerPickupSelection({
     required this.coordinates,
     required this.address,
+    this.source,
+    this.placeId,
   });
 
   final LatLng coordinates;
   final String address;
+
+  /// How the pin got there.
+  final PassengerPickupSource? source;
+
+  /// The Google place of a search pin.
+  final String? placeId;
+}
+
+/// Where the pin was put and how; [place] is set for a search result.
+final class _PinPlacement {
+  const _PinPlacement(this.at, this.source, {this.place});
+
+  final LatLng at;
+  final PassengerPickupSource source;
+  final PassengerPickedPlace? place;
 }
 
 abstract interface class PassengerHomeReverseGeocoder {
@@ -251,8 +271,16 @@ class GeolocatorPassengerHomeDeviceLocationService
   }
 }
 
+/// The device's own location services, for screens that pass them on.
+const passengerHomeDeviceLocation =
+    GeolocatorPassengerHomeDeviceLocationService();
+const passengerHomeLocationPermission =
+    GeolocatorPassengerHomeLocationPermissionService();
+
+/// Opens the pickup search: a [PassengerPickedPlace] moves the pin there; a
+/// `String` only names the pickup, and the pin must then be placed again.
 typedef PassengerHomePickupSearch =
-    Future<String?> Function(String currentAddress);
+    Future<Object?> Function(String currentAddress);
 
 class PassengerHome extends StatefulWidget {
   const PassengerHome({
@@ -328,6 +356,12 @@ class _PassengerHomeState extends State<PassengerHome>
   bool _cameraMoving = false;
   double _bottomSheetHeight = 0;
   bool _mapPinConfirmationRequired = false;
+  // Null until a drag, a recenter or a search has placed the pin; the
+  // untouched starting point is not a pickup.
+  _PinPlacement? _pin;
+  // A recenter or search move, which places the pin if the camera stops
+  // where it was sent.
+  _PinPlacement? _pendingPin;
   bool _locationPermissionDeniedForever = false;
   int _geocodeGeneration = 0;
 
@@ -496,7 +530,7 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   bool get _canConfirmPickup =>
-      !_pinLifted && !_mapPinConfirmationRequired;
+      _pin != null && !_pinLifted && !_mapPinConfirmationRequired;
 
   bool _coordinatesMatch(LatLng first, LatLng second) {
     return first.latitude == second.latitude &&
@@ -549,13 +583,57 @@ class _PassengerHomeState extends State<PassengerHome>
     _cameraMoving = false;
     final nextCenter = camera.center;
     _invalidateCurrentAddress();
+    final pending = _pendingPin;
+    _pendingPin = null;
+    final current = _pin;
+    // Stopping where the app sent the camera, or where the pin already
+    // was (a zoom), keeps how it got there; anywhere else is a drag.
+    final pin = pending != null && _samePlace(nextCenter, pending.at)
+        ? pending
+        : current != null && _samePlace(nextCenter, current.at)
+        ? current
+        : _PinPlacement(nextCenter, PassengerPickupSource.dragged);
     setState(() {
       _center = nextCenter;
       _pinLifted = false;
       _mapPinConfirmationRequired = false;
-      _useCoordinateFallback(nextCenter);
+      _pin = pin;
+      _showPinAddress(pin);
     });
-    _scheduleReverseGeocode(nextCenter);
+    if (pin.place == null) {
+      _scheduleReverseGeocode(nextCenter);
+    }
+  }
+
+  /// A search result keeps its own name; anything else is looked up.
+  void _showPinAddress(_PinPlacement pin) {
+    final place = pin.place;
+    if (place == null) {
+      _useCoordinateFallback(_center);
+      return;
+    }
+    _address = place.mainText;
+    _addressCoordinates = _center;
+  }
+
+  /// Moves the camera to [pin], which is placed when the camera stops there.
+  void _placePin(_PinPlacement pin) {
+    if (!_cameraMoving && _samePlace(_center, pin.at)) {
+      // Already there, so no camera move will come to place it.
+      _pendingPin = null;
+      _invalidateCurrentAddress();
+      setState(() {
+        _pin = pin;
+        _mapPinConfirmationRequired = false;
+        _showPinAddress(pin);
+      });
+      if (pin.place == null) {
+        _scheduleReverseGeocode(_center);
+      }
+      return;
+    }
+    _pendingPin = pin;
+    _animateMapTo(pin.at);
   }
 
   void _scheduleReverseGeocode(LatLng coordinates) {
@@ -591,26 +669,46 @@ class _PassengerHomeState extends State<PassengerHome>
 
   Future<void> _openLocationSearch() async {
     final selected = await widget.onOpenPickupSearch(_address);
-    if (!mounted || selected == null || selected.trim().isEmpty) {
+    if (!mounted) {
       return;
     }
-
-    _cancelRecenter();
-    _invalidateCurrentAddress();
-    setState(() {
-      _address = selected.trim();
-      _addressCoordinates = null;
-      _mapPinConfirmationRequired = true;
-    });
+    switch (selected) {
+      case PassengerPickedPlace place:
+        _cancelRecenter();
+        _clearLocationMessage();
+        setState(() => _mapPinConfirmationRequired = true);
+        _placePin(
+          _PinPlacement(
+            place.coordinates,
+            PassengerPickupSource.search,
+            place: place,
+          ),
+        );
+      case String text when text.trim().isNotEmpty:
+        // Typed text names the pickup but places nothing.
+        _cancelRecenter();
+        _invalidateCurrentAddress();
+        setState(() {
+          _address = text.trim();
+          _addressCoordinates = null;
+          _mapPinConfirmationRequired = true;
+          _pin = null;
+          _pendingPin = null;
+        });
+    }
   }
 
   Future<void> _showFullAddress() {
+    final place = _pin?.place;
+    final address = place != null && _addressMatchesCurrentCenter
+        ? place.fullAddress
+        : _address;
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Pickup address'),
         content: Text(
-          _address,
+          address,
           key: const Key('passenger-home-pickup-full-address'),
         ),
         actions: [
@@ -666,7 +764,7 @@ class _PassengerHomeState extends State<PassengerHome>
       if (_locating) {
         setState(() => _locating = false);
       }
-      _animateMapTo(fix.coordinates);
+      _placePin(_PinPlacement(fix.coordinates, PassengerPickupSource.gps));
     }
 
     Future<PassengerDevicePosition?> settle(
@@ -829,6 +927,25 @@ class _PassengerHomeState extends State<PassengerHome>
     );
   }
 
+  Widget _buildPickupHint() {
+    return Material(
+      key: const Key('passenger-home-pickup-hint'),
+      color: AsmColors.brandDeepGreen,
+      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+      elevation: 2,
+      child: const Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: AsmSpacing.space12,
+          vertical: AsmSpacing.space8,
+        ),
+        child: Text(
+          passengerHomePickupHintCopy,
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
   void _confirmPickup() {
     if (!_canConfirmPickup) {
       return;
@@ -836,11 +953,19 @@ class _PassengerHomeState extends State<PassengerHome>
 
     _cancelRecenter();
 
-    final address = _addressMatchesCurrentCenter ? _address.trim() : '';
+    final pin = _pin!;
+    final place = pin.place;
+    final address = place != null
+        ? _bookingAddress(place)
+        : _addressMatchesCurrentCenter
+        ? _address.trim()
+        : '';
     widget.onConfirmPickup(
       PassengerPickupSelection(
         coordinates: _center,
         address: address.isEmpty ? _coordinateFallback(_center) : address,
+        source: pin.source,
+        placeId: place?.placeId,
       ),
     );
   }
@@ -906,6 +1031,19 @@ class _PassengerHomeState extends State<PassengerHome>
             ),
           ),
         ),
+        if (_pin == null && !_pinLifted)
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: _bottomSheetHeight,
+            child: Center(
+              child: Transform.translate(
+                offset: const Offset(0, -(_centrePinSize + 28)),
+                child: IgnorePointer(child: _buildPickupHint()),
+              ),
+            ),
+          ),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(AsmSpacing.space16),
@@ -1155,6 +1293,14 @@ double _distanceMetres(LatLng a, LatLng b) {
 }
 
 bool _samePlace(LatLng a, LatLng b) => _distanceMetres(a, b) < 1;
+
+/// The place's full name, within the booking's 240-character limit.
+String _bookingAddress(PassengerPickedPlace place) {
+  final full = place.fullAddress;
+  final text = full.runes.length <= 240 ? full : place.mainText;
+  final runes = text.runes.toList(growable: false);
+  return runes.length <= 240 ? text : String.fromCharCodes(runes.take(240));
+}
 
 String _coordinateFallback(LatLng coordinates) {
   return '${coordinates.latitude.toStringAsFixed(5)}, '
