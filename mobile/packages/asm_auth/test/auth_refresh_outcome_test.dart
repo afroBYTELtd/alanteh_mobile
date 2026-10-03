@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -127,6 +129,76 @@ void main() {
     );
   });
 
+  // A sign-out or a new sign-in while the refresh request is out replaces
+  // the session it was for; its answer must not touch the new one.
+  group('a session replaced during the refresh', () {
+    Future<(AuthService, _PendingGateway, MemoryAuthTokenStore)>
+    pendingRefresh() async {
+      final store = await storedSession();
+      final gateway = _PendingGateway();
+      return (
+        AuthService(apiGateway: gateway, tokenStore: store),
+        gateway,
+        store,
+      );
+    }
+
+    test('a new sign-in is not cleared by the old rejection', () async {
+      final (service, gateway, store) = await pendingRefresh();
+      final refreshing = service.refresh();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'new-access', refreshToken: 'new-refresh'),
+      );
+
+      gateway.answer(
+        ApiResponse.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.authentication,
+            message: 'Token is invalid or expired',
+            statusCode: 401,
+          ),
+        ),
+      );
+      final state = await refreshing;
+
+      expect(await store.readAccessToken(), 'new-access');
+      expect(await store.readRefreshToken(), 'new-refresh');
+      expect(state.isAuthenticated, isTrue);
+      expect(state.session!.tokens.refreshToken, 'new-refresh');
+    });
+
+    test('a new sign-in is not overwritten by the old success', () async {
+      final (service, gateway, store) = await pendingRefresh();
+      final refreshing = service.refresh();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'new-access', refreshToken: 'new-refresh'),
+      );
+
+      gateway.answer(
+        ApiResponse.success(const <String, Object?>{'access': 'old-access-2'}),
+      );
+      await refreshing;
+
+      expect(await store.readAccessToken(), 'new-access');
+      expect(await store.readRefreshToken(), 'new-refresh');
+    });
+
+    test('a sign-out is not undone by the old success', () async {
+      final (service, gateway, store) = await pendingRefresh();
+      final refreshing = service.refresh();
+      await store.clearTokens();
+
+      gateway.answer(
+        ApiResponse.success(const <String, Object?>{'access': 'old-access-2'}),
+      );
+      final state = await refreshing;
+
+      expect(await store.readAccessToken(), isNull);
+      expect(await store.readRefreshToken(), isNull);
+      expect(state.isAuthenticated, isFalse);
+    });
+  });
+
   test('a refresh retry hook decides how often to try', () async {
     final store = await storedSession();
     final gateway = _ScriptedGateway(<Object>[
@@ -158,6 +230,20 @@ void main() {
     expect(state.refreshOutcome, AuthRefreshOutcome.refreshed);
     expect(await store.readAccessToken(), 'new-access');
   });
+}
+
+/// Holds the refresh request open until [answer] is called.
+class _PendingGateway implements AuthApiGateway {
+  final _response = Completer<ApiResponse<Map<String, Object?>>>();
+
+  void answer(ApiResponse<Map<String, Object?>> response) =>
+      _response.complete(response);
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) => _response.future;
 }
 
 /// Answers each post with the next scripted response, or throws it.

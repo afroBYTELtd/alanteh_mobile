@@ -555,6 +555,13 @@ class AuthService {
       return AuthState.unauthenticated(_temporarilyUnavailable(error));
     }
 
+    // A sign-out or a new sign-in while the request was out replaced the
+    // session this refresh was for; its answer must not touch the new one.
+    final currentRefreshToken = (await _tokenStore.readRefreshToken())?.trim();
+    if (currentRefreshToken != storedRefreshToken) {
+      return currentSession();
+    }
+
     if (!response.isSuccess || response.data == null) {
       if (_serverUnreachable(response)) {
         return AuthState.unauthenticated(
