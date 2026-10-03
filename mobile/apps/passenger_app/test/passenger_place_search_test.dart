@@ -476,6 +476,35 @@ void main() {
       expect(selections.single.source, PassengerPickupSource.dragged);
     });
 
+    testWidgets('the hint is clear of the header, the pin and the sheet', (
+      tester,
+    ) async {
+      // Seen on the Android test phone: above the pin, the hint sat under
+      // the solar banner.
+      tester.view.physicalSize = const Size(1080, 2070);
+      tester.view.devicePixelRatio = 3;
+      tester.view.padding = const FakeViewPadding(top: 72);
+      addTearDown(tester.view.reset);
+      await _pumpHome(tester, location: _ScriptedLocation());
+      await tester.pump(const Duration(seconds: 1));
+
+      final hint = tester.getRect(
+        find.byKey(const Key('passenger-home-pickup-hint')),
+      );
+      final header = tester.getRect(
+        find.byKey(const Key('passenger-home-safe-top-content')),
+      );
+      final pin = tester.getRect(
+        find.byKey(const Key('passenger-home-centre-pin')),
+      );
+      final sheet = tester.getRect(
+        find.byKey(const Key('passenger-home-bottom-sheet')),
+      );
+      expect(hint.overlaps(header), isFalse, reason: '$hint vs $header');
+      expect(hint.overlaps(pin), isFalse, reason: '$hint vs $pin');
+      expect(hint.overlaps(sheet), isFalse, reason: '$hint vs $sheet');
+    });
+
     testWidgets('typed text after a search forgets the place', (tester) async {
       Object? nextResult = _accraMallPlace;
       final selections = <PassengerPickupSelection>[];

@@ -1037,10 +1037,18 @@ class _PassengerHomeState extends State<PassengerHome>
             top: 0,
             right: 0,
             bottom: _bottomSheetHeight,
+            // Below the pin's tip: above it, on short screens, is the header.
             child: Center(
               child: Transform.translate(
-                offset: const Offset(0, -(_centrePinSize + 28)),
-                child: IgnorePointer(child: _buildPickupHint()),
+                offset: const Offset(0, 36),
+                child: IgnorePointer(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AsmSpacing.space16,
+                    ),
+                    child: _buildPickupHint(),
+                  ),
+                ),
               ),
             ),
           ),
