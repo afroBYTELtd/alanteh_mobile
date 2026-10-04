@@ -517,6 +517,10 @@ final class DriverAssignedTrip {
     this.passengerCount,
     this.controlCenterMessage,
     this.passengerNote,
+    this.pickupLatitude,
+    this.pickupLongitude,
+    this.destinationLatitude,
+    this.destinationLongitude,
     this.assignmentReleased,
     this.pickupVerificationRequired = false,
   });
@@ -533,6 +537,13 @@ final class DriverAssignedTrip {
   final int? passengerCount;
   final String? controlCenterMessage;
   final String? passengerNote;
+
+  /// The pickup pin; the destination's arrives once this driver accepts.
+  /// Null unless the backend sends a valid pair.
+  final double? pickupLatitude;
+  final double? pickupLongitude;
+  final double? destinationLatitude;
+  final double? destinationLongitude;
   final bool? assignmentReleased;
   final bool pickupVerificationRequired;
 
@@ -589,6 +600,8 @@ final class DriverAssignedTrip {
             ? true
             : false);
 
+    final pickupPin = _coordinatePair(map, 'pickup');
+    final destinationPin = _coordinatePair(map, 'destination');
     return DriverAssignedTrip(
       reference: reference,
       status: _firstString(map, const ['status', 'trip_status']),
@@ -624,6 +637,10 @@ final class DriverAssignedTrip {
         'message',
       ]),
       passengerNote: _firstString(map, const ['passenger_note']),
+      pickupLatitude: pickupPin?.$1,
+      pickupLongitude: pickupPin?.$2,
+      destinationLatitude: destinationPin?.$1,
+      destinationLongitude: destinationPin?.$2,
       assignmentReleased: assignmentReleased,
       pickupVerificationRequired:
           _firstBool(map, const ['pickup_verification_required']) ?? false,
@@ -903,6 +920,21 @@ String? _firstString(Map<String, Object?> map, List<String> keys) {
     }
   }
   return null;
+}
+
+/// `{prefix}_latitude` and `{prefix}_longitude` as a valid pair, else null.
+(double, double)? _coordinatePair(Map<String, Object?> map, String prefix) {
+  final latitude = map['${prefix}_latitude'];
+  final longitude = map['${prefix}_longitude'];
+  if (latitude is! num || longitude is! num) {
+    return null;
+  }
+  final lat = latitude.toDouble();
+  final lng = longitude.toDouble();
+  if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) {
+    return null;
+  }
+  return (lat, lng);
 }
 
 int? _firstInt(Map<String, Object?> map, List<String> keys) {
@@ -1599,6 +1631,10 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           destination: trip.destination,
           passengerCount: trip.passengerCount,
           passengerNote: trip.passengerNote,
+          pickupLatitude: trip.pickupLatitude,
+          pickupLongitude: trip.pickupLongitude,
+          destinationLatitude: trip.destinationLatitude,
+          destinationLongitude: trip.destinationLongitude,
           pickupVerificationRequired: trip.pickupVerificationRequired,
           onActionRejected: _handleRejectedAction,
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,

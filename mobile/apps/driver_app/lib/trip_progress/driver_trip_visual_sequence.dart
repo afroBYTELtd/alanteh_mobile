@@ -33,6 +33,10 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.destination,
     this.passengerCount,
     this.passengerNote,
+    this.pickupLatitude,
+    this.pickupLongitude,
+    this.destinationLatitude,
+    this.destinationLongitude,
     this.pickupVerificationRequired = false,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
@@ -50,6 +54,10 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final String? destination;
   final int? passengerCount;
   final String? passengerNote;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
+  final double? destinationLatitude;
+  final double? destinationLongitude;
   final bool pickupVerificationRequired;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
@@ -399,6 +407,20 @@ class _DriverTripVisualSequencePageState
     }
   }
 
+  /// Hands the leg to the Google Maps app. Coordinates are free to use on
+  /// any screen; Google's place text is not, so none is sent or shown.
+  VoidCallback? _navigateCallback(double? latitude, double? longitude) {
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+    return () => widget.safetyUriLauncher.launch(
+      Uri.parse(
+        'https://www.google.com/maps/dir/?api=1'
+        '&destination=$latitude,$longitude&travelmode=driving',
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final stage = _state.stage;
@@ -436,6 +458,10 @@ class _DriverTripVisualSequencePageState
           secondaryLocationLabel: 'Next destination',
           secondaryLocationValue: destination,
           passengerNote: widget.passengerNote,
+          onNavigate: _navigateCallback(
+            widget.pickupLatitude,
+            widget.pickupLongitude,
+          ),
           actionKey: const Key('driver-mark-arrived-pickup'),
           actionLabel: "I've arrived",
           actionIcon: Icons.location_on_outlined,
@@ -497,6 +523,10 @@ class _DriverTripVisualSequencePageState
           secondaryLocationLabel: 'To',
           secondaryLocationValue: destination,
           passengerNote: widget.passengerNote,
+          onNavigate: _navigateCallback(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
           actionKey: const Key('driver-mark-arrived-destination'),
           actionLabel: 'Arrived at destination',
           actionIcon: Icons.flag_outlined,
@@ -711,6 +741,7 @@ class _DriverMapStage extends StatelessWidget {
     required this.secondaryLocationLabel,
     required this.secondaryLocationValue,
     this.passengerNote,
+    this.onNavigate,
     required this.actionKey,
     required this.actionLabel,
     required this.actionIcon,
@@ -729,6 +760,9 @@ class _DriverMapStage extends StatelessWidget {
   final String secondaryLocationLabel;
   final String secondaryLocationValue;
   final String? passengerNote;
+
+  /// Opens Google Maps at this leg's coordinates; null hides Navigate.
+  final VoidCallback? onNavigate;
   final Key actionKey;
   final String actionLabel;
   final IconData actionIcon;
@@ -869,6 +903,18 @@ class _DriverMapStage extends StatelessWidget {
                               key: const Key('driver-passenger-note-text'),
                             ),
                           ],
+                        ),
+                      ),
+                    ],
+                    if (onNavigate != null) ...[
+                      const SizedBox(height: AsmSpacing.space16),
+                      OutlinedButton.icon(
+                        key: const Key('driver-trip-navigate'),
+                        onPressed: onNavigate,
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Navigate'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
                         ),
                       ),
                     ],
