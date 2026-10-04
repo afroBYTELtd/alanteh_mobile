@@ -5,10 +5,10 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_maps/asm_maps.dart';
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'location/passenger_landmarks.dart';
 import 'location/passenger_places.dart';
 import 'location/pickup_source.dart';
 import 'map/measured_height.dart';
@@ -45,9 +45,13 @@ class PassengerPickupSelection {
     required this.address,
     this.source,
     this.placeId,
+    this.ownWords,
   });
 
   final LatLng coordinates;
+
+  /// The pin's label: a landmark, the passenger's words or "Pinned
+  /// location" - never Google's text.
   final String address;
 
   /// How the pin got there.
@@ -55,6 +59,9 @@ class PassengerPickupSelection {
 
   /// The Google place of a search pin.
   final String? placeId;
+
+  /// What the passenger typed to name or find the pickup, if anything.
+  final String? ownWords;
 }
 
 /// Where the pin was put and how; [place] is set for a search result.
@@ -66,53 +73,22 @@ final class _PinPlacement {
   final PassengerPickedPlace? place;
 }
 
+/// Names a pin: its label beside the map. Google's EEA terms keep Places
+/// and Geocoding text off any map, so the app names pins from ALANTEH's own
+/// landmarks ([LandmarkPassengerHomeReverseGeocoder]); a pin it cannot name
+/// takes the passenger's own words or "Pinned location".
 abstract interface class PassengerHomeReverseGeocoder {
   Future<String> reverseGeocode(LatLng coordinates);
 }
 
-class PlatformPassengerHomeReverseGeocoder
+/// Names no pin: each takes the passenger's words or "Pinned location".
+class NoLandmarksPassengerHomeReverseGeocoder
     implements PassengerHomeReverseGeocoder {
-  const PlatformPassengerHomeReverseGeocoder();
+  const NoLandmarksPassengerHomeReverseGeocoder();
 
   @override
-  Future<String> reverseGeocode(LatLng coordinates) async {
-    final placemarks = await placemarkFromCoordinates(
-      coordinates.latitude,
-      coordinates.longitude,
-    );
-    if (placemarks.isEmpty) {
-      throw StateError('No placemark returned.');
-    }
-
-    final placemark = placemarks.first;
-    final values = <String?>[
-      placemark.name,
-      placemark.street,
-      placemark.subLocality,
-      placemark.locality,
-      placemark.subAdministrativeArea,
-      placemark.administrativeArea,
-      placemark.country,
-    ];
-
-    final parts = <String>[];
-    final seen = <String>{};
-    for (final value in values) {
-      final normalized = value?.trim() ?? '';
-      if (normalized.isEmpty) {
-        continue;
-      }
-      final dedupeKey = normalized.toLowerCase();
-      if (seen.add(dedupeKey)) {
-        parts.add(normalized);
-      }
-    }
-
-    if (parts.isEmpty) {
-      throw StateError('Placemark contained no usable address.');
-    }
-    return parts.join(', ');
-  }
+  Future<String> reverseGeocode(LatLng coordinates) async =>
+      throw const NoLandmarkNearbyException();
 }
 
 enum PassengerHomeLocationPermissionState {
@@ -301,7 +277,7 @@ class PassengerHome extends StatefulWidget {
     required this.onOpenPickupSearch,
     required this.onConfirmPickup,
     this.initialCenter = passengerHomePickupDefaultCenter,
-    this.reverseGeocoder = const PlatformPassengerHomeReverseGeocoder(),
+    this.reverseGeocoder = const NoLandmarksPassengerHomeReverseGeocoder(),
     this.deviceLocationService =
         const GeolocatorPassengerHomeDeviceLocationService(),
     this.locationPermissionService =
@@ -362,6 +338,9 @@ class _PassengerHomeState extends State<PassengerHome>
   // A recenter or search move, which places the pin if the camera stops
   // where it was sent.
   _PinPlacement? _pendingPin;
+  // What the passenger typed to name or find the pickup: the pin's label
+  // when no landmark covers it.
+  String? _ownWords;
   bool _locationPermissionDeniedForever = false;
   int _geocodeGeneration = 0;
 
@@ -372,7 +351,7 @@ class _PassengerHomeState extends State<PassengerHome>
     _center = widget.initialCenter;
     final initialDescription = widget.pickupDescription?.trim() ?? '';
     _address = initialDescription.isEmpty
-        ? _coordinateFallback(_center)
+        ? passengerPinnedLocationLabel
         : initialDescription;
     _addressCoordinates = initialDescription.isEmpty ? _center : null;
     _mapPinConfirmationRequired = initialDescription.isNotEmpty;
@@ -548,8 +527,10 @@ class _PassengerHomeState extends State<PassengerHome>
     _addressCoordinates = null;
   }
 
-  void _useCoordinateFallback(LatLng coordinates) {
-    _address = _coordinateFallback(coordinates);
+  /// The label without a landmark: the passenger's words, else "Pinned
+  /// location".
+  void _usePinLabelFallback(LatLng coordinates) {
+    _address = passengerPinLabel(landmark: null, ownWords: _ownWords);
     _addressCoordinates = coordinates;
   }
 
@@ -598,22 +579,9 @@ class _PassengerHomeState extends State<PassengerHome>
       _pinLifted = false;
       _mapPinConfirmationRequired = false;
       _pin = pin;
-      _showPinAddress(pin);
+      _usePinLabelFallback(nextCenter);
     });
-    if (pin.place == null) {
-      _scheduleReverseGeocode(nextCenter);
-    }
-  }
-
-  /// A search result keeps its own name; anything else is looked up.
-  void _showPinAddress(_PinPlacement pin) {
-    final place = pin.place;
-    if (place == null) {
-      _useCoordinateFallback(_center);
-      return;
-    }
-    _address = place.mainText;
-    _addressCoordinates = _center;
+    _scheduleReverseGeocode(nextCenter);
   }
 
   /// Moves the camera to [pin], which is placed when the camera stops there.
@@ -625,11 +593,9 @@ class _PassengerHomeState extends State<PassengerHome>
       setState(() {
         _pin = pin;
         _mapPinConfirmationRequired = false;
-        _showPinAddress(pin);
+        _usePinLabelFallback(_center);
       });
-      if (pin.place == null) {
-        _scheduleReverseGeocode(_center);
-      }
+      _scheduleReverseGeocode(_center);
       return;
     }
     _pendingPin = pin;
@@ -651,9 +617,8 @@ class _PassengerHomeState extends State<PassengerHome>
           return;
         }
         setState(() {
-          _address = resolved.isEmpty
-              ? _coordinateFallback(coordinates)
-              : resolved;
+          // A landmark wins over the passenger's words.
+          _address = passengerPinLabel(landmark: resolved, ownWords: _ownWords);
           _addressCoordinates = coordinates;
         });
       } on Object {
@@ -662,7 +627,7 @@ class _PassengerHomeState extends State<PassengerHome>
             !_coordinatesMatch(coordinates, _center)) {
           return;
         }
-        setState(() => _useCoordinateFallback(coordinates));
+        setState(() => _usePinLabelFallback(coordinates));
       }
     });
   }
@@ -676,7 +641,11 @@ class _PassengerHomeState extends State<PassengerHome>
       case PassengerPickedPlace place:
         _cancelRecenter();
         _clearLocationMessage();
-        setState(() => _mapPinConfirmationRequired = true);
+        final typed = place.typedText.trim();
+        setState(() {
+          _ownWords = typed.isEmpty ? null : typed;
+          _mapPinConfirmationRequired = true;
+        });
         _placePin(
           _PinPlacement(
             place.coordinates,
@@ -689,6 +658,7 @@ class _PassengerHomeState extends State<PassengerHome>
         _cancelRecenter();
         _invalidateCurrentAddress();
         setState(() {
+          _ownWords = text.trim();
           _address = text.trim();
           _addressCoordinates = null;
           _mapPinConfirmationRequired = true;
@@ -699,10 +669,7 @@ class _PassengerHomeState extends State<PassengerHome>
   }
 
   Future<void> _showFullAddress() {
-    final place = _pin?.place;
-    final address = place != null && _addressMatchesCurrentCenter
-        ? place.fullAddress
-        : _address;
+    final address = _address;
     return showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -954,18 +921,16 @@ class _PassengerHomeState extends State<PassengerHome>
     _cancelRecenter();
 
     final pin = _pin!;
-    final place = pin.place;
-    final address = place != null
-        ? _bookingAddress(place)
-        : _addressMatchesCurrentCenter
-        ? _address.trim()
-        : '';
+    final address = _addressMatchesCurrentCenter ? _address.trim() : '';
     widget.onConfirmPickup(
       PassengerPickupSelection(
         coordinates: _center,
-        address: address.isEmpty ? _coordinateFallback(_center) : address,
+        address: address.isEmpty
+            ? passengerPinLabel(landmark: null, ownWords: _ownWords)
+            : address,
         source: pin.source,
-        placeId: place?.placeId,
+        placeId: pin.place?.placeId,
+        ownWords: _ownWords,
       ),
     );
   }
@@ -1301,19 +1266,6 @@ double _distanceMetres(LatLng a, LatLng b) {
 }
 
 bool _samePlace(LatLng a, LatLng b) => _distanceMetres(a, b) < 1;
-
-/// The place's full name, within the booking's 240-character limit.
-String _bookingAddress(PassengerPickedPlace place) {
-  final full = place.fullAddress;
-  final text = full.runes.length <= 240 ? full : place.mainText;
-  final runes = text.runes.toList(growable: false);
-  return runes.length <= 240 ? text : String.fromCharCodes(runes.take(240));
-}
-
-String _coordinateFallback(LatLng coordinates) {
-  return '${coordinates.latitude.toStringAsFixed(5)}, '
-      '${coordinates.longitude.toStringAsFixed(5)}';
-}
 
 String _truncateAddress(String address) {
   final runes = address.runes.toList(growable: false);

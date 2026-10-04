@@ -148,8 +148,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
         PassengerPickedPlace(
           placeId: location.placeId,
           coordinates: location.coordinates,
-          mainText: suggestion.mainText,
-          secondaryText: suggestion.secondaryText,
+          // The passenger's own words, not the suggestion's text: Google's
+          // EEA terms keep that on this screen only.
+          typedText: _controller.text.trim(),
         ),
       );
     } on Object {
@@ -168,6 +169,60 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       return;
     }
     Navigator.of(context).pop(_controller.text.trim());
+  }
+
+  /// Google's content, in a bordered panel of its own with the Google Maps
+  /// logo, apart from the passenger's typed text and recent places.
+  Widget _buildSuggestionsPanel() {
+    return Container(
+      key: const Key('place-suggestions-panel'),
+      decoration: BoxDecoration(
+        border: Border.all(color: AsmColors.passengerLine),
+        borderRadius: BorderRadius.circular(AsmRadii.radius16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, suggestion) in _suggestions.indexed)
+            ListTile(
+              key: ValueKey('place-suggestion-$index'),
+              leading: const Icon(Icons.place_outlined),
+              title: Text(
+                suggestion.mainText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: suggestion.secondaryText.isEmpty
+                  ? null
+                  : Text(
+                      suggestion.secondaryText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              trailing: _resolvingPlaceId == suggestion.placeId
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+              onTap: () => _pickSuggestion(suggestion),
+            ),
+          // Google's attribution: the official logo, unmodified, 18 dp tall
+          // (16-19 allowed), with 10 dp clear space beside and above it and
+          // 5 dp below.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 5),
+            child: Image.asset(
+              _googleMapsLogoAsset,
+              key: const Key('place-search-google-maps-logo'),
+              height: 18,
+              semanticLabel: 'Google Maps',
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -225,32 +280,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                     "Couldn't load that place. Try again, or move the pin "
                     'on the map.',
               ),
-            for (final (index, suggestion) in _suggestions.indexed)
-              ListTile(
-                key: ValueKey('place-suggestion-$index'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.place_outlined),
-                title: Text(
-                  suggestion.mainText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: suggestion.secondaryText.isEmpty
-                    ? null
-                    : Text(
-                        suggestion.secondaryText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                trailing: _resolvingPlaceId == suggestion.placeId
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                onTap: () => _pickSuggestion(suggestion),
-              ),
+            if (_suggestions.isNotEmpty) _buildSuggestionsPanel(),
             const SizedBox(height: AsmSpacing.space16),
             FilledButton.icon(
               key: const Key('use-location-description'),
@@ -295,6 +325,10 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     );
   }
 }
+
+/// Google's official attribution logo, unmodified; its source and hashes
+/// are in assets/google_maps/README.md.
+const _googleMapsLogoAsset = 'assets/google_maps/google_maps_logo_gray.png';
 
 class _SearchNotice extends StatelessWidget {
   const _SearchNotice({required this.text, super.key});

@@ -113,14 +113,16 @@ void main() {
     expect(find.byKey(const Key('location-description')), findsOneWidget);
   });
 
-  testWidgets('test_geocoding_failure_shows_coordinate_fallback', (
+  testWidgets('test_geocoding_failure_shows_pinned_location_fallback', (
     tester,
   ) async {
     final geocoder = _FakeReverseGeocoder(shouldThrow: true);
     await _pumpHome(tester, geocoder: geocoder);
     await tester.pump(const Duration(milliseconds: 401));
 
-    expect(find.text('5.60500, -0.16680'), findsOneWidget);
+    // Google's EEA terms: our own words beside the map, never raw
+    // coordinates or Google text.
+    expect(find.text('Pinned location'), findsOneWidget);
   });
 
   testWidgets('test_full_address_visible_on_long_press', (tester) async {
@@ -728,7 +730,7 @@ void main() {
         selections.single.coordinates.longitude,
         closeTo(passengerHomePickupDefaultCenter.longitude, 0.000001),
       );
-      expect(selections.single.address, '5.60500, -0.16680');
+      expect(selections.single.address, 'Pinned location');
     },
   );
 
@@ -768,7 +770,7 @@ void main() {
         selections.single.coordinates.longitude,
         closeTo(-0.1720, 0.000001),
       );
-      expect(selections.single.address, '5.61200, -0.17200');
+      expect(selections.single.address, 'Pinned location');
       expect(selections.single.address, isNot('Stale old address'));
     },
   );
@@ -811,7 +813,8 @@ void main() {
         find.byKey(const Key('confirm-pickup')),
       );
       expect(confirmButton.onPressed, isNotNull);
-      expect(find.text('5.61300, -0.17300'), findsOneWidget);
+      // The passenger's own words label the pin when no landmark covers it.
+      expect(find.text('Search-only pickup label'), findsOneWidget);
     },
   );
 

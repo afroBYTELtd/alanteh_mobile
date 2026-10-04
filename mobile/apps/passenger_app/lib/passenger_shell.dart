@@ -9,6 +9,7 @@ import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'location/location_search_page.dart';
+import 'location/passenger_landmarks.dart';
 import 'location/passenger_places.dart';
 import 'location/session_location_history.dart';
 import 'network/passenger_cancellation_gateway.dart';
@@ -39,7 +40,8 @@ class PassengerShell extends StatefulWidget {
     this.deleteAccountLiveEnabled = false,
     this.onAccountDeletionRequested,
     this.placesRepository,
-    this.homeReverseGeocoder = const PlatformPassengerHomeReverseGeocoder(),
+    this.landmarkRepository,
+    this.homeReverseGeocoder,
     this.homeDeviceLocationService = passengerHomeDeviceLocation,
     this.homeLocationPermissionService = passengerHomeLocationPermission,
     super.key,
@@ -68,8 +70,14 @@ class PassengerShell extends StatefulWidget {
   /// only.
   final PassengerPlacesRepository? placesRepository;
 
-  /// The home map's address lookup and device location; tests pass fakes.
-  final PassengerHomeReverseGeocoder homeReverseGeocoder;
+  /// ALANTEH's own landmarks, which name the pickup pin beside the map.
+  final PassengerLandmarkRepository? landmarkRepository;
+
+  /// Names the pickup pin; tests pass a fake. Without one, pins are named
+  /// from [landmarkRepository], else from the passenger's words.
+  final PassengerHomeReverseGeocoder? homeReverseGeocoder;
+
+  /// The home map's device location; tests pass fakes.
   final PassengerHomeDeviceLocationService homeDeviceLocationService;
   final PassengerHomeLocationPermissionService homeLocationPermissionService;
 
@@ -83,6 +91,14 @@ class _PassengerShellState extends State<PassengerShell> {
   String? _destinationDescription;
   PassengerMobileMoneyNetwork _paymentNetwork = PassengerMobileMoneyNetwork.mtn;
   late SessionLocationHistory _locationHistory;
+  late final PassengerHomeReverseGeocoder _pinNamer =
+      widget.homeReverseGeocoder ??
+      switch (widget.landmarkRepository) {
+        final repository? => LandmarkPassengerHomeReverseGeocoder(
+          PassengerLandmarkDirectory(repository),
+        ),
+        null => const NoLandmarksPassengerHomeReverseGeocoder(),
+      };
 
   @override
   void initState() {
@@ -281,7 +297,9 @@ class _PassengerShellState extends State<PassengerShell> {
         builder: (_) => BookingPage(
           market: widget.configuration.market,
           passengerName: widget.passengerName,
-          initialPickupDescription: selection.address,
+          // The passenger's own words first; they name the place for the
+          // driver on the booking page.
+          initialPickupDescription: selection.ownWords ?? selection.address,
           initialPickupLatitude: selection.coordinates.latitude,
           initialPickupLongitude: selection.coordinates.longitude,
           initialPickupSource: selection.source,
@@ -430,7 +448,7 @@ class _PassengerShellState extends State<PassengerShell> {
         onConfirmPickup: (selection) {
           _confirmPickupFromMap(selection);
         },
-        reverseGeocoder: widget.homeReverseGeocoder,
+        reverseGeocoder: _pinNamer,
         deviceLocationService: widget.homeDeviceLocationService,
         locationPermissionService: widget.homeLocationPermissionService,
       ),

@@ -85,9 +85,11 @@ class BookingForm extends StatelessWidget {
             controller: pickupController,
             textInputAction: TextInputAction.next,
             textCapitalization: TextCapitalization.sentences,
+            // The driver reads this beside the map, so it is the
+            // passenger's own words - never Google's text.
             decoration: const InputDecoration(
-              labelText: 'Where are you?',
-              hintText: 'e.g. Kempinski Hotel, Accra Mall',
+              labelText: 'Name this place for your driver',
+              hintText: 'e.g. Main gate, blue kiosk',
               border: OutlineInputBorder(),
             ),
             validator: (value) {
