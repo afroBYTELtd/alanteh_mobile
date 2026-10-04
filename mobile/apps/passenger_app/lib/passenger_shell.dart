@@ -9,6 +9,7 @@ import 'booking/booking_page.dart';
 import 'booking/booking_submission.dart';
 import 'booking/passenger_fare_estimate.dart';
 import 'location/location_search_page.dart';
+import 'location/passenger_places.dart';
 import 'location/session_location_history.dart';
 import 'network/passenger_cancellation_gateway.dart';
 import 'passenger_home.dart';
@@ -37,6 +38,10 @@ class PassengerShell extends StatefulWidget {
     this.deleteAccountSubmitter,
     this.deleteAccountLiveEnabled = false,
     this.onAccountDeletionRequested,
+    this.placesRepository,
+    this.homeReverseGeocoder = const PlatformPassengerHomeReverseGeocoder(),
+    this.homeDeviceLocationService = passengerHomeDeviceLocation,
+    this.homeLocationPermissionService = passengerHomeLocationPermission,
     super.key,
   });
 
@@ -58,6 +63,15 @@ class PassengerShell extends StatefulWidget {
   final PassengerDeleteAccountSubmitter? deleteAccountSubmitter;
   final bool deleteAccountLiveEnabled;
   final Future<void> Function()? onAccountDeletionRequested;
+
+  /// Place search for the pickup; without it the search takes typed text
+  /// only.
+  final PassengerPlacesRepository? placesRepository;
+
+  /// The home map's address lookup and device location; tests pass fakes.
+  final PassengerHomeReverseGeocoder homeReverseGeocoder;
+  final PassengerHomeDeviceLocationService homeDeviceLocationService;
+  final PassengerHomeLocationPermissionService homeLocationPermissionService;
 
   @override
   State<PassengerShell> createState() => _PassengerShellState();
@@ -94,14 +108,15 @@ class _PassengerShellState extends State<PassengerShell> {
         pickup.toLowerCase() == destination.toLowerCase();
   }
 
-  Future<String?> _searchPickupAddress(String currentAddress) {
-    return Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
+  Future<Object?> _searchPickupAddress(String currentAddress) {
+    return Navigator.of(context).push<Object>(
+      MaterialPageRoute<Object>(
         builder: (_) => LocationSearchPage(
           kind: LocationSearchKind.pickup,
           market: widget.configuration.market,
           initialDescription: currentAddress,
           recentDescriptions: _locationHistory.entries,
+          placesRepository: widget.placesRepository,
         ),
       ),
     );
@@ -269,6 +284,8 @@ class _PassengerShellState extends State<PassengerShell> {
           initialPickupDescription: selection.address,
           initialPickupLatitude: selection.coordinates.latitude,
           initialPickupLongitude: selection.coordinates.longitude,
+          initialPickupSource: selection.source,
+          initialPickupPlaceId: selection.placeId,
           initialDestinationDescription: _destinationDescription ?? '',
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
@@ -413,6 +430,9 @@ class _PassengerShellState extends State<PassengerShell> {
         onConfirmPickup: (selection) {
           _confirmPickupFromMap(selection);
         },
+        reverseGeocoder: widget.homeReverseGeocoder,
+        deviceLocationService: widget.homeDeviceLocationService,
+        locationPermissionService: widget.homeLocationPermissionService,
       ),
       1 => PassengerRideRequestHistoryPage(
         repository:

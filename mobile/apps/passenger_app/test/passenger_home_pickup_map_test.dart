@@ -174,6 +174,12 @@ void main() {
     final submitter = _RecordingRideRequestSubmitter();
     await _pumpShell(tester, submitter: submitter);
 
+    // The passenger places the pin: the untouched starting point is not a
+    // pickup (PASSENGER-SEARCH-AND-PICKUP-FLOW).
+    _homeMap(tester)
+      ..dragTo(passengerHomePickupDefaultCenter)
+      ..release();
+    await tester.pump();
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
 
@@ -614,6 +620,12 @@ void main() {
     );
     expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
 
+    // The passenger places the pin: the untouched starting point is not a
+    // pickup (PASSENGER-SEARCH-AND-PICKUP-FLOW).
+    _homeMap(tester)
+      ..dragTo(passengerHomePickupDefaultCenter)
+      ..release();
+    await tester.pump();
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
 
@@ -698,6 +710,12 @@ void main() {
         onConfirmPickup: selections.add,
       );
 
+      // The passenger places the pin: the untouched starting point is not a
+      // pickup (PASSENGER-SEARCH-AND-PICKUP-FLOW).
+      _homeMap(tester)
+        ..dragTo(passengerHomePickupDefaultCenter)
+        ..release();
+      await tester.pump();
       await tester.tap(find.byKey(const Key('confirm-pickup')));
       await tester.pump();
 

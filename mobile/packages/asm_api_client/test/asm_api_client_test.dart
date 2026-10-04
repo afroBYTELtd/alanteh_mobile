@@ -281,6 +281,40 @@ void main() {
       expect(body['passenger_count'], 1);
     });
 
+    test('the pin source and place are sent when given', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-pickup-source-present',
+        pickupLocation: 'Accra Mall',
+        pickupLatitude: 5.6227,
+        pickupLongitude: -0.1737,
+        pickupSource: 'search',
+        pickupPlaceId: 'ChIJ_accra_mall',
+        destination: 'Airport',
+        passengerCount: 1,
+      );
+
+      final body = submission.toJson();
+
+      expect(body['pickup_source'], 'search');
+      expect(body['pickup_place_id'], 'ChIJ_accra_mall');
+    });
+
+    test('the pin source and place are left out when absent', () {
+      final submission = PassengerRideRequestSubmission(
+        idempotencyKey: 'APP-pickup-source-absent',
+        pickupLocation: 'Osu',
+        pickupLatitude: 5.556,
+        pickupLongitude: -0.182,
+        destination: 'Airport',
+        passengerCount: 1,
+      );
+
+      final body = submission.toJson();
+
+      expect(body.containsKey('pickup_source'), isFalse);
+      expect(body.containsKey('pickup_place_id'), isFalse);
+    });
+
     test('test_passenger_note_submitted_with_booking_request', () {
       final submission = PassengerRideRequestSubmission(
         idempotencyKey: 'APP-passenger-note-test',

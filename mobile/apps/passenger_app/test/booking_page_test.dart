@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_maps/testing.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -938,6 +939,12 @@ void main() {
     expect(find.byKey(const Key('passenger-home-flutter-map')), findsOneWidget);
     expect(find.byKey(const Key('confirm-pickup')), findsOneWidget);
 
+    // The passenger places the pin: the untouched starting point is not a
+    // pickup (PASSENGER-SEARCH-AND-PICKUP-FLOW).
+    _fakeMap(tester)
+      ..dragTo(passengerHomePickupDefaultCenter)
+      ..release();
+    await tester.pump();
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
 
@@ -2592,4 +2599,8 @@ void _useSurface(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+AsmFakeMapState _fakeMap(WidgetTester tester) {
+  return tester.state<AsmFakeMapState>(find.byType(AsmFakeMap));
 }
