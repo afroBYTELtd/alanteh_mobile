@@ -70,7 +70,8 @@ class DriverTripMap extends StatefulWidget {
   State<DriverTripMap> createState() => _DriverTripMapState();
 }
 
-class _DriverTripMapState extends State<DriverTripMap> {
+class _DriverTripMapState extends State<DriverTripMap>
+    with WidgetsBindingObserver {
   AsmMapController? _controller;
   StreamSubscription<LatLng>? _positions;
   LatLng? _device;
@@ -79,6 +80,25 @@ class _DriverTripMapState extends State<DriverTripMap> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _listen();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_positions == null) {
+        _listen();
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      // No location requests while the app is out of sight.
+      unawaited(_positions?.cancel());
+      _positions = null;
+    }
+  }
+
+  void _listen() {
     _positions = widget.devicePositionSource.positions().listen((position) {
       if (!mounted) {
         return;
@@ -102,6 +122,7 @@ class _DriverTripMapState extends State<DriverTripMap> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_positions?.cancel());
     super.dispose();
   }
