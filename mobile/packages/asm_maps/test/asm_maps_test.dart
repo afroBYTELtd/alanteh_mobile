@@ -77,6 +77,45 @@ void main() {
       expect(events.controller!.camera.zoom, 16);
     });
 
+    testWidgets('fitPoints frames the points and records them', (tester) async {
+      final events = _Events();
+      await tester.pumpWidget(_map(events));
+      await tester.pump();
+      events.log.clear();
+
+      const a = LatLng(5.6227, -0.1737);
+      const b = LatLng(5.6052, -0.1668);
+      final done = events.controller!.fitPoints(const [a, b]);
+      await tester.pump(asmFakeMapAnimationDuration);
+      await done;
+
+      final map = tester.state<AsmFakeMapState>(find.byType(AsmFakeMap));
+      expect(map.fittedPoints, const [a, b]);
+      // Centred between them, ending idle like any move.
+      expect(
+        map.camera.center.latitude,
+        closeTo((a.latitude + b.latitude) / 2, 1e-9),
+      );
+      expect(
+        map.camera.center.longitude,
+        closeTo((a.longitude + b.longitude) / 2, 1e-9),
+      );
+      expect(events.log.last, startsWith('idle '));
+    });
+
+    testWidgets('fitPoints with one point centres on it', (tester) async {
+      final events = _Events();
+      await tester.pumpWidget(_map(events));
+      await tester.pump();
+
+      const only = LatLng(5.5600, -0.2000);
+      final done = events.controller!.fitPoints(const [only]);
+      await tester.pump(asmFakeMapAnimationDuration);
+      await done;
+
+      expect(events.controller!.camera.center, only);
+    });
+
     testWidgets('shows each marker under its id and keeps the view', (
       tester,
     ) async {

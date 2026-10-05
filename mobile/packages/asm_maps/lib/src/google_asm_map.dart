@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -212,7 +213,56 @@ class _GoogleAsmMapController implements AsmMapController {
       gm.CameraUpdate.newLatLng(_google(target)),
     );
   }
+
+  @override
+  Future<void> fitPoints(List<LatLng> points) async {
+    if (points.isEmpty) {
+      return;
+    }
+    if (points.length == 1) {
+      return _controller.animateCamera(
+        gm.CameraUpdate.newLatLngZoom(
+          _google(points.single),
+          fitSinglePointZoom,
+        ),
+      );
+    }
+    final latitudes = points.map((point) => point.latitude);
+    final longitudes = points.map((point) => point.longitude);
+    final bounds = gm.LatLngBounds(
+      southwest: gm.LatLng(
+        latitudes.reduce(math.min),
+        longitudes.reduce(math.min),
+      ),
+      northeast: gm.LatLng(
+        latitudes.reduce(math.max),
+        longitudes.reduce(math.max),
+      ),
+    );
+    try {
+      await _controller.animateCamera(
+        gm.CameraUpdate.newLatLngBounds(bounds, fitPaddingPixels),
+      );
+    } on Object {
+      // Bounds need the map laid out; before then, centre on the points.
+      await _controller.animateCamera(
+        gm.CameraUpdate.newLatLng(
+          gm.LatLng(
+            (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
+            (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
+          ),
+        ),
+      );
+    }
+  }
 }
+
+/// The zoom [AsmMapController.fitPoints] uses for a single point.
+const fitSinglePointZoom = 16.0;
+
+/// The margin, in logical pixels, [AsmMapController.fitPoints] keeps
+/// around several points.
+const fitPaddingPixels = 64.0;
 
 /// The Google map for [view]. Markers are left off until [icons] exist.
 gm.GoogleMap googleMapFor(

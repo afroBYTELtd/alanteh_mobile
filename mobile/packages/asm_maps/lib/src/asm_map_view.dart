@@ -59,6 +59,10 @@ abstract interface class AsmMapController {
   /// Moves the camera to [target] at the current zoom. Camera events fire as
   /// for a gesture: move started, moves, then idle.
   Future<void> animateTo(LatLng target);
+
+  /// Moves the camera so every point in [points] is in view: one point is
+  /// shown close up, several are framed with a margin. Nothing for none.
+  Future<void> fitPoints(List<LatLng> points);
 }
 
 typedef AsmMapViewBuilder =

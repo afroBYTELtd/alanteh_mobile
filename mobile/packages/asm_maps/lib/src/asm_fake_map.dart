@@ -88,6 +88,25 @@ class AsmFakeMapState extends State<AsmFakeMap> implements AsmMapController {
     release();
   }
 
+  /// The points of the last [fitPoints], for tests.
+  List<LatLng> get fittedPoints => _fittedPoints;
+  List<LatLng> _fittedPoints = const [];
+
+  @override
+  Future<void> fitPoints(List<LatLng> points) async {
+    if (points.isEmpty) {
+      return;
+    }
+    _fittedPoints = List.unmodifiable(points);
+    final latitudes = points.map((point) => point.latitude).toList();
+    final longitudes = points.map((point) => point.longitude).toList();
+    double middle(List<double> values) =>
+        (values.reduce((a, b) => a < b ? a : b) +
+            values.reduce((a, b) => a > b ? a : b)) /
+        2;
+    await animateTo(LatLng(middle(latitudes), middle(longitudes)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
