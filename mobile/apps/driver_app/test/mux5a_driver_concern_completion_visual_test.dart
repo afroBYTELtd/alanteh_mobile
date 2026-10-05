@@ -109,8 +109,9 @@ void main() {
       find.text('Accra Mall → Kotoka International Airport'),
       findsOneWidget,
     );
-    expect(find.text('9.5 km'), findsOneWidget);
-    expect(find.text('23 min'), findsOneWidget);
+    // No made-up distance or duration in the summary.
+    expect(find.text('Distance'), findsNothing);
+    expect(find.text('Duration'), findsNothing);
     expect(
       find.text(
         'Completion is not confirmed until ALANTEH operations reviews the trip.',

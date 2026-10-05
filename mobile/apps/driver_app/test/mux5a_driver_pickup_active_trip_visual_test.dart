@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_maps/asm_maps.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/ride_offer/driver_ride_offer_page.dart';
-import 'package:driver_app/trip_progress/driver_trip_route.dart';
 import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/safety/driver_trip_safety.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _authoritativePickup = 'Accra Mall';
@@ -18,26 +17,21 @@ const _authoritativeDestination = 'Kotoka International Airport';
 const _authoritativePassengerCount = 1;
 
 void main() {
-  testWidgets('pickup route renders map, static pin, and details sheet', (
-    tester,
-  ) async {
+  testWidgets('pickup stage renders the map, details sheet and no invented '
+      'route', (tester) async {
     _useSurface(tester);
 
     await _pumpTripSequence(tester);
 
     expect(find.byKey(const Key('driver-navigate-to-pickup')), findsOneWidget);
-    expect(find.byType(FlutterMap), findsOneWidget);
-    expect(find.byType(PolylineLayer), findsOneWidget);
-    expect(find.byKey(const Key('driver-static-position-pin')), findsOneWidget);
-    expect(find.byKey(const Key('driver-pickup-position-pin')), findsOneWidget);
-    expect(
-      find.byKey(const Key('driver-destination-position-pin')),
-      findsNothing,
-    );
+    expect(find.byType(AsmMapView), findsOneWidget);
+    // No coordinates in this trip: no pin, a note instead, and no made-up
+    // route, distance or time.
+    expect(find.byKey(const Key('driver-trip-no-pin-note')), findsOneWidget);
     expect(find.text('Heading to pickup'), findsOneWidget);
     expect(find.text('Accra Mall'), findsWidgets);
-    expect(find.textContaining('1.2 km'), findsOneWidget);
-    expect(find.textContaining('about 5 min'), findsOneWidget);
+    expect(find.textContaining('km'), findsNothing);
+    expect(find.textContaining(' min'), findsNothing);
   });
 
   testWidgets('pickup arrival and passenger-onboard confirmation work', (
@@ -85,19 +79,15 @@ void main() {
     await _openActiveTrip(tester);
 
     expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
-    expect(find.byType(FlutterMap), findsOneWidget);
-    expect(find.byKey(const Key('driver-static-position-pin')), findsOneWidget);
-    expect(
-      find.byKey(const Key('driver-destination-position-pin')),
-      findsOneWidget,
-    );
+    expect(find.byType(AsmMapView), findsOneWidget);
+    expect(find.byKey(const Key('driver-trip-no-pin-note')), findsOneWidget);
     expect(find.text('Trip in progress'), findsOneWidget);
     expect(
       find.text('Heading to Kotoka International Airport'),
       findsOneWidget,
     );
-    expect(find.textContaining('9.5 km'), findsOneWidget);
-    expect(find.textContaining('about 23 min'), findsOneWidget);
+    expect(find.textContaining('km'), findsNothing);
+    expect(find.textContaining(' min'), findsNothing);
     expect(find.text('Arrived at destination'), findsOneWidget);
   });
 
@@ -277,8 +267,9 @@ void main() {
       find.text('Accra Mall → Kotoka International Airport'),
       findsOneWidget,
     );
-    expect(find.text('9.5 km'), findsOneWidget);
-    expect(find.text('23 min'), findsOneWidget);
+    // No made-up distance or duration in the summary.
+    expect(find.text('Distance'), findsNothing);
+    expect(find.text('Duration'), findsNothing);
     expect(find.text('Passengers'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
     expect(
@@ -545,16 +536,6 @@ void main() {
     expect(find.text(driverTripDisplayUnavailable), findsWidgets);
     expect(find.text('Accra Market'), findsNothing);
     expect(find.text('2'), findsNothing);
-  });
-
-  test('route fallback exposes stable map coordinates', () {
-    final pickup = safeDriverPickupRouteFallback();
-    final destination = safeDriverDestinationRouteFallback();
-
-    expect(pickup.usedFallback, isTrue);
-    expect(destination.usedFallback, isTrue);
-    expect(pickup.points.first, driverPickupStaticPosition);
-    expect(destination.points.last, driverDestinationPosition);
   });
 
   testWidgets(

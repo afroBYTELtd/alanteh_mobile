@@ -1,4 +1,5 @@
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:asm_maps/testing.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/safety/driver_trip_safety.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
@@ -136,6 +137,8 @@ Future<void> _pumpTrip(
     ),
   );
   await tester.pump();
+  // The map's camera fit animates; let it finish.
+  await tester.pump(asmFakeMapAnimationDuration);
 }
 
 final class _RecordingLauncher implements DriverSafetyUriLauncher {

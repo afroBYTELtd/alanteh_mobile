@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
 import '../safety/driver_trip_safety.dart';
 import 'driver_trip_map.dart';
-import 'driver_trip_route.dart';
 import 'driver_trip_visual_state.dart';
 
 const driverTripDisplayUnavailable = 'Not available';
@@ -37,6 +37,7 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.pickupLongitude,
     this.destinationLatitude,
     this.destinationLongitude,
+    this.devicePositionSource,
     this.pickupVerificationRequired = false,
     this.onActionRejected,
     this.tripActionTelemetryQaEnabled = false,
@@ -58,6 +59,10 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final double? pickupLongitude;
   final double? destinationLatitude;
   final double? destinationLongitude;
+
+  /// The driver's own position for the map; the phone's unless a test
+  /// passes one.
+  final DriverDevicePositionSource? devicePositionSource;
   final bool pickupVerificationRequired;
   final Future<void> Function(DriverTripActionRecordResult result)?
   onActionRejected;
@@ -407,6 +412,16 @@ class _DriverTripVisualSequencePageState
     }
   }
 
+  LatLng? _pin(double? latitude, double? longitude) {
+    return latitude == null || longitude == null
+        ? null
+        : LatLng(latitude, longitude);
+  }
+
+  DriverDevicePositionSource get _positionSource =>
+      widget.devicePositionSource ??
+      const GeolocatorDriverDevicePositionSource();
+
   /// Hands the leg to the Google Maps app. Coordinates are free to use on
   /// any screen; Google's place text is not, so none is sent or shown.
   VoidCallback? _navigateCallback(double? latitude, double? longitude) {
@@ -447,12 +462,15 @@ class _DriverTripVisualSequencePageState
           Expanded(child: switch (stage) {
         DriverTripVisualStage.navigatingToPickup => _DriverMapStage(
           key: const Key('driver-navigate-to-pickup'),
-          route: safeDriverPickupRouteFallback(),
-          showPickup: true,
-          showDestination: false,
+          pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          destination: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          legTarget: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          devicePositionSource: _positionSource,
           title: 'Heading to pickup',
           subtitle: pickupLocation,
-          routeLabel: 'Pickup route',
           primaryLocationLabel: 'Pickup',
           primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'Next destination',
@@ -512,12 +530,18 @@ class _DriverTripVisualSequencePageState
         ),
         DriverTripVisualStage.activeTrip => _DriverMapStage(
           key: const Key('driver-active-trip'),
-          route: safeDriverDestinationRouteFallback(),
-          showPickup: true,
-          showDestination: true,
+          pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          destination: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          legTarget: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          devicePositionSource: _positionSource,
           title: 'Trip in progress',
           subtitle: 'Heading to $destination',
-          routeLabel: 'Destination route',
           primaryLocationLabel: 'From',
           primaryLocationValue: pickupLocation,
           secondaryLocationLabel: 'To',
@@ -730,12 +754,12 @@ class _DriverTripActionTelemetryPanel extends StatelessWidget {
 class _DriverMapStage extends StatelessWidget {
   const _DriverMapStage({
     required super.key,
-    required this.route,
-    required this.showPickup,
-    required this.showDestination,
+    required this.pickup,
+    required this.destination,
+    required this.legTarget,
+    required this.devicePositionSource,
     required this.title,
     required this.subtitle,
-    required this.routeLabel,
     required this.primaryLocationLabel,
     required this.primaryLocationValue,
     required this.secondaryLocationLabel,
@@ -749,12 +773,15 @@ class _DriverMapStage extends StatelessWidget {
     required this.onAction,
   });
 
-  final DriverTripRouteEstimate route;
-  final bool showPickup;
-  final bool showDestination;
+  final LatLng? pickup;
+  final LatLng? destination;
+
+  /// This leg's coordinates; without them the sheet says to use the place
+  /// name and the passenger's message.
+  final LatLng? legTarget;
+  final DriverDevicePositionSource devicePositionSource;
   final String title;
   final String subtitle;
-  final String routeLabel;
   final String primaryLocationLabel;
   final String primaryLocationValue;
   final String secondaryLocationLabel;
@@ -777,9 +804,10 @@ class _DriverMapStage extends StatelessWidget {
           Expanded(
             flex: 6,
             child: DriverTripMap(
-              route: route,
-              showPickup: showPickup,
-              showDestination: showDestination,
+              pickup: pickup,
+              destination: destination,
+              legTarget: legTarget,
+              devicePositionSource: devicePositionSource,
             ),
           ),
           Flexible(
@@ -841,38 +869,37 @@ class _DriverMapStage extends StatelessWidget {
                       value: secondaryLocationValue,
                       icon: Icons.location_on_outlined,
                     ),
-                    const SizedBox(height: AsmSpacing.space8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(AsmSpacing.space12),
-                      decoration: BoxDecoration(
-                        color: AsmColors.driverCard,
-                        borderRadius: BorderRadius.circular(AsmRadii.radius24),
-                        border: Border.all(color: AsmColors.driverLine),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.route_outlined,
-                            color: AsmColors.driverMintAction,
+                    if (legTarget == null) ...[
+                      const SizedBox(height: AsmSpacing.space8),
+                      Container(
+                        key: const Key('driver-trip-no-pin-note'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(AsmSpacing.space12),
+                        decoration: BoxDecoration(
+                          color: AsmColors.driverCard,
+                          borderRadius: BorderRadius.circular(
+                            AsmRadii.radius24,
                           ),
-                          const SizedBox(width: AsmSpacing.space12),
-                          Expanded(
-                            child: Text(
-                              '$routeLabel · '
-                              '${route.distanceKilometres.toStringAsFixed(1)} km '
-                              '· about ${route.durationMinutes} min',
-                              key: const Key(
-                                'driver-trip-route-distance-duration',
-                              ),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
+                          border: Border.all(color: AsmColors.driverLine),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: AsmColors.driverMintAction,
+                            ),
+                            SizedBox(width: AsmSpacing.space12),
+                            Expanded(
+                              child: Text(
+                                'No map pin for this stop. Use the place name '
+                                "and the passenger's message.",
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                     if (passengerNote?.trim().isNotEmpty == true) ...[
                       const SizedBox(height: AsmSpacing.space16),
                       Container(
@@ -1148,16 +1175,6 @@ class _DriverTripCompletedScreen extends StatelessWidget {
                   label: 'Route',
                   value: '$pickupLocation → $destination',
                   icon: Icons.route_outlined,
-                ),
-                const _DriverTripDetailRow(
-                  label: 'Distance',
-                  value: '9.5 km',
-                  icon: Icons.straighten_outlined,
-                ),
-                const _DriverTripDetailRow(
-                  label: 'Duration',
-                  value: '23 min',
-                  icon: Icons.schedule_outlined,
                 ),
                 _DriverTripDetailRow(
                   label: 'Passengers',
