@@ -26,8 +26,8 @@ void main() {
     await tester.pumpWidget(_bookingTestApp());
 
     expect(find.text('Book a ride'), findsWidgets);
-    expect(find.text('Where are you?'), findsWidgets);
-    expect(find.text('e.g. Kempinski Hotel, Accra Mall'), findsOneWidget);
+    expect(find.text('Name this place for your driver'), findsWidgets);
+    expect(find.text('e.g. Main gate, blue kiosk'), findsOneWidget);
     expect(find.text('Where to?'), findsOneWidget);
     expect(
       find.text('e.g. Kotoka Airport, University of Ghana'),

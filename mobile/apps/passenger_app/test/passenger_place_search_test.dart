@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/location/location_search_page.dart';
+import 'package:passenger_app/location/passenger_landmarks.dart';
 import 'package:passenger_app/location/passenger_places.dart';
 import 'package:passenger_app/location/pickup_source.dart';
 import 'package:passenger_app/passenger_home.dart';
@@ -31,11 +32,12 @@ const _osuSuggestion = PassengerPlaceSuggestion(
   mainText: 'Osu Castle',
   secondaryText: 'Osu, Accra',
 );
+// Picking a suggestion brings back the place and the passenger's own
+// words - never the suggestion's (Google's) text.
 const _accraMallPlace = PassengerPickedPlace(
   placeId: 'ChIJ_accra_mall',
   coordinates: _accraMall,
-  mainText: 'Accra Mall',
-  secondaryText: 'Tetteh Quarshie, Accra',
+  typedText: 'Accra',
 );
 
 void main() {
@@ -100,8 +102,7 @@ void main() {
         final picked = result.value as PassengerPickedPlace;
         expect(picked.placeId, 'ChIJ_accra_mall');
         expect(picked.coordinates, _accraMall);
-        expect(picked.mainText, 'Accra Mall');
-        expect(picked.secondaryText, 'Tetteh Quarshie, Accra');
+        expect(picked.typedText, 'Accra');
       },
     );
 
@@ -215,6 +216,80 @@ void main() {
       expect(places.detailsCalls, isEmpty);
     });
 
+    testWidgets('the Google Maps logo shows with the suggestions, 16 to 19 '
+        'dp tall', (tester) async {
+      await _pumpSearch(tester, places: _FakePlaces());
+      expect(
+        find.byKey(const Key('place-search-google-maps-logo')),
+        findsNothing,
+      );
+
+      await _search(tester, 'Accra');
+
+      final logo = find.byKey(const Key('place-search-google-maps-logo'));
+      expect(logo, findsOneWidget);
+      final image = tester.widget<Image>(logo);
+      expect(
+        (image.image as AssetImage).assetName,
+        'assets/google_maps/google_maps_logo_gray.png',
+      );
+      final height = tester.getSize(logo).height;
+      expect(height, greaterThanOrEqualTo(16));
+      expect(height, lessThanOrEqualTo(19));
+      // Inside the suggestions' own container, with the results.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('place-suggestions-panel')),
+          matching: logo,
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Google content sits apart from our own', (tester) async {
+      var tokens = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: LocationSearchPage(
+            kind: LocationSearchKind.pickup,
+            placesRepository: _FakePlaces(),
+            sessionTokenFactory: () => 'token-${++tokens}',
+            recentDescriptions: const ['Gate 2'],
+          ),
+        ),
+      );
+      await _search(tester, 'Accra');
+
+      final panel = find.byKey(const Key('place-suggestions-panel'));
+      // A bordered panel of its own: neither the passenger's typed-text
+      // button nor their recent places are inside it.
+      final decorated = tester.widget<Container>(panel);
+      expect((decorated.decoration! as BoxDecoration).border, isNotNull);
+      expect(
+        find.descendant(
+          of: panel,
+          matching: find.byKey(const Key('use-location-description')),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: panel,
+          matching: find.byKey(const ValueKey('recent-location-0')),
+        ),
+        findsNothing,
+      );
+      final logoBox = tester.getRect(
+        find.byKey(const Key('place-search-google-maps-logo')),
+      );
+      final panelBox = tester.getRect(panel);
+      // Clear space: at least 10 dp to the panel's sides and top of the logo,
+      // 5 dp below.
+      expect(logoBox.left - panelBox.left, greaterThanOrEqualTo(10));
+      expect(logoBox.bottom, lessThanOrEqualTo(panelBox.bottom - 5));
+    });
+
     testWidgets('destination search never calls place search', (tester) async {
       final places = _FakePlaces();
       await _pumpSearch(
@@ -260,8 +335,8 @@ void main() {
     );
 
     testWidgets(
-      'a picked place moves the pin, keeps its name, and still waits for '
-      'Confirm',
+      'a picked place moves the pin, is named from our own data, and still '
+      'waits for Confirm',
       (tester) async {
         final geocoder = _RecordingGeocoder();
         final selections = <PassengerPickupSelection>[];
@@ -285,8 +360,10 @@ void main() {
           find.byKey(const Key('passenger-home-pickup-address-text')),
           findsOneWidget,
         );
-        expect(find.text('Accra Mall'), findsOneWidget);
-        expect(geocoder.calls, isNot(contains(_accraMall)));
+        // Google's EEA terms: no Google text beside the map.
+        expect(find.text('Accra Mall'), findsNothing);
+        expect(find.text('Near the pin'), findsOneWidget);
+        expect(geocoder.calls, contains(_accraMall));
         expect(selections, isEmpty);
 
         await tester.tap(find.byKey(const Key('confirm-pickup')));
@@ -295,9 +372,57 @@ void main() {
         expect(selections.single.coordinates, _accraMall);
         expect(selections.single.source, PassengerPickupSource.search);
         expect(selections.single.placeId, 'ChIJ_accra_mall');
-        expect(selections.single.address, 'Accra Mall, Tetteh Quarshie, Accra');
+        expect(selections.single.address, 'Near the pin');
+        expect(selections.single.ownWords, 'Accra');
       },
     );
+
+    testWidgets('with no landmark near, a picked place is named in the '
+        "passenger's own words", (tester) async {
+      final selections = <PassengerPickupSelection>[];
+      await _pumpHome(
+        tester,
+        location: _ScriptedLocation(),
+        geocoder: const _NoLandmarkGeocoder(),
+        onOpenPickupSearch: (_) async => _accraMallPlace,
+        onConfirmPickup: selections.add,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('passenger-home-pickup-address-row')),
+      );
+      await tester.pump();
+      await tester.pump(asmFakeMapAnimationDuration);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Accra'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pump();
+      expect(selections.single.address, 'Accra');
+    });
+
+    testWidgets('with no landmark and no words, a pin is a Pinned location', (
+      tester,
+    ) async {
+      final selections = <PassengerPickupSelection>[];
+      await _pumpHome(
+        tester,
+        location: _ScriptedLocation(),
+        geocoder: const _NoLandmarkGeocoder(),
+        onConfirmPickup: selections.add,
+      );
+
+      _map(tester)
+        ..dragTo(_dragged)
+        ..release();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Pinned location'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pump();
+      expect(selections.single.address, 'Pinned location');
+      expect(selections.single.ownWords, isNull);
+    });
 
     testWidgets('dragging after a search is dragged and drops the place', (
       tester,
@@ -406,7 +531,7 @@ void main() {
         ..release();
       await tester.pump(const Duration(seconds: 1));
 
-      expect(find.text('Accra Mall'), findsOneWidget);
+      expect(find.text('Near the pin'), findsOneWidget);
       await tester.tap(find.byKey(const Key('confirm-pickup')));
       await tester.pump();
 
@@ -421,8 +546,7 @@ void main() {
       const underThePin = PassengerPickedPlace(
         placeId: 'ChIJ_under_the_pin',
         coordinates: passengerHomePickupDefaultCenter,
-        mainText: 'Under the pin',
-        secondaryText: 'Accra',
+        typedText: 'Under the pin',
       );
       final selections = <PassengerPickupSelection>[];
       await _pumpHome(
@@ -601,7 +725,60 @@ void main() {
       expect(body['pickup_longitude'], _accraMall.longitude);
       expect(body['pickup_source'], 'search');
       expect(body['pickup_place_id'], 'ChIJ_accra_mall');
-      expect(body['pickup_location'], 'Accra Mall, Tetteh Quarshie, Accra');
+      // The passenger's own words, never the suggestion text.
+      expect(body['pickup_location'], 'Accra');
+      expect(body.values.join(' '), isNot(contains('Tetteh')));
+    });
+
+    testWidgets(
+      'the booking page asks the passenger to name the place, starting from '
+      'their own words',
+      (tester) async {
+        await _pumpShell(
+          tester,
+          client: _RecordingApiClient(),
+          location: _ScriptedLocation(),
+          places: _FakePlaces(),
+        );
+
+        await tester.tap(
+          find.byKey(const Key('passenger-home-pickup-address-row')),
+        );
+        await tester.pumpAndSettle();
+        await _search(tester, 'Accra');
+        await tester.tap(find.byKey(const ValueKey('place-suggestion-0')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirm-pickup')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Name this place for your driver'), findsOneWidget);
+        final field = tester.widget<TextFormField>(
+          find.byKey(const Key('booking-pickup')),
+        );
+        expect(field.controller!.text, 'Accra');
+      },
+    );
+
+    testWidgets('with no words, the booking page starts from the pin label', (
+      tester,
+    ) async {
+      await _pumpShell(
+        tester,
+        client: _RecordingApiClient(),
+        location: _ScriptedLocation(),
+      );
+
+      _map(tester)
+        ..dragTo(_dragged)
+        ..release();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.byKey(const Key('confirm-pickup')));
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextFormField>(
+        find.byKey(const Key('booking-pickup')),
+      );
+      expect(field.controller!.text, 'Near the pin');
     });
 
     testWidgets('dragged, end to end: pickup_source dragged and no place', (
@@ -897,6 +1074,14 @@ class _Granted implements PassengerHomeLocationPermissionService {
 
   @override
   Future<bool> openLocationSettings() async => true;
+}
+
+class _NoLandmarkGeocoder implements PassengerHomeReverseGeocoder {
+  const _NoLandmarkGeocoder();
+
+  @override
+  Future<String> reverseGeocode(LatLng coordinates) async =>
+      throw const NoLandmarkNearbyException();
 }
 
 class _NamedGeocoder implements PassengerHomeReverseGeocoder {

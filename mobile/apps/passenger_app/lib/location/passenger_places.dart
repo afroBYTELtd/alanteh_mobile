@@ -39,22 +39,19 @@ final class PassengerPlaceLocation {
   final LatLng coordinates;
 }
 
-/// A suggestion the passenger picked, with where it is.
+/// A suggestion the passenger picked: where it is, and the words they
+/// typed to find it. The suggestion's own text stays on the search screen -
+/// Google's EEA terms keep it off any map, and it is never stored.
 final class PassengerPickedPlace {
   const PassengerPickedPlace({
     required this.placeId,
     required this.coordinates,
-    required this.mainText,
-    required this.secondaryText,
+    required this.typedText,
   });
 
   final String placeId;
   final LatLng coordinates;
-  final String mainText;
-  final String secondaryText;
-
-  String get fullAddress =>
-      secondaryText.isEmpty ? mainText : '$mainText, $secondaryText';
+  final String typedText;
 }
 
 /// Place search for the pickup through the backend (`/api/places/`).
