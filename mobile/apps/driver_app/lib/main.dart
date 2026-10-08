@@ -22,6 +22,7 @@ import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
 import 'notifications/push_device_registration.dart';
 import 'notifications/push_notification_runtime.dart';
+import 'notifications/trip_offer_channel.dart';
 import 'readiness/driver_shift_check_submission.dart';
 import 'safety/driver_trip_safety.dart';
 
@@ -30,8 +31,15 @@ export 'driver_shell.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await prepareAndroidPush(
+      createOfferChannel: ensureTripOfferChannel,
+      startFirebase: () async {
+        await Firebase.initializeApp();
+        FirebaseMessaging.onBackgroundMessage(
+          firebaseMessagingBackgroundHandler,
+        );
+      },
+    );
   }
 
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
@@ -996,9 +1004,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         key: Key('driver-session-restoring'),
         backgroundColor: AsmColors.driverVisualSurface,
         body: Center(
-          child: CircularProgressIndicator(
-            color: AsmColors.driverMintAction,
-          ),
+          child: CircularProgressIndicator(color: AsmColors.driverMintAction),
         ),
       );
     }
