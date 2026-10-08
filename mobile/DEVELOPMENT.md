@@ -162,3 +162,34 @@ installed for every test by `test/flutter_test_config.dart`.
 
 Device checks from China need the phone's VPN on: Google Maps, Places and
 OpenStreetMap are blocked there, while the ALANTEH backend is not.
+
+## 8. Driver trip map
+
+The driver trip map is a Google map too (`packages/asm_maps`), showing only
+real data: the pickup pin, the destination pin once the driver has
+accepted, and the driver's own position ("you" dot). No route, distance or
+time is drawn; Navigate hands off to the Google Maps app.
+
+Keys work as in section 7, for the driver app:
+`apps/driver_app/android/local.properties` (`MAPS_API_KEY=...`, restricted
+to Maps SDK for Android, package `io.alanteh.driver` and its SHA-1s) and
+`apps/driver_app/ios/Flutter/Secrets.xcconfig`. The driver app also needs
+iOS 15 or later. Debug test builds need the API base URL from section 2;
+without it the app opens on "Invalid argument (baseUrl)".
+
+The camera follows `asmCameraFit` (`packages/asm_maps`): the leg's pin is
+always in view; a driver more than 50 km from it is left out of the frame
+(Google cannot zoom out far enough to show both and would sit over the
+middle of them); within 150 m the map shows the pin close up.
+
+Device check status (Android, 8 Oct 2026, commit 1513218, debug build
+SHA-256 475a45e3):
+
+- Verified: the pickup pin shows close up on first open; Navigate opens
+  the Google Maps app with directions to the pickup; the camera holds on
+  the pickup while there is no location fix.
+- **Not verified on a device:** the camera after a real location fix far
+  from the pickup (it should stay close up on the pin, not move to the
+  sea), and the "you" dot after that fix. The test phone had no location
+  fix that day. Re-check both at the next booking-based phone test, after
+  confirming the phone has a fix (blue dot in Google Maps) before booking.
