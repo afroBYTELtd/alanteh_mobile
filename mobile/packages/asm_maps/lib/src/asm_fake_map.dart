@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'asm_camera_fit.dart';
 import 'asm_map_view.dart';
 
 /// How long [AsmFakeMapState.animateTo] takes.
@@ -94,17 +95,15 @@ class AsmFakeMapState extends State<AsmFakeMap> implements AsmMapController {
 
   @override
   Future<void> fitPoints(List<LatLng> points) async {
-    if (points.isEmpty) {
+    final fit = asmCameraFit(points);
+    if (fit == null) {
       return;
     }
     _fittedPoints = List.unmodifiable(points);
-    final latitudes = points.map((point) => point.latitude).toList();
-    final longitudes = points.map((point) => point.longitude).toList();
-    double middle(List<double> values) =>
-        (values.reduce((a, b) => a < b ? a : b) +
-            values.reduce((a, b) => a > b ? a : b)) /
-        2;
-    await animateTo(LatLng(middle(latitudes), middle(longitudes)));
+    await animateTo(switch (fit) {
+      AsmCameraCloseUp(:final point) => point,
+      final AsmCameraBounds bounds => bounds.centre,
+    });
   }
 
   @override

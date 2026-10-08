@@ -18,6 +18,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Lets tests stand in for the native map; the version google_maps_flutter
+  # 2.18.1 already resolves.
+  google_maps_flutter_platform_interface: 2.17.0
 
 flutter:
   uses-material-design: true

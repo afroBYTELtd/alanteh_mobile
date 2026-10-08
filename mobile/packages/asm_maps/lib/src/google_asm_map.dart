@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -7,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gm;
 import 'package:latlong2/latlong.dart';
 
+import 'asm_camera_fit.dart';
 import 'asm_map_view.dart';
 
 Widget buildGoogleAsmMap(BuildContext context, AsmMapView view) {
@@ -216,49 +216,33 @@ class _GoogleAsmMapController implements AsmMapController {
 
   @override
   Future<void> fitPoints(List<LatLng> points) async {
-    if (points.isEmpty) {
-      return;
-    }
-    if (points.length == 1) {
-      return _controller.animateCamera(
-        gm.CameraUpdate.newLatLngZoom(
-          _google(points.single),
-          fitSinglePointZoom,
-        ),
-      );
-    }
-    final latitudes = points.map((point) => point.latitude);
-    final longitudes = points.map((point) => point.longitude);
-    final bounds = gm.LatLngBounds(
-      southwest: gm.LatLng(
-        latitudes.reduce(math.min),
-        longitudes.reduce(math.min),
-      ),
-      northeast: gm.LatLng(
-        latitudes.reduce(math.max),
-        longitudes.reduce(math.max),
-      ),
-    );
-    try {
-      await _controller.animateCamera(
-        gm.CameraUpdate.newLatLngBounds(bounds, fitPaddingPixels),
-      );
-    } on Object {
-      // Bounds need the map laid out; before then, centre on the points.
-      await _controller.animateCamera(
-        gm.CameraUpdate.newLatLng(
-          gm.LatLng(
-            (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
-            (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
-          ),
-        ),
-      );
+    switch (asmCameraFit(points)) {
+      case null:
+        return;
+      case AsmCameraCloseUp(:final point):
+        return _controller.animateCamera(
+          gm.CameraUpdate.newLatLngZoom(_google(point), fitSinglePointZoom),
+        );
+      case final AsmCameraBounds bounds:
+        try {
+          await _controller.animateCamera(
+            gm.CameraUpdate.newLatLngBounds(
+              gm.LatLngBounds(
+                southwest: _google(bounds.southwest),
+                northeast: _google(bounds.northeast),
+              ),
+              fitPaddingPixels,
+            ),
+          );
+        } on Object {
+          // Bounds need the map laid out; before then, centre on the points.
+          await _controller.animateCamera(
+            gm.CameraUpdate.newLatLng(_google(bounds.centre)),
+          );
+        }
     }
   }
 }
-
-/// The zoom [AsmMapController.fitPoints] uses for a single point.
-const fitSinglePointZoom = 16.0;
 
 /// The margin, in logical pixels, [AsmMapController.fitPoints] keeps
 /// around several points.

@@ -83,6 +83,26 @@ void main() {
     expect(_map(tester).fittedPoints, const [_pickup, _driver]);
   });
 
+  testWidgets('a driver far from the pickup still sees the pickup', (
+    tester,
+  ) async {
+    // 8 Oct phone check: the phone was in China, the pickup in Accra.
+    const farAway = LatLng(31.30, 120.75);
+    final positions = _Positions();
+    await _pumpTrip(tester, status: 'driver_accepted', positions: positions);
+    await tester.pump(asmFakeMapAnimationDuration);
+
+    positions.emit(farAway);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(asmFakeMapAnimationDuration);
+
+    final map = _map(tester);
+    expect(map.fittedPoints, const [_pickup, farAway]);
+    expect(map.camera.center, _pickup);
+    expect(_marker(map, AsmMapMarkerStyle.deviceLocation)?.position, farAway);
+  });
+
   testWidgets('on the trip the leg is the destination', (tester) async {
     await _pumpTrip(tester, status: 'in_progress');
     await tester.pump(asmFakeMapAnimationDuration);

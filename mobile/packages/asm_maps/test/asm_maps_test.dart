@@ -103,6 +103,24 @@ void main() {
       expect(events.log.last, startsWith('idle '));
     });
 
+    testWidgets('fitPoints keeps the first point when another is too far', (
+      tester,
+    ) async {
+      final events = _Events();
+      await tester.pumpWidget(_map(events));
+      await tester.pump();
+
+      const pickup = LatLng(5.6037, -0.1870);
+      const farAway = LatLng(31.30, 120.75);
+      final done = events.controller!.fitPoints(const [pickup, farAway]);
+      await tester.pump(asmFakeMapAnimationDuration);
+      await done;
+
+      final map = tester.state<AsmFakeMapState>(find.byType(AsmFakeMap));
+      expect(map.fittedPoints, const [pickup, farAway]);
+      expect(map.camera.center, pickup);
+    });
+
     testWidgets('fitPoints with one point centres on it', (tester) async {
       final events = _Events();
       await tester.pumpWidget(_map(events));

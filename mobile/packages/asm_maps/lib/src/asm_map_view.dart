@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'asm_camera_fit.dart';
 import 'google_asm_map.dart';
 
 /// Where the map camera is looking.
@@ -60,8 +61,10 @@ abstract interface class AsmMapController {
   /// for a gesture: move started, moves, then idle.
   Future<void> animateTo(LatLng target);
 
-  /// Moves the camera so every point in [points] is in view: one point is
-  /// shown close up, several are framed with a margin. Nothing for none.
+  /// Moves the camera to frame [points] as [asmCameraFit] decides: the
+  /// first point is always in view; others are framed with it, with a
+  /// margin, unless they are too far from it to frame (left out) or so close
+  /// that a close-up on it shows them. Nothing for none.
   Future<void> fitPoints(List<LatLng> points);
 }
 
