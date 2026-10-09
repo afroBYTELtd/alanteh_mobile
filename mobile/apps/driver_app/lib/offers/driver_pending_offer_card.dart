@@ -162,7 +162,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _lookUpPickupTimeIfNeeded(current);
     } else if (!_responded && !_locked) {
       final snapshot = _store.snapshot;
-      if (snapshot != null && snapshot.receivedAt >= _openedAt) {
+      // Only a fetch that arrived after the card opened can say the offer
+      // is gone; one from the same moment came before it.
+      if (snapshot != null && snapshot.receivedAt > _openedAt) {
         _endedMessage = driverOfferNoLongerAvailableMessage;
       }
     }
@@ -346,6 +348,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     if (_expired) {
       return 'Offer expired';
     }
+    if (_endedMessage != null) {
+      return 'Offer ended';
+    }
     final expiry = _offer?.expiry;
     if (expiry is DriverOfferNeverExpires) {
       return 'Waiting for your response';
@@ -368,6 +373,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     final fare = offer?.fareAmount;
     final passengers = offer?.passengerCount;
     final note = _endedMessage ?? _message;
+    // An ended card that never got its details has nothing to load.
+    final pickupLine =
+        offer?.pickupLabel ?? (_locked ? null : 'Loading trip details…');
 
     return Container(
       key: const Key('offer-card'),
@@ -399,12 +407,14 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
               ),
             ],
           ),
-          const SizedBox(height: AsmSpacing.space12),
-          Text(
-            offer?.pickupLabel ?? 'Loading trip details…',
-            key: const Key('offer-card-pickup'),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
+          if (pickupLine != null) ...[
+            const SizedBox(height: AsmSpacing.space12),
+            Text(
+              pickupLine,
+              key: const Key('offer-card-pickup'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ],
           if (offer != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             Row(

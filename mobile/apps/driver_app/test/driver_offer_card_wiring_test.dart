@@ -32,6 +32,8 @@ void main() {
     expect(find.byKey(const Key('offer-screen')), findsOneWidget);
     expect(find.byKey(const Key('offer-card')), findsOneWidget);
     expect(find.text('Respond quickly'), findsOneWidget);
+    // The fetch from before the tap does not count as the offer being gone.
+    expect(find.text('This offer is no longer available'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     app.source.release([_offer('TRIP-1', pickup: 'Accra Mall')]);

@@ -240,6 +240,57 @@ void main() {
     });
   });
 
+  group('an ended card says so plainly', () {
+    // Seen on the test phone (9 Oct): a card opened from a push after the
+    // offer had gone showed "Loading trip details…" above "This offer is no
+    // longer available", with "Respond quickly" in the corner.
+    testWidgets('gone before its details arrived: "Offer ended", and no '
+        '"Loading trip details…"', (tester) async {
+      await h.pump(tester);
+      await h.deliver(tester, const []);
+
+      expect(h.countdownText(tester), 'Offer ended');
+      expect(find.text('Loading trip details…'), findsNothing);
+      expect(find.text('This offer is no longer available'), findsOneWidget);
+      await h.dispose(tester);
+    });
+
+    testWidgets('gone after its details arrived: "Offer ended", and the '
+        'pickup stays', (tester) async {
+      await h.pump(tester);
+      await h.deliver(tester, [h.offer()]);
+      await h.deliver(tester, const []);
+
+      expect(h.countdownText(tester), 'Offer ended');
+      expect(find.text('Accra Mall, Spintex Road'), findsOneWidget);
+      await h.dispose(tester);
+    });
+
+    testWidgets('Accept refused as ended: "Offer ended" in the corner, not '
+        'the countdown', (tester) async {
+      await h.pump(tester);
+      await h.deliver(tester, [h.offer()]);
+      h.gateway.acceptError = const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.offerUnavailable,
+        message: driverOfferNoLongerAvailableMessage,
+      );
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.countdownText(tester), 'Offer ended');
+      await h.dispose(tester);
+    });
+
+    testWidgets('time ran out: still "Offer expired"', (tester) async {
+      await h.pump(tester);
+      await h.deliver(tester, [h.offer()]);
+      await h.advance(tester, const Duration(seconds: 39));
+
+      expect(h.countdownText(tester), 'Offer expired');
+      await h.dispose(tester);
+    });
+  });
+
   testWidgets('several offers: says how many more are waiting', (tester) async {
     await h.pump(tester);
     await h.deliver(tester, [
