@@ -9,6 +9,9 @@ import '../network/driver_offer_response_resilience.dart';
 import 'driver_pending_offer_store.dart';
 import 'driver_pending_offers.dart';
 
+/// The fare line when the server sends no fare: staff confirm fares.
+const driverOfferFareToBeConfirmed = 'Fare to be confirmed by dispatch';
+
 typedef DriverOfferPickupTimeLookup =
     Future<DriverOfferPickupTime> Function(String tripReference);
 
@@ -357,7 +360,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
             key: const Key('offer-card-pickup'),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           ),
-          if (passengers != null || fare != null) ...[
+          if (offer != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             Row(
               children: [
@@ -369,16 +372,28 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
                       color: AsmColors.driverTextSecondary,
                     ),
                   ),
-                const Spacer(),
-                if (fare != null)
-                  Text(
-                    [offer?.fareCurrency, fare].whereType<String>().join(' '),
+                const SizedBox(width: AsmSpacing.space12),
+                Expanded(
+                  child: Text(
+                    fare == null
+                        ? driverOfferFareToBeConfirmed
+                        : [
+                            offer.fareCurrency,
+                            fare,
+                          ].whereType<String>().join(' '),
                     key: const Key('offer-card-fare'),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    textAlign: TextAlign.end,
+                    style: fare == null
+                        ? const TextStyle(
+                            color: AsmColors.driverTextSecondary,
+                            fontWeight: FontWeight.w700,
+                          )
+                        : const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
                   ),
+                ),
               ],
             ),
           ],

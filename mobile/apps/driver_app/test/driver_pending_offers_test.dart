@@ -133,7 +133,7 @@ void main() {
       expect(offer.fareAmount, '35');
     });
 
-    test('details are not known without a pickup label or without a fare', () {
+    test('details are known with a pickup label, with or without a fare', () {
       final snapshot = parse(
         response([
           realOffer(reference: 'TRIP-NOPICKUP', pickup: '  '),
@@ -141,7 +141,9 @@ void main() {
         ]),
       );
       expect(snapshot.offerFor('TRIP-NOPICKUP')!.detailsKnown, isFalse);
-      expect(snapshot.offerFor('TRIP-NOFARE')!.detailsKnown, isFalse);
+      // The server sets no fare on most offers; staff confirm it later.
+      expect(snapshot.offerFor('TRIP-NOFARE')!.detailsKnown, isTrue);
+      expect(snapshot.offerFor('TRIP-NOFARE')!.fareAmount, isNull);
     });
 
     test('entries without a trip reference are dropped', () {

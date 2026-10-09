@@ -28,7 +28,8 @@ abstract final class DriverOfferCardTiming {
     Duration(seconds: 2),
   ];
 
-  /// Without the pickup label and fare after this long, the card says
+  /// Without the pickup label, or not knowing whether the ride is for now
+  /// or later, after this long the card says
   /// "Couldn't load trip details" (the countdown keeps running).
   static const detailsTimeout = Duration(seconds: 8);
 

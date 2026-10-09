@@ -67,9 +67,10 @@ final class DriverPendingOffer {
   final DriverOfferPickupTime pickupTime;
   final DateTime? assignedAt;
 
-  /// The pickup label and the fare: what a driver must see before Accept.
-  bool get detailsKnown =>
-      (pickupLabel?.trim().isNotEmpty ?? false) && fareAmount != null;
+  /// The pickup label: what a driver must see before Accept, together with
+  /// whether the ride is for now or later. Not the fare: the server sets
+  /// none on most offers, and staff confirm it later.
+  bool get detailsKnown => pickupLabel?.trim().isNotEmpty ?? false;
 }
 
 /// One pending-offers response, and when it arrived on the monotonic clock.

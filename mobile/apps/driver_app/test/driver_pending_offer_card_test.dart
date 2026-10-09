@@ -90,9 +90,35 @@ void main() {
   });
 
   group('Accept waits for what the driver must see', () {
-    testWidgets('no fare: Accept stays off', (tester) async {
+    testWidgets(
+      'no fare (the usual case): Accept on, and "Fare to be confirmed by '
+      'dispatch" in the fare position',
+      (tester) async {
+        await h.pump(tester);
+        await h.deliver(tester, [h.offer(fare: null)]);
+
+        expect(h.enabled(tester, 'offer-card-accept'), isTrue);
+        expect(
+          tester.widget<Text>(find.byKey(const Key('offer-card-fare'))).data,
+          'Fare to be confirmed by dispatch',
+        );
+
+        // No fare is not missing detail: no "Couldn't load" after 8 s.
+        await h.advance(tester, const Duration(seconds: 8));
+        expect(find.text("Couldn't load trip details"), findsNothing);
+
+        await tester.tap(find.byKey(const Key('offer-card-accept')));
+        await tester.pump();
+        h.gateway.finishAccept();
+        await tester.pumpAndSettle(const Duration(milliseconds: 10));
+        expect(h.accepted, [_ref]);
+        await h.dispose(tester);
+      },
+    );
+
+    testWidgets('no pickup label: Accept stays off', (tester) async {
       await h.pump(tester);
-      await h.deliver(tester, [h.offer(fare: null)]);
+      await h.deliver(tester, [h.offer(pickup: null)]);
       expect(h.enabled(tester, 'offer-card-accept'), isFalse);
       await h.dispose(tester);
     });
