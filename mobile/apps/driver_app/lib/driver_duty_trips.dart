@@ -800,7 +800,12 @@ String? driverScheduledPickupBadge(DriverAssignedTrip trip, {DateTime? now}) {
   if (parsed == null) {
     return null;
   }
-  final pickup = parsed.toLocal();
+  return driverScheduledPickupLabel(parsed, now: now);
+}
+
+/// "Scheduled pickup · 14:30 today": the badge text for a pickup time.
+String driverScheduledPickupLabel(DateTime pickupTime, {DateTime? now}) {
+  final pickup = pickupTime.toLocal();
   final today = (now ?? DateTime.now()).toLocal();
   final sameDay =
       pickup.year == today.year &&
@@ -809,6 +814,16 @@ String? driverScheduledPickupBadge(DriverAssignedTrip trip, {DateTime? now}) {
   return sameDay
       ? 'Scheduled pickup · ${_driverClock(pickup)} today'
       : 'Scheduled pickup · ${_driverDayAndClock(pickup)}';
+}
+
+/// The scheduled-pickup badge the trip detail shows, for other screens.
+class DriverScheduledPickupBadge extends StatelessWidget {
+  const DriverScheduledPickupBadge({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => _DriverScheduledPickupBadge(label: label);
 }
 
 class _DriverScheduledPickupBadge extends StatelessWidget {
@@ -2132,6 +2147,31 @@ final class _DriverDeclineSelection {
 
   final DriverDeclineReason reason;
   final String? reasonNote;
+}
+
+/// A decline reason the driver chose, with the note for "other".
+final class DriverDeclineChoice {
+  const DriverDeclineChoice({required this.reason, this.reasonNote});
+
+  final DriverDeclineReason reason;
+  final String? reasonNote;
+}
+
+/// The decline-reason sheet the trip detail uses; the offer card shares it.
+Future<DriverDeclineChoice?> showDriverDeclineReasonSheet(
+  BuildContext context,
+) async {
+  final selection = await showModalBottomSheet<_DriverDeclineSelection>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => const _DriverDeclineReasonSheet(),
+  );
+  return selection == null
+      ? null
+      : DriverDeclineChoice(
+          reason: selection.reason,
+          reasonNote: selection.reasonNote,
+        );
 }
 
 class _DriverDeclineReasonSheet extends StatefulWidget {
