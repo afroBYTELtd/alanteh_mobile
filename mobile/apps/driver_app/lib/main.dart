@@ -696,9 +696,15 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   AppLifecycleListener? _lifecycle;
   bool _offerScreenOpen = false;
 
+  /// What a "Session expired" panel's Sign in does: end the session and
+  /// show this sign-in screen.
+  Future<void> _signInAgain() =>
+      _handleOfferSessionExpired(driverSessionExpiredMessage);
+
   @override
   void initState() {
     super.initState();
+    DriverSessionEnd.signIn = _signInAgain;
     _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
       widget.authTokenStore,
     );
@@ -1062,6 +1068,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
     _lifecycle?.dispose();
     _offers?.dispose();
+    // Tear-offs of the same method on the same object are equal.
+    if (DriverSessionEnd.signIn == _signInAgain) {
+      DriverSessionEnd.signIn = null;
+    }
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();

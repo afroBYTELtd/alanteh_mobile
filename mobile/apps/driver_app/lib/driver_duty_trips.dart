@@ -26,6 +26,13 @@ const driverTripsEmptyMessage =
     'When the Control Center assigns a trip, it will appear here.';
 const driverSessionExpiredMessage =
     'Session expired. Please sign in again to continue.';
+
+/// Ends the driver's session and shows the sign-in screen. The signed-in
+/// app sets it; each "Session expired" panel offers it as Sign in.
+abstract final class DriverSessionEnd {
+  static Future<void> Function()? signIn;
+}
+
 const driverOfferSubmissionTelemetryQaEnabled = bool.fromEnvironment(
   'ASM_DRIVER_OFFER_SUBMISSION_TELEMETRY_QA',
   defaultValue: false,
@@ -1042,9 +1049,8 @@ class _DriverDutySummaryPanelState extends State<DriverDutySummaryPanel> {
 
         final error = snapshot.error;
         if (error is DriverDutyApiException && error.isSessionExpired) {
-          return _DriverErrorCard(
+          return _DriverSessionExpiredCard(
             key: const Key('driver-duty-session-expired'),
-            title: driverSessionExpiredMessage,
             onRetry: _refresh,
           );
         }
@@ -1221,9 +1227,8 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
 
           final error = snapshot.error;
           if (error is DriverDutyApiException && error.isSessionExpired) {
-            return _DriverErrorCard(
+            return _DriverSessionExpiredCard(
               key: const Key('driver-trips-session-expired'),
-              title: driverSessionExpiredMessage,
               onRetry: _refresh,
             );
           }
@@ -1708,9 +1713,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
 
             final error = snapshot.error;
             if (error is DriverDutyApiException && error.isSessionExpired) {
-              return _DriverErrorCard(
+              return _DriverSessionExpiredCard(
                 key: const Key('driver-trip-detail-session-expired'),
-                title: driverSessionExpiredMessage,
                 onRetry: _refresh,
               );
             }
@@ -2333,6 +2337,50 @@ class _DriverErrorCard extends StatelessWidget {
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_outlined),
             label: const Text('Refresh'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Session expired": Sign in when the signed-in app has said how
+/// ([DriverSessionEnd.signIn]); otherwise Refresh, as before.
+class _DriverSessionExpiredCard extends StatelessWidget {
+  const _DriverSessionExpiredCard({super.key, required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final signIn = DriverSessionEnd.signIn;
+    if (signIn == null) {
+      return _DriverErrorCard(
+        title: driverSessionExpiredMessage,
+        onRetry: onRetry,
+      );
+    }
+    return _DriverCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.lock_clock_outlined,
+            color: AsmColors.driverMintAction,
+            size: 32,
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          const Text(
+            driverSessionExpiredMessage,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          TextButton.icon(
+            key: const Key('driver-session-sign-in'),
+            onPressed: () => unawaited(signIn()),
+            icon: const Icon(Icons.login_outlined),
+            label: const Text('Sign in'),
           ),
         ],
       ),
