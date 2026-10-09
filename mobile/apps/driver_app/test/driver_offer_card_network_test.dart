@@ -50,39 +50,41 @@ void main() {
       expect(waits, const [Duration(seconds: 1), Duration(seconds: 2)]);
     });
 
-    test('Accept with the card schedule retries with the same key and stops',
-        () async {
-      final api = _ScriptedOfferApi([
-        _networkFailure(),
-        _networkFailure(),
-        _networkFailure(),
-        _networkFailure(),
-      ]);
-      final gateway = ApiDriverOfferResponseGateway(
-        apiGateway: api,
-        tokenStore: await _tokenStore(),
-        retryPolicy: GhanaRetryPolicy(
-          delay: (_) async {},
-          backoffs: DriverOfferCardTiming.responseRetryBackoffs,
-        ),
-      );
-
-      await expectLater(
-        gateway.accept(
-          tripReference: 'TRIP-1',
-          idempotencyKey: 'DRIVER-OFFER-TRIP-1-key',
-          deviceTimestamp: '2026-10-09T10:00:00.000Z',
-        ),
-        throwsA(
-          isA<DriverOfferResponseException>().having(
-            (e) => e.type,
-            'type',
-            DriverOfferResponseFailureType.temporarilyUnavailable,
+    test(
+      'Accept with the card schedule retries with the same key and stops',
+      () async {
+        final api = _ScriptedOfferApi([
+          _networkFailure(),
+          _networkFailure(),
+          _networkFailure(),
+          _networkFailure(),
+        ]);
+        final gateway = ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: await _tokenStore(),
+          retryPolicy: GhanaRetryPolicy(
+            delay: (_) async {},
+            backoffs: DriverOfferCardTiming.responseRetryBackoffs,
           ),
-        ),
-      );
-      expect(api.keys, List.filled(3, 'DRIVER-OFFER-TRIP-1-key'));
-    });
+        );
+
+        await expectLater(
+          gateway.accept(
+            tripReference: 'TRIP-1',
+            idempotencyKey: 'DRIVER-OFFER-TRIP-1-key',
+            deviceTimestamp: '2026-10-09T10:00:00.000Z',
+          ),
+          throwsA(
+            isA<DriverOfferResponseException>().having(
+              (e) => e.type,
+              'type',
+              DriverOfferResponseFailureType.temporarilyUnavailable,
+            ),
+          ),
+        );
+        expect(api.keys, List.filled(3, 'DRIVER-OFFER-TRIP-1-key'));
+      },
+    );
   });
 
   group('offer-ended mappings', () {
@@ -106,15 +108,19 @@ void main() {
       fail('accept should have failed');
     }
 
-    test('404 after an expiry race: "This offer expired", never retried',
-        () async {
-      final error = await acceptFailure(
-        _apiFailure(404, {'detail': 'Trip offer is not assigned to this driver.'}),
-      );
-      expect(error.type, DriverOfferResponseFailureType.offerUnavailable);
-      expect(error.message, 'This offer expired');
-      expect(error.permitsManualRetry, isFalse);
-    });
+    test(
+      '404 after an expiry race: "This offer expired", never retried',
+      () async {
+        final error = await acceptFailure(
+          _apiFailure(404, {
+            'detail': 'Trip offer is not assigned to this driver.',
+          }),
+        );
+        expect(error.type, DriverOfferResponseFailureType.offerUnavailable);
+        expect(error.message, 'This offer expired');
+        expect(error.permitsManualRetry, isFalse);
+      },
+    );
 
     test('offer_not_pending: "This offer is no longer available"', () async {
       final error = await acceptFailure(
@@ -159,52 +165,60 @@ void main() {
       );
     });
 
-    test('the controller treats an ended offer as final, with no retry',
-        () async {
-      final controller = DriverOfferResponseResilienceController(
-        queue: _MemoryQueue(),
-        gateway: ApiDriverOfferResponseGateway(
-          apiGateway: _ScriptedOfferApi([_apiFailure(404, {})]),
-          tokenStore: await _tokenStore(),
-          retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
-        ),
-        tripReference: 'TRIP-1',
-        driverId: 'DRV-1',
-        verifyServerState: (_) async =>
-            const DriverOfferVerifiedTrip(tripReference: 'TRIP-1', status: ''),
-      );
-      await controller.prepareWhenOfferDisplayed();
-      final result = await controller.accept();
-      expect(result.disposition, DriverOfferAcceptanceDisposition.rejected);
-      expect(result.permitsManualRetry, isFalse);
-      expect(result.message, 'This offer expired');
-    });
+    test(
+      'the controller treats an ended offer as final, with no retry',
+      () async {
+        final controller = DriverOfferResponseResilienceController(
+          queue: _MemoryQueue(),
+          gateway: ApiDriverOfferResponseGateway(
+            apiGateway: _ScriptedOfferApi([_apiFailure(404, {})]),
+            tokenStore: await _tokenStore(),
+            retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
+          ),
+          tripReference: 'TRIP-1',
+          driverId: 'DRV-1',
+          verifyServerState: (_) async => const DriverOfferVerifiedTrip(
+            tripReference: 'TRIP-1',
+            status: '',
+          ),
+        );
+        await controller.prepareWhenOfferDisplayed();
+        final result = await controller.accept();
+        expect(result.disposition, DriverOfferAcceptanceDisposition.rejected);
+        expect(result.permitsManualRetry, isFalse);
+        expect(result.message, 'This offer expired');
+      },
+    );
   });
 
   group('pending-offers source', () {
     test('a success returns the body', () async {
-      final client = _ScriptedClient([_ok({'offers': [], 'server_time': 'x'})]);
+      final client = _ScriptedClient([
+        _ok({'offers': [], 'server_time': 'x'}),
+      ]);
       final result = await ApiDriverPendingOffersSource(client: client).fetch();
       expect(result, isA<DriverPendingOffersFetched>());
       expect(client.paths, ['/api/driver/trips/pending/']);
     });
 
-    test('a network failure is tried once more after 1 s, then given up',
-        () async {
-      final waits = <Duration>[];
-      final client = _ScriptedClient([
-        _networkFailure(),
-        _networkFailure(),
-        _ok({'offers': []}),
-      ]);
-      final result = await ApiDriverPendingOffersSource(
-        client: client,
-        delay: (d) async => waits.add(d),
-      ).fetch();
-      expect(result, isA<DriverPendingOffersUnavailable>());
-      expect(client.paths.length, 2);
-      expect(waits, const [Duration(seconds: 1)]);
-    });
+    test(
+      'a network failure is tried once more after 1 s, then given up',
+      () async {
+        final waits = <Duration>[];
+        final client = _ScriptedClient([
+          _networkFailure(),
+          _networkFailure(),
+          _ok({'offers': []}),
+        ]);
+        final result = await ApiDriverPendingOffersSource(
+          client: client,
+          delay: (d) async => waits.add(d),
+        ).fetch();
+        expect(result, isA<DriverPendingOffersUnavailable>());
+        expect(client.paths.length, 2);
+        expect(waits, const [Duration(seconds: 1)]);
+      },
+    );
 
     test('a 502 is retried like a network failure', () async {
       final client = _ScriptedClient([
@@ -239,42 +253,50 @@ void main() {
     test('a 401 whose refresh is rejected is a session end', () async {
       final result = await ApiDriverPendingOffersSource(
         client: _ScriptedClient([_apiFailure<Object?>(401, null)]),
-        refreshAccessToken: () async => DriverTokenRefreshOutcome.sessionExpired,
+        refreshAccessToken: () async =>
+            DriverTokenRefreshOutcome.sessionExpired,
       ).fetch();
       expect(result, isA<DriverPendingOffersSessionExpired>());
     });
 
-    test('a 401 whose refresh could not reach the server is unavailable',
-        () async {
-      final result = await ApiDriverPendingOffersSource(
-        client: _ScriptedClient([_apiFailure<Object?>(401, null)]),
-        refreshAccessToken: () async =>
-            DriverTokenRefreshOutcome.temporarilyUnavailable,
-      ).fetch();
-      expect(result, isA<DriverPendingOffersUnavailable>());
-    });
+    test(
+      'a 401 whose refresh could not reach the server is unavailable',
+      () async {
+        final result = await ApiDriverPendingOffersSource(
+          client: _ScriptedClient([_apiFailure<Object?>(401, null)]),
+          refreshAccessToken: () async =>
+              DriverTokenRefreshOutcome.temporarilyUnavailable,
+        ).fetch();
+        expect(result, isA<DriverPendingOffersUnavailable>());
+      },
+    );
   });
 
   group('pending-offer store', () {
-    test('records arrival and request duration on the monotonic clock',
-        () async {
-      final clock = _ManualClock(const Duration(seconds: 50));
-      final source = _ControlledSource();
-      final store = DriverPendingOfferStore(source: source, clock: clock);
+    test(
+      'records arrival and request duration on the monotonic clock',
+      () async {
+        final clock = _ManualClock(const Duration(seconds: 50));
+        final source = _ControlledSource();
+        final store = DriverPendingOfferStore(source: source, clock: clock);
 
-      final refreshing = store.refresh();
-      clock.value = const Duration(seconds: 50, milliseconds: 700);
-      source.complete(_offersJson());
-      await refreshing;
+        final refreshing = store.refresh();
+        clock.value = const Duration(seconds: 50, milliseconds: 700);
+        source.complete(_offersJson());
+        await refreshing;
 
-      final snapshot = store.snapshot!;
-      expect(snapshot.receivedAt, const Duration(seconds: 50, milliseconds: 700));
-      expect(snapshot.requestDuration, const Duration(milliseconds: 700));
-      // 40 s on the server, minus the 0.7 s request.
-      expect(store.remaining('TRIP-1'), const Duration(milliseconds: 39300));
-      clock.value = const Duration(seconds: 60, milliseconds: 700);
-      expect(store.remaining('TRIP-1'), const Duration(milliseconds: 29300));
-    });
+        final snapshot = store.snapshot!;
+        expect(
+          snapshot.receivedAt,
+          const Duration(seconds: 50, milliseconds: 700),
+        );
+        expect(snapshot.requestDuration, const Duration(milliseconds: 700));
+        // 40 s on the server, minus the 0.7 s request.
+        expect(store.remaining('TRIP-1'), const Duration(milliseconds: 39300));
+        clock.value = const Duration(seconds: 60, milliseconds: 700);
+        expect(store.remaining('TRIP-1'), const Duration(milliseconds: 29300));
+      },
+    );
 
     test('callers during a running fetch share it', () async {
       final source = _ControlledSource();
@@ -373,23 +395,28 @@ void main() {
   });
 
   group('driver identity cache', () {
-    test('remembers the driver reference and duty from each duty fetch',
-        () async {
-      final inner = _DutyGateway(
-        const DriverDutySummary(driverReference: 'DRV-7', dutyStatus: 'online'),
-      );
-      final gateway = DriverIdentityCachingDutyGateway(inner);
-      expect(gateway.driverReference, isNull);
-      expect(gateway.onDuty, isFalse);
+    test(
+      'remembers the driver reference and duty from each duty fetch',
+      () async {
+        final inner = _DutyGateway(
+          const DriverDutySummary(
+            driverReference: 'DRV-7',
+            dutyStatus: 'online',
+          ),
+        );
+        final gateway = DriverIdentityCachingDutyGateway(inner);
+        expect(gateway.driverReference, isNull);
+        expect(gateway.onDuty, isFalse);
 
-      await gateway.fetchDuty();
-      expect(gateway.driverReference, 'DRV-7');
-      expect(gateway.onDuty, isTrue);
+        await gateway.fetchDuty();
+        expect(gateway.driverReference, 'DRV-7');
+        expect(gateway.onDuty, isTrue);
 
-      gateway.clear();
-      expect(gateway.driverReference, isNull);
-      expect(gateway.onDuty, isFalse);
-    });
+        gateway.clear();
+        expect(gateway.driverReference, isNull);
+        expect(gateway.onDuty, isFalse);
+      },
+    );
 
     test('a failed duty fetch keeps nothing it did not see', () async {
       final gateway = DriverIdentityCachingDutyGateway(_DutyGateway(null));

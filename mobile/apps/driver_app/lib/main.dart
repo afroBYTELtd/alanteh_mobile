@@ -23,6 +23,10 @@ import 'network/ghana_network_resilience.dart';
 import 'notifications/push_device_registration.dart';
 import 'notifications/push_notification_runtime.dart';
 import 'notifications/trip_offer_channel.dart';
+import 'offers/driver_offer_card_wiring.dart';
+import 'offers/driver_offer_coordinator.dart';
+import 'offers/driver_pending_offer_store.dart';
+import 'offers/driver_pending_offers_panel.dart';
 import 'readiness/driver_shift_check_submission.dart';
 import 'safety/driver_trip_safety.dart';
 
@@ -412,6 +416,8 @@ class DriverApp extends StatelessWidget {
     this.driverSafetyAlertRepository,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
+    this.offerCoordinator,
+    this.offerCardControllerFactory,
     super.key,
   });
 
@@ -431,6 +437,10 @@ class DriverApp extends StatelessWidget {
   final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
+
+  /// Tests only: the pending-offer coordinator and the card's Accept/Decline.
+  final DriverOfferCoordinator? offerCoordinator;
+  final DriverOfferResponseControllerFactory? offerCardControllerFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -544,6 +554,9 @@ class DriverApp extends StatelessWidget {
             accessTokenRefresh: sessionRefreshController?.refresh,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
             pushMessageSource: pushMessageSource,
+            apiBaseUrl: apiBaseUrl,
+            offerCoordinator: offerCoordinator,
+            offerCardControllerFactory: offerCardControllerFactory,
           )
         : DriverShell(
             configuration: configuration,
@@ -600,6 +613,9 @@ class DriverLoginShell extends StatefulWidget {
     this.accessTokenRefresh,
     this.pushDeviceRegistrarFactory,
     this.pushMessageSource,
+    this.apiBaseUrl,
+    this.offerCoordinator,
+    this.offerCardControllerFactory,
     super.key,
   });
 
@@ -619,6 +635,11 @@ class DriverLoginShell extends StatefulWidget {
   final DriverAccessTokenRefresh? accessTokenRefresh;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
+  final String? apiBaseUrl;
+
+  /// Tests only; built from [apiBaseUrl] otherwise.
+  final DriverOfferCoordinator? offerCoordinator;
+  final DriverOfferResponseControllerFactory? offerCardControllerFactory;
 
   @override
   State<DriverLoginShell> createState() => _DriverLoginShellState();
@@ -638,6 +659,17 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   _sessionAwareOfferResponseControllerFactory;
   late final PushDeviceRegistrar? _pushDeviceRegistrar;
 
+  /// The duty gateway, remembering the driver reference for offers.
+  DriverDutyGateway? _dutyGateway;
+
+  /// Pending offers: null when the app has no API address (then a push tap
+  /// opens the trip detail, as before).
+  DriverOfferCoordinator? _offers;
+  DriverOfferResponseControllerFactory? _offerCardFactory;
+  DriverOfferPickupTimeLookupFn? _offerPickupTimeLookup;
+  AppLifecycleListener? _lifecycle;
+  bool _offerScreenOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -645,7 +677,154 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       widget.authTokenStore,
     );
     _configureSessionAwareOfferResponseFactory();
+    _configureOffers();
     _restoreStoredSession();
+  }
+
+  void _configureOffers() {
+    final duty = widget.driverDutyGateway;
+    final identity = duty == null
+        ? null
+        : duty is DriverIdentityCachingDutyGateway
+        ? duty
+        : DriverIdentityCachingDutyGateway(duty);
+    _dutyGateway = identity ?? duty;
+
+    final offers =
+        widget.offerCoordinator ??
+        driverOfferCoordinatorFor(
+          baseUrl: widget.apiBaseUrl,
+          tokenStore: widget.authTokenStore,
+          identity: identity,
+          refreshAccessToken: widget.accessTokenRefresh,
+          onSessionExpired: () =>
+              _handleOfferSessionExpired(driverSessionExpiredMessage),
+        );
+    final baseUrl = widget.apiBaseUrl;
+    final factory =
+        widget.offerCardControllerFactory ??
+        (offers != null && identity != null && baseUrl != null
+            ? driverOfferCardControllerFactoryFor(
+                baseUrl: baseUrl,
+                tokenStore: widget.authTokenStore,
+                identity: identity,
+                refreshAccessToken: widget.accessTokenRefresh,
+              )
+            : null);
+    if (offers == null || factory == null) {
+      return;
+    }
+    _offers = offers;
+    _offerCardFactory = (tripReference) async {
+      final controller = await factory(tripReference);
+      controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
+      return controller;
+    };
+    _offerPickupTimeLookup = identity == null
+        ? null
+        : driverOfferPickupTimeLookupFor(identity);
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) =>
+          offers.setForeground(state == AppLifecycleState.resumed),
+    );
+  }
+
+  /// Sign-out, session end or another driver: no offer, cached driver or
+  /// queued tap survives into the next session.
+  void _forgetOffers() {
+    _offers
+      ?..setOnDuty(false)
+      ..clear();
+  }
+
+  Future<void> _openOfferScreen(String tripReference) async {
+    final offers = _offers;
+    final factory = _offerCardFactory;
+    if (offers == null || factory == null || _offerScreenOpen || !mounted) {
+      return;
+    }
+    _offerScreenOpen = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => DriverPendingOfferScreen(
+            tripReference: tripReference,
+            coordinator: offers,
+            controllerFactory: factory,
+            pickupTimeLookup: _offerPickupTimeLookup,
+            onAccepted: (screenContext, reference) =>
+                Navigator.of(screenContext).pushReplacement<void, void>(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _tripDetailScreen(reference),
+                  ),
+                ),
+          ),
+        ),
+      );
+    } finally {
+      _offerScreenOpen = false;
+    }
+  }
+
+  Widget _tripDetailScreen(String tripReference) {
+    return DriverTripDetailScreen(
+      gateway: _dutyGateway!,
+      tripReference: tripReference,
+      actionControllerFactory: widget.driverTripActionControllerFactory,
+      offerResponseControllerFactory:
+          _sessionAwareOfferResponseControllerFactory,
+      ratingGateway: widget.driverRatingGateway,
+      driverTrustedContactRepository: widget.driverTrustedContactRepository,
+      driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
+    );
+  }
+
+  void _openTripDetail(String tripReference) {
+    if (!mounted || _dutyGateway == null) {
+      return;
+    }
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => _tripDetailScreen(tripReference),
+        ),
+      ),
+    );
+  }
+
+  /// A push tap that arrived before sign-in opens its card only while the
+  /// offer is still pending, and only within about two minutes.
+  Future<void> _openQueuedOfferTap(DriverQueuedOfferTap? tap) async {
+    final offers = _offers;
+    if (tap == null || offers == null) {
+      return;
+    }
+    await offers.store.refresh();
+    if (!mounted || !_signedIn) {
+      return;
+    }
+    if (offers.store.offerFor(tap.tripReference) != null) {
+      await _openOfferScreen(tap.tripReference);
+    }
+  }
+
+  Future<bool> _handleForegroundOffer(DriverPushNavigationIntent intent) async {
+    final offers = _offers;
+    if (offers == null || intent.eventType != 'driver_assigned') {
+      return false;
+    }
+    await offers.offerPushed();
+    if (!mounted || !_signedIn) {
+      return true;
+    }
+    if (_offerScreenOpen) {
+      return true;
+    }
+    if (offers.store.offerFor(intent.tripReference) == null) {
+      return false;
+    }
+    unawaited(_openOfferScreen(intent.tripReference));
+    return true;
   }
 
   @override
@@ -669,6 +848,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _handleOfferSessionExpired(String message) async {
+    _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
     try {
@@ -705,6 +885,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         accessToken.isEmpty ||
         refreshToken == null ||
         refreshToken.isEmpty) {
+      _forgetOffers();
       if (hadStoredSession) {
         await widget.authTokenStore.clearTokens();
       }
@@ -741,8 +922,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             _loginError = null;
           });
           unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
+          unawaited(_openQueuedOfferTap(_offers?.takeTap()));
           return;
         case DriverTokenRefreshOutcome.temporarilyUnavailable:
+          _forgetOffers();
           setState(() {
             _signedIn = false;
             _isSigningIn = false;
@@ -753,6 +936,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
           });
           return;
         case DriverTokenRefreshOutcome.sessionExpired:
+          _forgetOffers();
           _pushDeviceRegistrar?.endAuthenticatedSession();
           await widget.authTokenStore.clearTokens();
           if (!mounted) {
@@ -772,6 +956,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     try {
       state = await widget.authService.refresh();
     } on Object {
+      _forgetOffers();
       await widget.authTokenStore.clearTokens();
       if (!mounted || _localDemoOpened) {
         return;
@@ -800,9 +985,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         _loginError = null;
       });
       unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
+      unawaited(_openQueuedOfferTap(_offers?.takeTap()));
       return;
     }
 
+    _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     await widget.authTokenStore.clearTokens();
     if (!mounted) {
@@ -823,12 +1010,15 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (pushDeviceRegistrar != null) {
       unawaited(pushDeviceRegistrar.dispose());
     }
+    _lifecycle?.dispose();
+    _offers?.dispose();
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
   }
 
   Future<void> _continueLocalDemo() async {
+    _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
@@ -876,11 +1066,16 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
       if (state.isAuthenticated &&
           state.session?.accountType == AuthAccountType.driver) {
+        // A new session, perhaps another driver: start with nothing from
+        // the last one except a push tap made on this sign-in screen.
+        final tap = _offers?.takeTap();
+        _forgetOffers();
         setState(() {
           _isSigningIn = false;
           _signedIn = true;
         });
         unawaited(_pushDeviceRegistrar?.registerForAuthenticatedSession());
+        unawaited(_openQueuedOfferTap(tap));
         return;
       }
 
@@ -912,10 +1107,22 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   Future<void> _handlePushNavigationIntent(
     DriverPushNavigationIntent intent,
   ) async {
-    if (!_signedIn ||
-        _localDemoOpened ||
-        !mounted ||
-        intent.eventType != 'driver_assigned') {
+    if (_localDemoOpened || !mounted || intent.eventType != 'driver_assigned') {
+      return;
+    }
+
+    final offers = _offers;
+    if (offers != null) {
+      if (!_signedIn) {
+        offers.queueTap(intent.tripReference);
+        return;
+      }
+      unawaited(offers.offerPushed());
+      await _openOfferScreen(intent.tripReference);
+      return;
+    }
+
+    if (!_signedIn) {
       return;
     }
 
@@ -949,6 +1156,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _signOut() async {
+    _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
     await widget.authTokenStore.clearTokens();
@@ -970,6 +1178,39 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _buildContent(context);
+    final listens =
+        _pushDeviceRegistrar != null || widget.pushMessageSource != null;
+    if (_offers == null || !listens) {
+      return content;
+    }
+    // With offers, the listener runs from app start, so a tap that opened
+    // the app is seen (and queued) while the session is still restoring.
+    return FirebaseForegroundPushListener(
+      onNavigationIntent: _handlePushNavigationIntent,
+      onForegroundIntent: _handleForegroundOffer,
+      foregroundEnabled: _signedIn,
+      messageSource: widget.pushMessageSource,
+      child: content,
+    );
+  }
+
+  Widget? _pendingOffersPanel(Widget waitingPanel) {
+    final offers = _offers;
+    final factory = _offerCardFactory;
+    if (offers == null || factory == null || !_signedIn) {
+      return null;
+    }
+    return DriverPendingOffersPanel(
+      coordinator: offers,
+      controllerFactory: factory,
+      waitingPanel: waitingPanel,
+      pickupTimeLookup: _offerPickupTimeLookup,
+      onAccepted: _openTripDetail,
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     if (_localDemoOpened || _signedIn) {
       final shell = DriverShell(
         configuration: widget.configuration,
@@ -978,18 +1219,24 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
         requestNotificationPermission: _signedIn
             ? _pushDeviceRegistrar?.requestNotificationPermission
             : null,
-        driverDutyGateway: widget.driverDutyGateway,
+        driverDutyGateway: _dutyGateway,
         driverTripActionControllerFactory:
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        pendingOffersPanelBuilder: _offers == null
+            ? null
+            : (waitingPanel) =>
+                  _pendingOffersPanel(waitingPanel) ?? waitingPanel,
+        onDutyChanged: _offers?.setOnDuty,
         driverShiftCheckController: widget.driverShiftCheckController,
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
         driverTrustedContactRepository: widget.driverTrustedContactRepository,
         driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
       );
-      return _signedIn &&
+      return _offers == null &&
+              _signedIn &&
               (_pushDeviceRegistrar != null || widget.pushMessageSource != null)
           ? FirebaseForegroundPushListener(
               onNavigationIntent: _handlePushNavigationIntent,

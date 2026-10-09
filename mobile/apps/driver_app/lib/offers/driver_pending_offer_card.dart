@@ -290,7 +290,8 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       unawaited(_store.refresh());
       return;
     }
-    _message = message ?? 'Could not send. Check your connection and try again.';
+    _message =
+        message ?? 'Could not send. Check your connection and try again.';
   }
 
   String get _countdownText {
@@ -364,7 +365,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
                   Text(
                     passengers == 1 ? '1 passenger' : '$passengers passengers',
                     key: const Key('offer-card-passengers'),
-                    style: const TextStyle(color: AsmColors.driverTextSecondary),
+                    style: const TextStyle(
+                      color: AsmColors.driverTextSecondary,
+                    ),
                   ),
                 const Spacer(),
                 if (fare != null)

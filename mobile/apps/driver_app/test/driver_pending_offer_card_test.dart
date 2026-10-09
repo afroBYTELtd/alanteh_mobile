@@ -19,19 +19,18 @@ void main() {
   setUp(() => h = _Harness());
 
   group('appears at once', () {
-    testWidgets(
-      'before any fetch: "Respond quickly", Decline on, Accept off',
-      (tester) async {
-        await h.pump(tester);
+    testWidgets('before any fetch: "Respond quickly", Decline on, Accept off', (
+      tester,
+    ) async {
+      await h.pump(tester);
 
-        expect(find.byKey(const Key('offer-card')), findsOneWidget);
-        expect(find.text('New trip request'), findsOneWidget);
-        expect(h.countdownText(tester), 'Respond quickly');
-        expect(h.enabled(tester, 'offer-card-decline'), isTrue);
-        expect(h.enabled(tester, 'offer-card-accept'), isFalse);
-        await h.dispose(tester);
-      },
-    );
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(find.text('New trip request'), findsOneWidget);
+      expect(h.countdownText(tester), 'Respond quickly');
+      expect(h.enabled(tester, 'offer-card-decline'), isTrue);
+      expect(h.enabled(tester, 'offer-card-accept'), isFalse);
+      await h.dispose(tester);
+    });
 
     testWidgets('fills in the pickup, passengers, fare and countdown', (
       tester,
@@ -215,9 +214,7 @@ void main() {
     });
   });
 
-  testWidgets('several offers: says how many more are waiting', (
-    tester,
-  ) async {
+  testWidgets('several offers: says how many more are waiting', (tester) async {
     await h.pump(tester);
     await h.deliver(tester, [
       h.offer(),
@@ -318,9 +315,7 @@ final class _Harness {
       tester.widget<Text>(find.byKey(const Key('offer-card-countdown'))).data;
 
   bool enabled(WidgetTester tester, String key) {
-    final button = tester.widget<ButtonStyleButton>(
-      find.byKey(Key(key)),
-    );
+    final button = tester.widget<ButtonStyleButton>(find.byKey(Key(key)));
     return button.onPressed != null;
   }
 

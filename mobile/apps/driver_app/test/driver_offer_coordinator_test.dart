@@ -22,22 +22,24 @@ void main() {
   });
 
   group('polling', () {
-    test('polls every 12 s only on duty, in front, with no card open',
-        () async {
-      coordinator.setForeground(true);
-      expect(coordinator.polling, isFalse);
+    test(
+      'polls every 12 s only on duty, in front, with no card open',
+      () async {
+        coordinator.setForeground(true);
+        expect(coordinator.polling, isFalse);
 
-      coordinator.setOnDuty(true);
-      expect(coordinator.polling, isTrue);
-      expect(timers.intervals.last, const Duration(seconds: 12));
-      await pumpEventQueue();
-      final afterStart = source.calls;
-      expect(afterStart, 1, reason: 'going on duty fetches at once');
+        coordinator.setOnDuty(true);
+        expect(coordinator.polling, isTrue);
+        expect(timers.intervals.last, const Duration(seconds: 12));
+        await pumpEventQueue();
+        final afterStart = source.calls;
+        expect(afterStart, 1, reason: 'going on duty fetches at once');
 
-      timers.tick();
-      await pumpEventQueue();
-      expect(source.calls, afterStart + 1);
-    });
+        timers.tick();
+        await pumpEventQueue();
+        expect(source.calls, afterStart + 1);
+      },
+    );
 
     test('pauses in the background and fetches at once on return', () async {
       coordinator

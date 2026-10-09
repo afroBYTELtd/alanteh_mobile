@@ -67,10 +67,7 @@ void main() {
       expect(offer.passengerCount, 2);
       expect(offer.fareAmount, '35.00');
       expect(offer.fareCurrency, 'GHS');
-      expect(
-        offer.assignedAt,
-        DateTime.utc(2026, 10, 9, 10, 0, 0, 250),
-      );
+      expect(offer.assignedAt, DateTime.utc(2026, 10, 9, 10, 0, 0, 250));
       expect(snapshot.serverTime, DateTime.utc(2026, 10, 9, 10, 0, 5, 250));
       expect(offer.detailsKnown, isTrue);
     });
@@ -85,9 +82,7 @@ void main() {
     });
 
     test('expiry: null is a staff offer that never expires', () {
-      final offer = parse(
-        response([realOffer(expiresAt: null)]),
-      ).offers.single;
+      final offer = parse(response([realOffer(expiresAt: null)])).offers.single;
       expect(offer.expiry, isA<DriverOfferNeverExpires>());
     });
 
@@ -105,8 +100,7 @@ void main() {
       expect(offer.expiry, isA<DriverOfferExpiryUnknown>());
     });
 
-    test('pickup time: missing is unknown, null is now, a value is a time',
-        () {
+    test('pickup time: missing is unknown, null is now, a value is a time', () {
       final snapshot = parse(
         response([
           realOffer(reference: 'TRIP-A'),
@@ -187,25 +181,22 @@ void main() {
   });
 
   group('countdown', () {
-    test(
-      'time left = expires_at - server_time - request duration, '
-      'then counts down on the monotonic clock',
-      () {
-        // expires 10:00:45.250, server_time 10:00:05.250 -> 40 s on the
-        // server; the 0.8 s request is subtracted -> 39.2 s at arrival.
-        final snapshot = parse(response([realOffer()]));
-        final offer = snapshot.offers.single;
+    test('time left = expires_at - server_time - request duration, '
+        'then counts down on the monotonic clock', () {
+      // expires 10:00:45.250, server_time 10:00:05.250 -> 40 s on the
+      // server; the 0.8 s request is subtracted -> 39.2 s at arrival.
+      final snapshot = parse(response([realOffer()]));
+      final offer = snapshot.offers.single;
 
-        expect(
-          snapshot.remaining(offer, const Duration(seconds: 100)),
-          const Duration(milliseconds: 39200),
-        );
-        expect(
-          snapshot.remaining(offer, const Duration(seconds: 110)),
-          const Duration(milliseconds: 29200),
-        );
-      },
-    );
+      expect(
+        snapshot.remaining(offer, const Duration(seconds: 100)),
+        const Duration(milliseconds: 39200),
+      );
+      expect(
+        snapshot.remaining(offer, const Duration(seconds: 110)),
+        const Duration(milliseconds: 29200),
+      );
+    });
 
     test('never goes below zero', () {
       final snapshot = parse(response([realOffer()]));
@@ -236,10 +227,7 @@ void main() {
         ]),
       );
       for (final offer in snapshot.offers) {
-        expect(
-          snapshot.remaining(offer, const Duration(seconds: 100)),
-          isNull,
-        );
+        expect(snapshot.remaining(offer, const Duration(seconds: 100)), isNull);
       }
     });
   });

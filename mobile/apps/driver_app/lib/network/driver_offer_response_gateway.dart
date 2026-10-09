@@ -613,7 +613,8 @@ final class ApiDriverOfferResponseGateway
       response: firstResponse,
       tripReference: normalizedReference,
       expectedTripStatus: 'driver_declined',
-      unconfirmedMessage: 'The server response could not confirm offer decline.',
+      unconfirmedMessage:
+          'The server response could not confirm offer decline.',
     );
     if (firstReceipt != null) {
       return firstReceipt;
@@ -637,7 +638,8 @@ final class ApiDriverOfferResponseGateway
         response: retryResponse,
         tripReference: normalizedReference,
         expectedTripStatus: 'driver_declined',
-        unconfirmedMessage: 'The server response could not confirm offer decline.',
+        unconfirmedMessage:
+            'The server response could not confirm offer decline.',
       );
       if (retryReceipt != null) {
         return retryReceipt;
@@ -836,7 +838,9 @@ final class ApiDriverOfferResponseGateway
     }
 
     final body = error?.cause;
-    if (statusCode == 400 && body is Map && body['code'] == 'offer_not_pending') {
+    if (statusCode == 400 &&
+        body is Map &&
+        body['code'] == 'offer_not_pending') {
       return const DriverOfferResponseException(
         type: DriverOfferResponseFailureType.offerUnavailable,
         message: driverOfferNoLongerAvailableMessage,

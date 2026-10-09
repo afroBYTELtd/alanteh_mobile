@@ -823,7 +823,8 @@ class DriverScheduledPickupBadge extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => _DriverScheduledPickupBadge(label: label);
+  Widget build(BuildContext context) =>
+      _DriverScheduledPickupBadge(label: label);
 }
 
 class _DriverScheduledPickupBadge extends StatelessWidget {
@@ -2020,9 +2021,7 @@ class _DriverTripDetailCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.close_outlined),
-              label: Text(
-                offerDeclineSubmitting ? 'Declining...' : 'Decline',
-              ),
+              label: Text(offerDeclineSubmitting ? 'Declining...' : 'Decline'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
               ),
@@ -2182,8 +2181,7 @@ class _DriverDeclineReasonSheet extends StatefulWidget {
       _DriverDeclineReasonSheetState();
 }
 
-class _DriverDeclineReasonSheetState
-    extends State<_DriverDeclineReasonSheet> {
+class _DriverDeclineReasonSheetState extends State<_DriverDeclineReasonSheet> {
   DriverDeclineReason? _selected;
   final _noteController = TextEditingController();
 
