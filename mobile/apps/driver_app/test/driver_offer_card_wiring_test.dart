@@ -93,6 +93,22 @@ void main() {
       await app.dispose(tester);
     });
 
+    testWidgets('a launch tap handed over after the restore failed is '
+        'dropped too', (tester) async {
+      final app = _App(initial: _offerMessage('TRIP-1'), holdInitial: true)
+        ..auth.refreshRejected = true
+        ..source.offers = [_offer('TRIP-1')];
+      await app.pumpRestoring(tester);
+      await _settle(tester);
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+
+      app.push.releaseInitial();
+      await _settle(tester);
+      await app.signIn(tester);
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+      await app.dispose(tester);
+    });
+
     testWidgets('more than 2 minutes before sign-in: the tap is dropped', (
       tester,
     ) async {
@@ -160,13 +176,23 @@ void main() {
       await app.dispose(tester);
     });
 
-    testWidgets('signed out: nothing is shown', (tester) async {
+    testWidgets('signed out: nothing is shown and nothing is fetched', (
+      tester,
+    ) async {
       final app = _App();
       await app.pumpSignedOut(tester);
+      final fetches = app.source.calls;
 
       app.push.emitForeground(_offerMessage('TRIP-1'));
+      app.push.emitForeground(
+        const RemoteMessage(
+          data: <String, dynamic>{'event_type': 'trip_cancelled'},
+          notification: RemoteNotification(title: 'Trip cancelled'),
+        ),
+      );
       await _settle(tester);
       expect(find.byType(SnackBar), findsNothing);
+      expect(app.source.calls, fetches);
       await app.dispose(tester);
     });
   });
@@ -213,7 +239,8 @@ Map<String, Object?> _offer(String reference, {String pickup = 'Accra Mall'}) =>
     };
 
 final class _App {
-  _App({RemoteMessage? initial}) : push = _PushSource(initial);
+  _App({RemoteMessage? initial, bool holdInitial = false})
+    : push = _PushSource(initial, holdInitial: holdInitial);
 
   final _PushSource push;
   final clock = _ManualClock();
@@ -301,8 +328,11 @@ final class _Source implements DriverPendingOffersSource {
 
   int get held => _held.length;
 
+  var calls = 0;
+
   @override
   Future<DriverPendingOffersFetch> fetch() {
+    calls += 1;
     if (hold) {
       final pending = Completer<DriverPendingOffersFetch>();
       _held.add(pending);
@@ -466,9 +496,14 @@ final class _Queue implements DriverTripActionPersistentQueue {
 }
 
 final class _PushSource implements DriverPushMessageSource {
-  _PushSource(this.initialMessage);
+  _PushSource(this.initialMessage, {bool holdInitial = false})
+    : _initialGate = holdInitial ? Completer<void>() : null;
 
   final RemoteMessage? initialMessage;
+  final Completer<void>? _initialGate;
+
+  /// Hands over the launch tap now (Firebase can be slower than a restore).
+  void releaseInitial() => _initialGate?.complete();
   final _foreground = StreamController<RemoteMessage>.broadcast();
   final _opened = StreamController<RemoteMessage>.broadcast();
 
@@ -479,7 +514,10 @@ final class _PushSource implements DriverPushMessageSource {
   Stream<RemoteMessage> get openedMessages => _opened.stream;
 
   @override
-  Future<RemoteMessage?> getInitialMessage() async => initialMessage;
+  Future<RemoteMessage?> getInitialMessage() async {
+    await _initialGate?.future;
+    return initialMessage;
+  }
 
   void emitOpened(RemoteMessage message) => _opened.add(message);
 

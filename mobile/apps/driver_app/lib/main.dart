@@ -835,6 +835,9 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (offers == null || intent.eventType != 'driver_assigned') {
       return false;
     }
+    if (!_signedIn) {
+      return true;
+    }
     await offers.offerPushed();
     if (!mounted || !_signedIn) {
       return true;
