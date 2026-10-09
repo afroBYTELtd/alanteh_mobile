@@ -76,6 +76,8 @@ class DriverShell extends StatefulWidget {
     this.driverSafetyAlertRepository,
     this.deviceNow,
     this.onlineTransitionDuration = const Duration(seconds: 2),
+    this.pendingOffersPanelBuilder,
+    this.onDutyChanged,
     super.key,
   });
 
@@ -94,6 +96,12 @@ class DriverShell extends StatefulWidget {
   final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final DateTime Function()? deviceNow;
   final Duration onlineTransitionDuration;
+
+  /// See [DriverHome.pendingOffersPanelBuilder].
+  final Widget Function(Widget waitingPanel)? pendingOffersPanelBuilder;
+
+  /// Told after every change of on-duty (online with today's shift check).
+  final ValueChanged<bool>? onDutyChanged;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -893,7 +901,20 @@ class _DriverShellState extends State<DriverShell> {
       onOpenAssignedTrips: _openAssignedTrips,
       onOpenShiftSummary: _openShiftSummary,
       onSignOut: widget.onSignOut == null ? null : _signOut,
+      pendingOffersPanelBuilder: widget.pendingOffersPanelBuilder,
     );
+  }
+
+  bool? _reportedOnDuty;
+
+  void _reportDuty() {
+    final onDuty = _isOnline;
+    final report = widget.onDutyChanged;
+    if (report == null || onDuty == _reportedOnDuty) {
+      return;
+    }
+    _reportedOnDuty = onDuty;
+    WidgetsBinding.instance.addPostFrameCallback((_) => report(onDuty));
   }
 
   Widget get _selectedPage {
@@ -921,6 +942,7 @@ class _DriverShellState extends State<DriverShell> {
 
   @override
   Widget build(BuildContext context) {
+    _reportDuty();
     return Scaffold(
       body: _selectedPage,
       bottomNavigationBar: NavigationBar(

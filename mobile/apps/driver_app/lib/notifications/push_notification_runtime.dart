@@ -73,6 +73,9 @@ class FirebaseForegroundPushListener extends StatefulWidget {
   const FirebaseForegroundPushListener({
     required this.child,
     this.onNavigationIntent,
+    this.onInitialIntent,
+    this.onForegroundIntent,
+    this.foregroundEnabled = true,
     this.messageSource,
     super.key,
   });
@@ -80,6 +83,20 @@ class FirebaseForegroundPushListener extends StatefulWidget {
   final Widget child;
   final Future<void> Function(DriverPushNavigationIntent intent)?
   onNavigationIntent;
+
+  /// The tap that launched the app, if any. Without this, it goes to
+  /// [onNavigationIntent] like any other tap.
+  final Future<void> Function(DriverPushNavigationIntent intent)?
+  onInitialIntent;
+
+  /// An offer push while the app is open. Returns true when it was shown
+  /// (for example as the offer card); otherwise the text snackbar appears,
+  /// with an "Open" action.
+  final Future<bool> Function(DriverPushNavigationIntent intent)?
+  onForegroundIntent;
+
+  /// False while signed out: foreground messages are not shown.
+  final bool foregroundEnabled;
   final DriverPushMessageSource? messageSource;
 
   @override
@@ -116,10 +133,27 @@ class _FirebaseForegroundPushListenerState
       return;
     }
 
+    final onInitial = widget.onInitialIntent;
+    final intent = driverPushNavigationIntentFromMessage(message);
+    if (onInitial != null && intent != null) {
+      unawaited(onInitial(intent));
+      return;
+    }
     _handleNavigationMessage(message);
   }
 
-  void _handleForegroundMessage(RemoteMessage message) {
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    if (!widget.foregroundEnabled) {
+      return;
+    }
+    final intent = driverPushNavigationIntentFromMessage(message);
+    final onForeground = widget.onForegroundIntent;
+    if (intent != null && onForeground != null) {
+      final shown = await onForeground(intent);
+      if (shown || !mounted) {
+        return;
+      }
+    }
     final notification = message.notification;
     final title = notification?.title?.trim();
     final body = notification?.body?.trim();
@@ -143,10 +177,25 @@ class _FirebaseForegroundPushListenerState
         return;
       }
 
+      final open = widget.onNavigationIntent;
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(parts.join('\n'))));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(parts.join('\n')),
+            action: intent != null && open != null
+                ? SnackBarAction(
+                    key: const Key('push-snackbar-open'),
+                    label: 'Open',
+                    onPressed: () => unawaited(open(intent)),
+                  )
+                : null,
+          ),
+        );
     });
+    // Without a frame request, an idle screen would hold the snackbar back
+    // until something else redraws.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _handleOpenedMessage(RemoteMessage message) {

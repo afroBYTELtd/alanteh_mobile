@@ -34,6 +34,7 @@ class DriverHome extends StatelessWidget {
     required this.onOpenShiftSummary,
     this.onSignOut,
     this.greetingNow,
+    this.pendingOffersPanelBuilder,
     super.key,
   });
 
@@ -52,6 +53,13 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onOpenShiftSummary;
   final VoidCallback? onSignOut;
   final DateTime Function()? greetingNow;
+
+  /// Live pending offers in place of the static waiting panel, which it
+  /// receives to show when there is no offer.
+  final Widget Function(Widget waitingPanel)? pendingOffersPanelBuilder;
+
+  Widget _offersPanel(Widget waitingPanel) =>
+      pendingOffersPanelBuilder?.call(waitingPanel) ?? waitingPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -118,10 +126,12 @@ class DriverHome extends StatelessWidget {
           ),
           if (isOnShift) ...[
             const SizedBox(height: AsmSpacing.space16),
-            DriverWaitingForOfferPanel(
-              onPreviewIncomingOffer: localQaEnabled
-                  ? onPreviewIncomingRequest
-                  : null,
+            _offersPanel(
+              DriverWaitingForOfferPanel(
+                onPreviewIncomingOffer: localQaEnabled
+                    ? onPreviewIncomingRequest
+                    : null,
+              ),
             ),
           ],
           const SizedBox(height: AsmSpacing.space16),
