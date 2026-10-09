@@ -407,7 +407,14 @@ enum DriverOfferResponseFailureType {
   clientFailure,
   temporarilyUnavailable,
   badResponse,
+
+  /// The offer ended before the response: it expired (404) or is no longer
+  /// waiting for this driver (`offer_not_pending`). Never retried.
+  offerUnavailable,
 }
+
+const driverOfferNoLongerAvailableMessage = 'This offer is no longer available';
+const driverOfferExpiredMessage = 'This offer expired';
 
 final class DriverOfferResponseException implements Exception {
   const DriverOfferResponseException({
@@ -818,6 +825,21 @@ final class ApiDriverOfferResponseGateway
       return const DriverOfferResponseException(
         type: DriverOfferResponseFailureType.conflict,
         message: driverOfferConflictMessage,
+      );
+    }
+
+    if (statusCode == 404) {
+      return const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.offerUnavailable,
+        message: driverOfferExpiredMessage,
+      );
+    }
+
+    final body = error?.cause;
+    if (statusCode == 400 && body is Map && body['code'] == 'offer_not_pending') {
+      return const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.offerUnavailable,
+        message: driverOfferNoLongerAvailableMessage,
       );
     }
 

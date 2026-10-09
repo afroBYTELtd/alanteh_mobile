@@ -1,0 +1,325 @@
+import 'dart:async';
+
+import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
+import 'package:flutter/foundation.dart';
+
+import '../driver_duty_trips.dart';
+import '../network/driver_trip_action_gateway.dart';
+import 'driver_pending_offers.dart';
+
+const driverPendingOffersPath = '/api/driver/trips/pending/';
+
+/// Timings for the pending-offers card. An automatic offer lasts 45 s, so
+/// none of these may use up the window the way the general 15 s / four
+/// attempt policy does.
+abstract final class DriverOfferCardTiming {
+  /// Offer fetch: one try of at most 5 s, and one more after 1 s.
+  static const fetchConnectTimeout = Duration(seconds: 4);
+  static const fetchRequestTimeout = Duration(seconds: 5);
+  static const fetchRetryBackoffs = <Duration>[Duration(seconds: 1)];
+
+  /// Accept and decline: at most three tries of 6 s, 1 s and 2 s apart
+  /// (21 s worst case), all with the same idempotency key.
+  static const responseConnectTimeout = Duration(seconds: 4);
+  static const responseRequestTimeout = Duration(seconds: 6);
+  static const responseRetryBackoffs = <Duration>[
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
+
+  /// Without the pickup label and fare after this long, the card says
+  /// "Couldn't load trip details" (the countdown keeps running).
+  static const detailsTimeout = Duration(seconds: 8);
+
+  /// Foreground check while on duty.
+  static const pollInterval = Duration(seconds: 12);
+
+  /// A push tap that arrived before sign-in is dropped after this long.
+  static const coldStartTapLifetime = Duration(minutes: 2);
+}
+
+/// The phone's monotonic clock: unaffected by the user changing the time.
+abstract interface class DriverMonotonicClock {
+  Duration get now;
+}
+
+final class StopwatchDriverMonotonicClock implements DriverMonotonicClock {
+  StopwatchDriverMonotonicClock() : _stopwatch = Stopwatch()..start();
+
+  final Stopwatch _stopwatch;
+
+  @override
+  Duration get now => _stopwatch.elapsed;
+}
+
+/// What one fetch came to.
+sealed class DriverPendingOffersFetch {
+  const DriverPendingOffersFetch();
+}
+
+final class DriverPendingOffersFetched extends DriverPendingOffersFetch {
+  const DriverPendingOffersFetched(this.json);
+
+  final Object? json;
+}
+
+/// No network, a timeout or a server error: nothing was judged.
+final class DriverPendingOffersUnavailable extends DriverPendingOffersFetch {
+  const DriverPendingOffersUnavailable();
+}
+
+/// The server refused the session and a refresh could not restore it.
+final class DriverPendingOffersSessionExpired extends DriverPendingOffersFetch {
+  const DriverPendingOffersSessionExpired();
+}
+
+abstract interface class DriverPendingOffersSource {
+  Future<DriverPendingOffersFetch> fetch();
+}
+
+/// `GET /api/driver/trips/pending/` with the card's short timeouts. A 401
+/// refreshes the session once through the driver's shared refresh, then
+/// asks again.
+final class ApiDriverPendingOffersSource implements DriverPendingOffersSource {
+  ApiDriverPendingOffersSource({
+    required this.client,
+    this.refreshAccessToken,
+    Future<void> Function(Duration duration)? delay,
+  }) : _delay = delay ?? Future<void>.delayed;
+
+  /// A client built with [DriverOfferCardTiming]'s fetch timeouts.
+  final AsmApiClient client;
+  final DriverAccessTokenRefresh? refreshAccessToken;
+  final Future<void> Function(Duration duration) _delay;
+
+  @override
+  Future<DriverPendingOffersFetch> fetch() async {
+    var response = await _getWithOneRetry();
+    if (response.statusCode == 401) {
+      final refresh = refreshAccessToken;
+      if (refresh == null) {
+        return const DriverPendingOffersSessionExpired();
+      }
+      final DriverTokenRefreshOutcome outcome;
+      try {
+        outcome = await refresh();
+      } on Object {
+        return const DriverPendingOffersUnavailable();
+      }
+      switch (outcome) {
+        case DriverTokenRefreshOutcome.refreshed:
+          response = await _getWithOneRetry();
+        case DriverTokenRefreshOutcome.sessionExpired:
+          return const DriverPendingOffersSessionExpired();
+        case DriverTokenRefreshOutcome.temporarilyUnavailable:
+          return const DriverPendingOffersUnavailable();
+      }
+      if (response.statusCode == 401) {
+        return const DriverPendingOffersSessionExpired();
+      }
+    }
+    if (response.isSuccess) {
+      return DriverPendingOffersFetched(response.data);
+    }
+    return const DriverPendingOffersUnavailable();
+  }
+
+  Future<ApiResponse<Object?>> _getWithOneRetry() async {
+    var attempt = 0;
+    while (true) {
+      final response = await client.get<Object?>(driverPendingOffersPath);
+      if (attempt >= DriverOfferCardTiming.fetchRetryBackoffs.length ||
+          !_transient(response)) {
+        return response;
+      }
+      await _delay(DriverOfferCardTiming.fetchRetryBackoffs[attempt]);
+      attempt += 1;
+    }
+  }
+
+  static bool _transient(ApiResponse<Object?> response) {
+    final type = response.error?.type;
+    return type == AsmApiExceptionType.network ||
+        type == AsmApiExceptionType.timeout ||
+        type == AsmApiExceptionType.server ||
+        const <int>{502, 503, 504}.contains(response.statusCode);
+  }
+}
+
+/// The latest pending offers, shared by the home screen, the push handler
+/// and the offer card.
+final class DriverPendingOfferStore extends ChangeNotifier {
+  DriverPendingOfferStore({
+    required this.source,
+    DriverMonotonicClock? clock,
+    this.onSessionExpired,
+  }) : clock = clock ?? StopwatchDriverMonotonicClock();
+
+  final DriverPendingOffersSource source;
+  final DriverMonotonicClock clock;
+
+  /// Called when a fetch finds the session ended.
+  final Future<void> Function()? onSessionExpired;
+
+  DriverPendingOffersSnapshot? _snapshot;
+  bool _lastFetchFailed = false;
+  Future<void>? _inFlight;
+  final Set<String> _forgotten = <String>{};
+
+  /// Bumped by [clear]; a fetch started under an older generation is ignored.
+  int _generation = 0;
+
+  DriverPendingOffersSnapshot? get snapshot => _snapshot;
+
+  /// True after a fetch failed and before the next one succeeds.
+  bool get lastFetchFailed => _lastFetchFailed;
+
+  /// Fetch now. Callers that arrive while a fetch is running share it.
+  Future<void> refresh() {
+    return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _fetch() async {
+    final generation = _generation;
+    final started = clock.now;
+    DriverPendingOffersFetch result;
+    try {
+      result = await source.fetch();
+    } on Object {
+      result = const DriverPendingOffersUnavailable();
+    }
+    if (generation != _generation) {
+      return;
+    }
+    final arrived = clock.now;
+
+    switch (result) {
+      case DriverPendingOffersFetched(:final json):
+        try {
+          _snapshot = parseDriverPendingOffers(
+            json,
+            receivedAt: arrived,
+            requestDuration: arrived - started,
+          );
+          _forgotten.retainWhere(
+            (reference) => _snapshot!.offerFor(reference) != null,
+          );
+          _lastFetchFailed = false;
+        } on FormatException {
+          _lastFetchFailed = true;
+        }
+      case DriverPendingOffersUnavailable():
+        _lastFetchFailed = true;
+      case DriverPendingOffersSessionExpired():
+        clear();
+        final handler = onSessionExpired;
+        if (handler != null) {
+          await handler();
+        }
+        return;
+    }
+    notifyListeners();
+  }
+
+  /// Time left on the offer, or null when it has no countdown or is gone.
+  Duration? remaining(String tripReference) {
+    final current = _snapshot;
+    final offer = offerFor(tripReference);
+    if (current == null || offer == null) {
+      return null;
+    }
+    return current.remaining(offer, clock.now);
+  }
+
+  DriverPendingOffer? offerFor(String tripReference) {
+    if (_forgotten.contains(tripReference.trim())) {
+      return null;
+    }
+    return _snapshot?.offerFor(tripReference);
+  }
+
+  /// The offers still to answer, earliest expiry first.
+  List<DriverPendingOffer> get offers => <DriverPendingOffer>[
+    for (final offer in _snapshot?.offers ?? const <DriverPendingOffer>[])
+      if (!_forgotten.contains(offer.tripReference)) offer,
+  ];
+
+  /// The offer the card should show first: the earliest expiry.
+  DriverPendingOffer? get firstOffer {
+    final remainingOffers = offers;
+    return remainingOffers.isEmpty ? null : remainingOffers.first;
+  }
+
+  /// Drop one offer locally after it was answered or ran out.
+  void forget(String tripReference) {
+    if (_forgotten.add(tripReference.trim())) {
+      notifyListeners();
+    }
+  }
+
+  /// Sign-out, session end or a different driver: forget everything, and
+  /// ignore the answer of any fetch still running for the old session.
+  void clear() {
+    _generation += 1;
+    _snapshot = null;
+    _lastFetchFailed = false;
+    _forgotten.clear();
+    _inFlight = null;
+    notifyListeners();
+  }
+}
+
+/// Remembers the driver reference and duty status from every duty fetch the
+/// app already makes, so an offer never waits for a profile fetch.
+final class DriverIdentityCachingDutyGateway implements DriverDutyGateway {
+  DriverIdentityCachingDutyGateway(this.inner);
+
+  final DriverDutyGateway inner;
+
+  String? _driverReference;
+  bool _onDuty = false;
+  int _generation = 0;
+
+  String? get driverReference => _driverReference;
+
+  /// True when the last duty fetch said the driver is online.
+  bool get onDuty => _onDuty;
+
+  void clear() {
+    _generation += 1;
+    _driverReference = null;
+    _onDuty = false;
+  }
+
+  @override
+  Future<DriverDutySummary> fetchDuty() async {
+    final generation = _generation;
+    final summary = await inner.fetchDuty();
+    if (generation == _generation) {
+      final reference = summary.driverReference?.trim();
+      _driverReference = reference == null || reference.isEmpty
+          ? null
+          : reference;
+      _onDuty = summary.isOnline;
+    }
+    return summary;
+  }
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() => inner.fetchTrips();
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) =>
+      inner.fetchTripDetail(tripReference);
+}
+
+/// The stored access token, for the card's own clients.
+final class DriverStoredAccessTokenProvider implements TokenProvider {
+  const DriverStoredAccessTokenProvider(this.tokenStore);
+
+  final AuthTokenStore tokenStore;
+
+  @override
+  Future<String?> getAccessToken() => tokenStore.readAccessToken();
+}

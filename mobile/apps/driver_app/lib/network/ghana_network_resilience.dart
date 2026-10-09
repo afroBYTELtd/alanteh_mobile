@@ -471,29 +471,31 @@ final class GhanaRequestPolicy {
 }
 
 final class GhanaRetryPolicy {
-  const GhanaRetryPolicy({this.delay});
+  const GhanaRetryPolicy({
+    this.delay,
+    this.backoffs = GhanaRequestPolicy.retryBackoffs,
+  });
 
   final Future<void> Function(Duration duration)? delay;
+
+  /// The wait before each retry; one retry per entry. The default is the
+  /// Ghana schedule; the offer card passes a shorter one.
+  final List<Duration> backoffs;
 
   Future<ApiResponse<T>> execute<T>({
     required bool safeToRetry,
     required Future<ApiResponse<T>> Function() operation,
   }) async {
-    for (
-      var attempt = 0;
-      attempt < GhanaRequestPolicy.maxAttempts;
-      attempt += 1
-    ) {
+    for (var attempt = 0; attempt <= backoffs.length; attempt += 1) {
       final response = await operation();
-      final retriesExhausted =
-          attempt >= GhanaRequestPolicy.retryBackoffs.length;
+      final retriesExhausted = attempt >= backoffs.length;
       if (retriesExhausted ||
           !safeToRetry ||
           !GhanaRequestPolicy.shouldRetry(response)) {
         return response;
       }
 
-      final wait = GhanaRequestPolicy.retryBackoffs[attempt];
+      final wait = backoffs[attempt];
       final customDelay = delay;
       if (customDelay == null) {
         await Future<void>.delayed(wait);
