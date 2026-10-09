@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -858,4 +860,32 @@ class AuthService {
       cause: error,
     );
   }
+}
+
+/// Time left before [token] (a JWT) expires, read from its own `exp` claim.
+/// Null when there is no token or its expiry cannot be read. Zero once it
+/// has expired.
+Duration? authTokenTimeLeft(String? token, {DateTime? now}) {
+  final parts = token?.trim().split('.');
+  if (parts == null || parts.length != 3) {
+    return null;
+  }
+  final Object? payload;
+  try {
+    payload = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
+  } on Object {
+    return null;
+  }
+  final exp = payload is Map ? payload['exp'] : null;
+  if (exp is! num || !exp.isFinite) {
+    return null;
+  }
+  final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+    (exp * 1000).round(),
+    isUtc: true,
+  );
+  final left = expiresAt.difference((now ?? DateTime.now()).toUtc());
+  return left.isNegative ? Duration.zero : left;
 }
