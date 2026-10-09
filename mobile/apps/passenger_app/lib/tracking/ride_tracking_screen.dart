@@ -230,14 +230,12 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       if (!mounted) return;
 
       // The server ended the session (the refresh was refused): that is
-      // not a connection problem. Stop polling and send the passenger to
-      // sign in.
+      // not a connection problem. Send the passenger to sign in; polling
+      // stops, as the next poll is only scheduled after a load.
       final signIn = widget.onSignInRequired;
       if (signIn != null &&
           error is PassengerRideRequestHistoryException &&
           error.requiresSignIn) {
-        _timer?.cancel();
-        _timer = null;
         signIn();
         return;
       }
