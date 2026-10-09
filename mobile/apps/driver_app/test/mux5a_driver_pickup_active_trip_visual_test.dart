@@ -100,8 +100,14 @@ void main() {
       passengerNote: 'I am at the side entrance, blue jacket',
     );
 
-    expect(find.byKey(const Key('driver-navigate-to-pickup')), findsOneWidget);
-    expect(find.byKey(const Key('driver-passenger-note-card')), findsOneWidget);
+    expect(
+      find.byKey(const Key('driver-navigate-to-pickup')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('driver-passenger-note-card')),
+      findsOneWidget,
+    );
     expect(find.text('Note from passenger'), findsOneWidget);
   });
 
@@ -114,7 +120,10 @@ void main() {
       passengerNote: 'I am at the side entrance, blue jacket',
     );
 
-    expect(find.text('I am at the side entrance, blue jacket'), findsOneWidget);
+    expect(
+      find.text('I am at the side entrance, blue jacket'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('test_driver_accepted_empty_note_hidden', (tester) async {
@@ -131,7 +140,10 @@ void main() {
         find.byKey(const Key('driver-navigate-to-pickup')),
         findsOneWidget,
       );
-      expect(find.byKey(const Key('driver-passenger-note-card')), findsNothing);
+      expect(
+        find.byKey(const Key('driver-passenger-note-card')),
+        findsNothing,
+      );
       expect(find.text('Note from passenger'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -149,7 +161,9 @@ void main() {
     );
 
     final noteCard = find.byKey(const Key('driver-passenger-note-card'));
-    final pickupAction = find.byKey(const Key('driver-mark-arrived-pickup'));
+    final pickupAction = find.byKey(
+      const Key('driver-mark-arrived-pickup'),
+    );
 
     await tester.ensureVisible(noteCard);
     await tester.pump();
@@ -524,46 +538,47 @@ void main() {
     expect(find.text('2'), findsNothing);
   });
 
-  testWidgets('all three trip safety buttons render with non-zero size', (
-    tester,
-  ) async {
-    _useSurface(tester);
+  testWidgets(
+    'all three trip safety buttons render with non-zero size',
+    (tester) async {
+      _useSurface(tester);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AsmThemes.driver,
-        home: DriverTripVisualSequencePage(
-          pickupLocation: _authoritativePickup,
-          destination: _authoritativeDestination,
-          passengerCount: _authoritativePassengerCount,
-          driverTrustedContactRepository: _FakeDriverTrustedContactRepository(),
-          driverSafetyAlertRepository: _FakeDriverSafetyAlertRepository(),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.driver,
+          home: DriverTripVisualSequencePage(
+            pickupLocation: _authoritativePickup,
+            destination: _authoritativeDestination,
+            passengerCount: _authoritativePassengerCount,
+            driverTrustedContactRepository: _FakeDriverTrustedContactRepository(),
+            driverSafetyAlertRepository: _FakeDriverSafetyAlertRepository(),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-
-    for (final key in const [
-      'driver-trip-safety-emergency',
-      'driver-trip-safety-message-contact',
-      'driver-trip-safety-alert-dispatch',
-    ]) {
-      final finder = find.byKey(Key(key));
-      expect(finder, findsOneWidget, reason: key);
-
-      final size = tester.getSize(finder);
-      expect(
-        size.width,
-        greaterThan(0),
-        reason: '$key should have a non-zero rendered width',
       );
-      expect(
-        size.height,
-        greaterThan(0),
-        reason: '$key should have a non-zero rendered height',
-      );
-    }
-  });
+      await tester.pump();
+
+      for (final key in const [
+        'driver-trip-safety-emergency',
+        'driver-trip-safety-message-contact',
+        'driver-trip-safety-alert-dispatch',
+      ]) {
+        final finder = find.byKey(Key(key));
+        expect(finder, findsOneWidget, reason: key);
+
+        final size = tester.getSize(finder);
+        expect(
+          size.width,
+          greaterThan(0),
+          reason: '$key should have a non-zero rendered width',
+        );
+        expect(
+          size.height,
+          greaterThan(0),
+          reason: '$key should have a non-zero rendered height',
+        );
+      }
+    },
+  );
 
   group('pickup verification code', () {
     testWidgets(
@@ -646,104 +661,105 @@ void main() {
       );
     });
 
-    testWidgets(
-      'an empty code is rejected locally without calling the gateway',
-      (tester) async {
-        _useSurface(tester);
-        final queue = _VisualPersistentQueue();
-        final gateway = _PickupCodeGateway();
-        final recorder = DriverTripActionResilienceController(
-          queue: queue,
-          gateway: gateway,
-          tripReference: 'TRIP-PVC-003',
-          driverId: 'DRIVER-PVC-003',
-        );
+    testWidgets('an empty code is rejected locally without calling the gateway', (
+      tester,
+    ) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway();
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-003',
+        driverId: 'DRIVER-PVC-003',
+      );
 
-        await _pumpTripSequence(
-          tester,
-          actionRecorder: recorder,
-          pickupVerificationRequired: true,
-        );
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-mark-arrived-pickup')),
-        );
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-open-onboard-confirmation')),
-        );
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
 
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-confirm-onboard')),
-        );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-confirm-onboard')),
+      );
 
-        expect(
-          find.text('Enter the code your passenger gave you.'),
-          findsOneWidget,
-        );
-        expect(gateway.submittedCodes, [null]);
-        expect(
-          find.byKey(const Key('driver-confirm-passenger-onboard')),
-          findsOneWidget,
-        );
-      },
-    );
+      expect(
+        find.text('Enter the code your passenger gave you.'),
+        findsOneWidget,
+      );
+      expect(gateway.submittedCodes, [null]);
+      expect(
+        find.byKey(const Key('driver-confirm-passenger-onboard')),
+        findsOneWidget,
+      );
+    });
 
-    testWidgets(
-      'a wrong code shows the server message and stays on this screen',
-      (tester) async {
-        _useSurface(tester);
-        final queue = _VisualPersistentQueue();
-        final gateway = _PickupCodeGateway(correctCode: '1234');
-        final recorder = DriverTripActionResilienceController(
-          queue: queue,
-          gateway: gateway,
-          tripReference: 'TRIP-PVC-004',
-          driverId: 'DRIVER-PVC-004',
-        );
+    testWidgets('a wrong code shows the server message and stays on this screen', (
+      tester,
+    ) async {
+      _useSurface(tester);
+      final queue = _VisualPersistentQueue();
+      final gateway = _PickupCodeGateway(correctCode: '1234');
+      final recorder = DriverTripActionResilienceController(
+        queue: queue,
+        gateway: gateway,
+        tripReference: 'TRIP-PVC-004',
+        driverId: 'DRIVER-PVC-004',
+      );
 
-        await _pumpTripSequence(
-          tester,
-          actionRecorder: recorder,
-          pickupVerificationRequired: true,
-        );
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-mark-arrived-pickup')),
-        );
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-open-onboard-confirmation')),
-        );
+      await _pumpTripSequence(
+        tester,
+        actionRecorder: recorder,
+        pickupVerificationRequired: true,
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-mark-arrived-pickup')),
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+      );
 
-        await tester.enterText(
-          find.byKey(const Key('driver-pickup-verification-code-field')),
-          '0000',
-        );
-        await _tapVisible(
-          tester,
-          find.byKey(const Key('driver-confirm-onboard')),
-        );
-        await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        '0000',
+      );
+      await _tapVisible(
+        tester,
+        find.byKey(const Key('driver-confirm-onboard')),
+      );
+      await tester.pumpAndSettle();
 
-        expect(find.textContaining("doesn't match"), findsOneWidget);
-        expect(gateway.submittedCodes, [null, '0000']);
-        expect(
-          find.byKey(const Key('driver-confirm-passenger-onboard')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const Key('driver-pickup-verification-code-field')),
-          findsOneWidget,
-        );
-        // Pickup verification must never go through the offline queue - it
-        // is a live, in-person check, not a deferrable status update. The
-        // one queued event here is the earlier arrived-pickup tap, which
-        // does use the queue as normal.
-        expect(queue.events, hasLength(1));
-      },
-    );
+      expect(
+        find.textContaining("doesn't match"),
+        findsOneWidget,
+      );
+      expect(gateway.submittedCodes, [null, '0000']);
+      expect(
+        find.byKey(const Key('driver-confirm-passenger-onboard')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        findsOneWidget,
+      );
+      // Pickup verification must never go through the offline queue - it
+      // is a live, in-person check, not a deferrable status update. The
+      // one queued event here is the earlier arrived-pickup tap, which
+      // does use the queue as normal.
+      expect(queue.events, hasLength(1));
+    });
 
     testWidgets('the correct code starts the trip', (tester) async {
       _useSurface(tester);
@@ -1079,8 +1095,7 @@ final class _PickupCodeGateway implements DriverTripActionGateway {
     submittedCodes.add(pickupVerificationCode);
     idempotencyKeys.add(idempotencyKey);
 
-    if (action != DriverTripAction.startTrip ||
-        pickupVerificationCode == null) {
+    if (action != DriverTripAction.startTrip || pickupVerificationCode == null) {
       // A null code means either a different action, or (for start-trip)
       // the generic un-coded path a trip with verification switched off
       // uses - both always succeed here, mirroring the real backend

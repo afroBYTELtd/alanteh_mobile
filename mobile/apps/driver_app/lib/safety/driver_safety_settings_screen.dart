@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'driver_trip_safety.dart';
 
 class DriverSafetySettingsScreen extends StatefulWidget {
-  const DriverSafetySettingsScreen({required this.repository, super.key});
+  const DriverSafetySettingsScreen({
+    required this.repository,
+    super.key,
+  });
 
   final DriverTrustedContactRepository repository;
 
@@ -242,7 +245,9 @@ class _DriverSafetySettingsScreenState
                                       ),
                                     )
                                   : const Icon(Icons.shield_outlined),
-                              label: Text(_saving ? 'Saving…' : 'Save contact'),
+                              label: Text(
+                                _saving ? 'Saving…' : 'Save contact',
+                              ),
                             ),
                           ],
                         ),

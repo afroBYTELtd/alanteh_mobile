@@ -244,9 +244,7 @@ class _DriverTripVisualSequencePageState
 
     final code = _pickupCodeController.text.trim();
     if (code.isEmpty) {
-      setState(
-        () => _pickupCodeErrorText = 'Enter the code your passenger gave you.',
-      );
+      setState(() => _pickupCodeErrorText = 'Enter the code your passenger gave you.');
       return;
     }
 
@@ -461,135 +459,127 @@ class _DriverTripVisualSequencePageState
       ),
       body: Column(
         children: [
-          Expanded(
-            child: switch (stage) {
-              DriverTripVisualStage.navigatingToPickup => _DriverMapStage(
-                key: const Key('driver-navigate-to-pickup'),
-                pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
-                destination: _pin(
-                  widget.destinationLatitude,
-                  widget.destinationLongitude,
-                ),
-                legTarget: _pin(widget.pickupLatitude, widget.pickupLongitude),
-                devicePositionSource: _positionSource,
-                title: 'Heading to pickup',
-                subtitle: pickupLocation,
-                primaryLocationLabel: 'Pickup',
-                primaryLocationValue: pickupLocation,
-                secondaryLocationLabel: 'Next destination',
-                secondaryLocationValue: destination,
-                passengerNote: widget.passengerNote,
-                onNavigate: _navigateCallback(
-                  widget.pickupLatitude,
-                  widget.pickupLongitude,
-                ),
-                actionKey: const Key('driver-mark-arrived-pickup'),
-                actionLabel: "I've arrived",
-                actionIcon: Icons.location_on_outlined,
-                isActionPending: _isSubmitting,
-                onAction: _markArrivedAtPickup,
-              ),
-              DriverTripVisualStage.arrivedAtPickup => _DriverStateScreen(
-                key: const Key('driver-arrived-at-pickup'),
-                icon: Icons.notifications_active_outlined,
-                title: "You've arrived",
-                message:
-                    "Let your passenger know you're here, then confirm once "
-                    "they're safely onboard.",
-                primaryActionKey: const Key('driver-open-onboard-confirmation'),
-                primaryActionLabel: 'Confirm passenger onboard',
-                primaryActionIcon: Icons.people_alt_outlined,
-                onPrimaryAction: _openPassengerConfirmation,
-              ),
-              DriverTripVisualStage.confirmingPassengerOnboard =>
-                _DriverStateScreen(
-                  key: const Key('driver-confirm-passenger-onboard'),
-                  icon: Icons.people_alt_outlined,
-                  title: 'Confirm passenger onboard',
-                  message: _pickupCodeLocked
-                      ? 'Too many incorrect pickup code attempts. Use the options '
-                            'below to contact dispatch before continuing.'
-                      : widget.pickupVerificationRequired
-                      ? 'Ask your passenger for their pickup code and enter it '
-                            'below before starting the trip.'
-                      : 'Only start the trip after the passenger is safely seated '
-                            'and ready to travel.',
-                  primaryActionKey: const Key('driver-confirm-onboard'),
-                  primaryActionLabel: _pickupCodeLocked
-                      ? 'Locked'
-                      : 'Start trip',
-                  primaryActionIcon: Icons.play_arrow_outlined,
-                  isPrimaryActionPending: _isSubmitting,
-                  primaryActionEnabled: !_pickupCodeLocked,
-                  onPrimaryAction: _confirmPassengerOnboard,
-                  secondaryActionKey: const Key(
-                    'driver-cancel-onboard-confirmation',
-                  ),
-                  secondaryActionLabel: 'Back',
-                  onSecondaryAction: _cancelPassengerConfirmation,
-                  child: widget.pickupVerificationRequired && !_pickupCodeLocked
-                      ? _PickupVerificationCodeField(
-                          controller: _pickupCodeController,
-                          errorText: _pickupCodeErrorText,
-                          enabled: !_isSubmitting,
-                          onSubmitted: (_) => _confirmPassengerOnboard(),
-                        )
-                      : null,
-                ),
-              DriverTripVisualStage.activeTrip => _DriverMapStage(
-                key: const Key('driver-active-trip'),
-                pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
-                destination: _pin(
-                  widget.destinationLatitude,
-                  widget.destinationLongitude,
-                ),
-                legTarget: _pin(
-                  widget.destinationLatitude,
-                  widget.destinationLongitude,
-                ),
-                devicePositionSource: _positionSource,
-                title: 'Trip in progress',
-                subtitle: 'Heading to $destination',
-                primaryLocationLabel: 'From',
-                primaryLocationValue: pickupLocation,
-                secondaryLocationLabel: 'To',
-                secondaryLocationValue: destination,
-                passengerNote: widget.passengerNote,
-                onNavigate: _navigateCallback(
-                  widget.destinationLatitude,
-                  widget.destinationLongitude,
-                ),
-                actionKey: const Key('driver-mark-arrived-destination'),
-                actionLabel: 'Arrived at destination',
-                actionIcon: Icons.flag_outlined,
-                onAction: _markArrivedAtDestination,
-              ),
-              DriverTripVisualStage.arrivedAtDestination => _DriverStateScreen(
-                key: const Key('driver-arrived-at-destination'),
-                icon: Icons.flag_circle_outlined,
-                title: 'Arrived at destination',
-                message: 'Confirm the ride has ended safely at $destination.',
-                primaryActionKey: const Key('driver-complete-trip'),
-                primaryActionLabel: 'Complete trip',
-                primaryActionIcon: Icons.check_circle_outline,
-                isPrimaryActionPending: _isSubmitting,
-                onPrimaryAction: _completeTrip,
-              ),
-              DriverTripVisualStage.completed => _DriverTripCompletedScreen(
-                pickupLocation: pickupLocation,
-                destination: destination,
-                passengerCount: passengerCount,
-                onBackToHome: _backToHome,
-              ),
-            },
+          Expanded(child: switch (stage) {
+        DriverTripVisualStage.navigatingToPickup => _DriverMapStage(
+          key: const Key('driver-navigate-to-pickup'),
+          pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          destination: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
           ),
+          legTarget: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          devicePositionSource: _positionSource,
+          title: 'Heading to pickup',
+          subtitle: pickupLocation,
+          primaryLocationLabel: 'Pickup',
+          primaryLocationValue: pickupLocation,
+          secondaryLocationLabel: 'Next destination',
+          secondaryLocationValue: destination,
+          passengerNote: widget.passengerNote,
+          onNavigate: _navigateCallback(
+            widget.pickupLatitude,
+            widget.pickupLongitude,
+          ),
+          actionKey: const Key('driver-mark-arrived-pickup'),
+          actionLabel: "I've arrived",
+          actionIcon: Icons.location_on_outlined,
+          isActionPending: _isSubmitting,
+          onAction: _markArrivedAtPickup,
+        ),
+        DriverTripVisualStage.arrivedAtPickup => _DriverStateScreen(
+          key: const Key('driver-arrived-at-pickup'),
+          icon: Icons.notifications_active_outlined,
+          title: "You've arrived",
+          message:
+              "Let your passenger know you're here, then confirm once "
+              "they're safely onboard.",
+          primaryActionKey: const Key('driver-open-onboard-confirmation'),
+          primaryActionLabel: 'Confirm passenger onboard',
+          primaryActionIcon: Icons.people_alt_outlined,
+          onPrimaryAction: _openPassengerConfirmation,
+        ),
+        DriverTripVisualStage.confirmingPassengerOnboard => _DriverStateScreen(
+          key: const Key('driver-confirm-passenger-onboard'),
+          icon: Icons.people_alt_outlined,
+          title: 'Confirm passenger onboard',
+          message: _pickupCodeLocked
+              ? 'Too many incorrect pickup code attempts. Use the options '
+                    'below to contact dispatch before continuing.'
+              : widget.pickupVerificationRequired
+              ? 'Ask your passenger for their pickup code and enter it '
+                    'below before starting the trip.'
+              : 'Only start the trip after the passenger is safely seated '
+                    'and ready to travel.',
+          primaryActionKey: const Key('driver-confirm-onboard'),
+          primaryActionLabel: _pickupCodeLocked ? 'Locked' : 'Start trip',
+          primaryActionIcon: Icons.play_arrow_outlined,
+          isPrimaryActionPending: _isSubmitting,
+          primaryActionEnabled: !_pickupCodeLocked,
+          onPrimaryAction: _confirmPassengerOnboard,
+          secondaryActionKey: const Key('driver-cancel-onboard-confirmation'),
+          secondaryActionLabel: 'Back',
+          onSecondaryAction: _cancelPassengerConfirmation,
+          child: widget.pickupVerificationRequired && !_pickupCodeLocked
+              ? _PickupVerificationCodeField(
+                  controller: _pickupCodeController,
+                  errorText: _pickupCodeErrorText,
+                  enabled: !_isSubmitting,
+                  onSubmitted: (_) => _confirmPassengerOnboard(),
+                )
+              : null,
+        ),
+        DriverTripVisualStage.activeTrip => _DriverMapStage(
+          key: const Key('driver-active-trip'),
+          pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
+          destination: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          legTarget: _pin(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          devicePositionSource: _positionSource,
+          title: 'Trip in progress',
+          subtitle: 'Heading to $destination',
+          primaryLocationLabel: 'From',
+          primaryLocationValue: pickupLocation,
+          secondaryLocationLabel: 'To',
+          secondaryLocationValue: destination,
+          passengerNote: widget.passengerNote,
+          onNavigate: _navigateCallback(
+            widget.destinationLatitude,
+            widget.destinationLongitude,
+          ),
+          actionKey: const Key('driver-mark-arrived-destination'),
+          actionLabel: 'Arrived at destination',
+          actionIcon: Icons.flag_outlined,
+          onAction: _markArrivedAtDestination,
+        ),
+        DriverTripVisualStage.arrivedAtDestination => _DriverStateScreen(
+          key: const Key('driver-arrived-at-destination'),
+          icon: Icons.flag_circle_outlined,
+          title: 'Arrived at destination',
+          message: 'Confirm the ride has ended safely at $destination.',
+          primaryActionKey: const Key('driver-complete-trip'),
+          primaryActionLabel: 'Complete trip',
+          primaryActionIcon: Icons.check_circle_outline,
+          isPrimaryActionPending: _isSubmitting,
+          onPrimaryAction: _completeTrip,
+        ),
+        DriverTripVisualStage.completed => _DriverTripCompletedScreen(
+          pickupLocation: pickupLocation,
+          destination: destination,
+          passengerCount: passengerCount,
+          onBackToHome: _backToHome,
+        ),
+          }),
           _DriverTripSafetyActionsBar(
             onEmergency191: _openEmergency191,
             onMessageContact: widget.driverTrustedContactRepository == null
                 ? null
                 : _messageTrustedContact,
-            onSendAlert:
-                widget.driverSafetyAlertRepository == null || _sendingAlert
+            onSendAlert: widget.driverSafetyAlertRepository == null || _sendingAlert
                 ? null
                 : _sendSafetyAlert,
             sendingAlert: _sendingAlert,
@@ -705,11 +695,7 @@ class _SafetyActionButton extends StatelessWidget {
           const SizedBox(height: 2),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              softWrap: false,
-              style: const TextStyle(fontSize: 12),
-            ),
+            child: Text(label, softWrap: false, style: const TextStyle(fontSize: 12)),
           ),
         ],
       ),

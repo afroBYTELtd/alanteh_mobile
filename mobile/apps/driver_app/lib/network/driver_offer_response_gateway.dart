@@ -613,8 +613,7 @@ final class ApiDriverOfferResponseGateway
       response: firstResponse,
       tripReference: normalizedReference,
       expectedTripStatus: 'driver_declined',
-      unconfirmedMessage:
-          'The server response could not confirm offer decline.',
+      unconfirmedMessage: 'The server response could not confirm offer decline.',
     );
     if (firstReceipt != null) {
       return firstReceipt;
@@ -638,8 +637,7 @@ final class ApiDriverOfferResponseGateway
         response: retryResponse,
         tripReference: normalizedReference,
         expectedTripStatus: 'driver_declined',
-        unconfirmedMessage:
-            'The server response could not confirm offer decline.',
+        unconfirmedMessage: 'The server response could not confirm offer decline.',
       );
       if (retryReceipt != null) {
         return retryReceipt;

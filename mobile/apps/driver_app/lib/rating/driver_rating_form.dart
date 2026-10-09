@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 class DriverRatingForm extends StatefulWidget {
-  const DriverRatingForm({required this.onSubmit, super.key});
+  const DriverRatingForm({
+    required this.onSubmit,
+    super.key,
+  });
 
   final Future<void> Function({
     required int overallScore,
@@ -9,8 +12,7 @@ class DriverRatingForm extends StatefulWidget {
     required int conductScore,
     required int cleanlinessScore,
     required String feedbackNote,
-  })
-  onSubmit;
+  }) onSubmit;
 
   @override
   State<DriverRatingForm> createState() => _DriverRatingFormState();
@@ -47,7 +49,11 @@ class _DriverRatingFormState extends State<DriverRatingForm> {
     super.dispose();
   }
 
-  Widget _stars(String label, int? value, ValueChanged<int> onChanged) {
+  Widget _stars(
+    String label,
+    int? value,
+    ValueChanged<int> onChanged,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -58,7 +64,11 @@ class _DriverRatingFormState extends State<DriverRatingForm> {
             (index) => IconButton(
               key: Key('$label-${index + 1}'),
               onPressed: () => onChanged(index + 1),
-              icon: Icon(index < (value ?? 0) ? Icons.star : Icons.star_border),
+              icon: Icon(
+                index < (value ?? 0)
+                    ? Icons.star
+                    : Icons.star_border,
+              ),
             ),
           ),
         ),
@@ -83,7 +93,9 @@ class _DriverRatingFormState extends State<DriverRatingForm> {
           key: const Key('driver-rating-feedback'),
           controller: feedbackController,
           maxLength: 1000,
-          decoration: const InputDecoration(labelText: 'Optional feedback'),
+          decoration: const InputDecoration(
+            labelText: 'Optional feedback',
+          ),
         ),
         ElevatedButton(
           key: const Key('submit-driver-rating'),

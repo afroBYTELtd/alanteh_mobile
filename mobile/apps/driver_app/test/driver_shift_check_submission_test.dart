@@ -740,6 +740,7 @@ void main() {
     expect(await queue.pendingEvents(), isEmpty);
     expect(retryDelay.scheduled, isEmpty);
   });
+
 }
 
 DriverShiftCheckSubmission _testShiftCheckSubmission(DateTime submittedAt) {

@@ -341,10 +341,10 @@ final class _RecordingSafetyAlertApiGateway
       );
     }
 
-    return ApiResponse.success(<String, Object?>{
-      'id': 1,
-      'status': 'received',
-    }, statusCode: 201);
+    return ApiResponse.success(
+      <String, Object?>{'id': 1, 'status': 'received'},
+      statusCode: 201,
+    );
   }
 }
 
