@@ -193,6 +193,9 @@ class _FirebaseForegroundPushListenerState
           ),
         );
     });
+    // Without a frame request, an idle screen would hold the snackbar back
+    // until something else redraws.
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _handleOpenedMessage(RemoteMessage message) {
