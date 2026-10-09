@@ -32,6 +32,7 @@ class PassengerShell extends StatefulWidget {
     this.phoneNumber,
     this.passengerName,
     this.onSignInRequired,
+    this.signInTimeLeft,
     this.requestNotificationPermission,
     this.onSignOut,
     this.settingsPreferenceStore,
@@ -58,6 +59,10 @@ class PassengerShell extends StatefulWidget {
   final String? phoneNumber;
   final String? passengerName;
   final VoidCallback? onSignInRequired;
+
+  /// How long the stored sign-in has left; booking asks to renew it first
+  /// when it is nearly over.
+  final Future<Duration?> Function()? signInTimeLeft;
   final Future<bool> Function()? requestNotificationPermission;
   final Future<void> Function()? onSignOut;
   final PassengerSettingsPreferenceStore? settingsPreferenceStore;
@@ -263,6 +268,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription!,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          signInTimeLeft: widget.signInTimeLeft,
           requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
@@ -307,6 +313,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: _destinationDescription ?? '',
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          signInTimeLeft: widget.signInTimeLeft,
           requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
@@ -340,6 +347,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: record.destination,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          signInTimeLeft: widget.signInTimeLeft,
           requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
@@ -363,6 +371,7 @@ class _PassengerShellState extends State<PassengerShell> {
           initialDestinationDescription: record.pickupLocation,
           rideRequestSubmitter: widget.rideRequestSubmitter,
           onSignInRequired: widget.onSignInRequired,
+          signInTimeLeft: widget.signInTimeLeft,
           requestNotificationPermission: widget.requestNotificationPermission,
           rideRequestHistoryRepository: widget.rideRequestHistoryRepository,
           paymentRatingRepository: widget.paymentRatingRepository,
