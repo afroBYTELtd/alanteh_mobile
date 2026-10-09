@@ -147,6 +147,40 @@ void main() {
       });
     }
 
+    testWidgets('the home\'s Continue (no button calls it today)', (
+      tester,
+    ) async {
+      final submitter = await pumpShell(tester, _History(_completed()));
+      tester
+          .widget<AsmBottomNavigationBar>(find.byType(AsmBottomNavigationBar))
+          .onDestinationSelected!
+          .call(0);
+      await tester.pumpAndSettle();
+      for (final (choose, words) in [
+        ('pickup', 'Osu'),
+        ('destination', 'Airport'),
+      ]) {
+        final home = tester.widget<PassengerHome>(find.byType(PassengerHome));
+        choose == 'pickup' ? home.onChoosePickup() : home.onChooseDestination();
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('location-description')),
+          words,
+        );
+        await tester.tap(find.byKey(const Key('use-location-description')));
+        await tester.pumpAndSettle();
+      }
+      tester.widget<PassengerHome>(find.byType(PassengerHome)).onContinue();
+      await tester.pumpAndSettle();
+      await _tapVisible(tester, const Key('request-ride'));
+      await tester.pumpAndSettle();
+      await _tapVisible(tester, const Key('confirm-and-request'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(warning), findsOneWidget);
+      expect(submitter.submissions, 0);
+    });
+
     testWidgets('Book again on a refused request, after a booking', (
       tester,
     ) async {
