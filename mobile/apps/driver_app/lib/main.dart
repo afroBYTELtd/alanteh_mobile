@@ -23,6 +23,7 @@ import 'network/ghana_network_resilience.dart';
 import 'notifications/push_device_registration.dart';
 import 'notifications/push_notification_runtime.dart';
 import 'notifications/trip_offer_channel.dart';
+import 'notifications/trip_offer_notifications_warning.dart';
 import 'offers/driver_offer_card_wiring.dart';
 import 'offers/driver_offer_coordinator.dart';
 import 'offers/driver_pending_offer_store.dart';
@@ -1223,12 +1224,17 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (offers == null || factory == null || !_signedIn) {
       return null;
     }
-    return DriverPendingOffersPanel(
-      coordinator: offers,
-      controllerFactory: factory,
-      waitingPanel: waitingPanel,
-      pickupTimeLookup: _offerPickupTimeLookup,
-      onAccepted: _openTripDetail,
+    return Column(
+      children: [
+        const TripOfferNotificationsWarning(),
+        DriverPendingOffersPanel(
+          coordinator: offers,
+          controllerFactory: factory,
+          waitingPanel: waitingPanel,
+          pickupTimeLookup: _offerPickupTimeLookup,
+          onAccepted: _openTripDetail,
+        ),
+      ],
     );
   }
 
