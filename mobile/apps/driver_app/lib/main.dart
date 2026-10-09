@@ -1290,6 +1290,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        signInTimeLeft: _signedIn
+            ? () async => authTokenTimeLeft(
+                await widget.authTokenStore.readRefreshToken(),
+              )
+            : null,
         pendingOffersPanelBuilder: _offers == null
             ? null
             : (waitingPanel) =>

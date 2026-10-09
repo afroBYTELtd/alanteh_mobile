@@ -862,6 +862,11 @@ class AuthService {
   }
 }
 
+/// Asked before a shift check or a booking when the sign-in ends soon.
+const authSignInEndsSoonMessage =
+    "Your sign-in ends soon. Sign in again now so it doesn't stop you "
+    'mid-trip.';
+
 /// Time left before [token] (a JWT) expires, read from its own `exp` claim.
 /// Null when there is no token or its expiry cannot be read. Zero once it
 /// has expired.

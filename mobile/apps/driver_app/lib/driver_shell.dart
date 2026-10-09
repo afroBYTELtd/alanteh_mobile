@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:asm_app_config/asm_app_config.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
@@ -60,6 +61,9 @@ String _startupGateDiagSanitizedErrorMessage(Object error) {
   return 'sanitized_exception_details_redacted';
 }
 
+/// At the shift check, a sign-in ending sooner than this is renewed first.
+const driverSignInRenewalWindow = Duration(hours: 12);
+
 class DriverShell extends StatefulWidget {
   const DriverShell({
     this.configuration = AsmAppConfig.localGhana,
@@ -78,6 +82,7 @@ class DriverShell extends StatefulWidget {
     this.onlineTransitionDuration = const Duration(seconds: 2),
     this.pendingOffersPanelBuilder,
     this.onDutyChanged,
+    this.signInTimeLeft,
     super.key,
   });
 
@@ -102,6 +107,10 @@ class DriverShell extends StatefulWidget {
 
   /// Told after every change of on-duty (online with today's shift check).
   final ValueChanged<bool>? onDutyChanged;
+
+  /// How long the sign-in has left (the refresh token's own expiry); null
+  /// when unknown. Checked when the shift check opens.
+  final Future<Duration?> Function()? signInTimeLeft;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -544,6 +553,49 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
+  /// A sign-in that ends within [driverSignInRenewalWindow] is renewed
+  /// before the shift check, so it does not end in the middle of a trip.
+  /// True when the driver chose to sign in again (the shell signs out).
+  Future<bool> _renewSignInFirst() async {
+    final timeLeft = widget.signInTimeLeft;
+    if (timeLeft == null) {
+      return false;
+    }
+    final Duration? left;
+    try {
+      left = await timeLeft();
+    } on Object {
+      return false;
+    }
+    if (left == null || left > driverSignInRenewalWindow || !mounted) {
+      return false;
+    }
+    final renew = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text(authSignInEndsSoonMessage),
+        actions: [
+          TextButton(
+            key: const Key('driver-renew-sign-in-later'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            key: const Key('driver-renew-sign-in-now'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign in again'),
+          ),
+        ],
+      ),
+    );
+    if (renew != true || !mounted) {
+      return false;
+    }
+    await _signOut();
+    return true;
+  }
+
   Future<void> _openReadiness() async {
     _startupGateDiag(
       'open_readiness invoked '
@@ -558,6 +610,10 @@ class _DriverShellState extends State<DriverShell> {
         'open_readiness early_return=YES '
         'reason=shift_check_completed_today completion=early_return',
       );
+      return;
+    }
+
+    if (await _renewSignInFirst() || !mounted) {
       return;
     }
 
