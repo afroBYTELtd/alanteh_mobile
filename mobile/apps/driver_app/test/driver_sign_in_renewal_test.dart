@@ -1,6 +1,11 @@
+import 'dart:convert';
+
+import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/driver_shell.dart';
+import 'package:driver_app/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -87,6 +92,61 @@ void main() {
       );
     });
   }
+
+  testWidgets('through the app: the stored sign-in\'s own expiry is read', (
+    tester,
+  ) async {
+    final tokens = MemoryAuthTokenStore();
+    final ends = DateTime.now().add(const Duration(hours: 11));
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: _LoginApi(_jwt(ends)),
+          tokenStore: tokens,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: tokens,
+        driverDutyGateway: _OfflineNoCheck(DateTime.now()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233000000001',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    for (var i = 0; i < 10; i += 1) {
+      await tester.pump();
+    }
+
+    expect(find.text(warning), findsOneWidget);
+  });
+}
+
+String _jwt(DateTime expiresAt) {
+  String part(Map<String, Object?> json) =>
+      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+  return '${part({'alg': 'HS256'})}.'
+      '${part({'exp': expiresAt.millisecondsSinceEpoch ~/ 1000})}.sig';
+}
+
+final class _LoginApi implements AuthApiGateway {
+  _LoginApi(this.refresh);
+
+  final String refresh;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async => ApiResponse<Map<String, Object?>>.success(<String, Object?>{
+    'access': 'driver-access',
+    'refresh': refresh,
+    'account_type': 'driver',
+    'account': <String, Object?>{},
+  }, statusCode: 200);
 }
 
 final class _OfflineNoCheck implements DriverDutyGateway {

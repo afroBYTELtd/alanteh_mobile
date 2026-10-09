@@ -82,6 +82,29 @@ void main() {
     expect(find.text(driverSessionExpiredMessage), findsOneWidget);
     expect(await tokens.readRefreshToken(), isNull);
   });
+
+  testWidgets('the app sets Sign in while it is shown and clears it after', (
+    tester,
+  ) async {
+    final tokens = MemoryAuthTokenStore();
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: _LoginApi(),
+          tokenStore: tokens,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: tokens,
+        driverDutyGateway: _Expired(expired, dutyWorks: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(DriverSessionEnd.signIn, isNotNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(DriverSessionEnd.signIn, isNull);
+  });
 }
 
 final class _Expired implements DriverDutyGateway {

@@ -129,6 +129,38 @@ void main() {
     });
   });
 
+  group('an answer that arrives after the session changed', () {
+    test('after a sign-out: the driver stays signed out', () async {
+      final store = await storedSession();
+      final server = _RotatingServer();
+      final refresh = controller(server, store).refresh();
+      await pumpEventQueue();
+
+      await store.clearTokens();
+      server.answerInReverseOrder();
+
+      expect(await refresh, DriverTokenRefreshOutcome.sessionExpired);
+      expect(await store.readRefreshToken(), isNull);
+      expect(await store.readAccessToken(), isNull);
+    });
+
+    test('after a newer sign-in: the new sign-in is kept', () async {
+      final store = await storedSession();
+      final server = _RotatingServer();
+      final refresh = controller(server, store).refresh();
+      await pumpEventQueue();
+
+      await store.saveTokens(
+        AuthTokens(accessToken: 'access-new', refreshToken: 'refresh-new'),
+      );
+      server.answerInReverseOrder();
+
+      expect(await refresh, DriverTokenRefreshOutcome.refreshed);
+      expect(await store.readRefreshToken(), 'refresh-new');
+      expect(await store.readAccessToken(), 'access-new');
+    });
+  });
+
   group('a lost answer, retried', () {
     test('today (no rotation): the retry succeeds', () async {
       final store = await storedSession();
