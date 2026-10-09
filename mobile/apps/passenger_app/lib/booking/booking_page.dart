@@ -1,5 +1,6 @@
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_app_config/asm_app_config.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_ride_domain/asm_ride_domain.dart';
 import 'package:flutter/material.dart';
 
@@ -19,6 +20,9 @@ import '../safety/passenger_trip_safety.dart';
 
 import '../tracking/ride_tracking_screen.dart';
 
+/// A sign-in that ends sooner than this is renewed before booking.
+const passengerSignInRenewalWindow = Duration(hours: 2);
+
 class BookingPage extends StatefulWidget {
   const BookingPage({
     required this.market,
@@ -31,6 +35,7 @@ class BookingPage extends StatefulWidget {
     this.rideRequestSubmitter,
     this.idempotencyKeyFactory,
     this.onSignInRequired,
+    this.signInTimeLeft,
     this.requestNotificationPermission,
     this.rideRequestHistoryRepository,
     this.paymentRatingRepository,
@@ -58,6 +63,9 @@ class BookingPage extends StatefulWidget {
   final PassengerRideRequestSubmitter? rideRequestSubmitter;
   final String Function()? idempotencyKeyFactory;
   final VoidCallback? onSignInRequired;
+
+  /// How long the stored sign-in has left; null when unknown.
+  final Future<Duration?> Function()? signInTimeLeft;
   final Future<bool> Function()? requestNotificationPermission;
   final PassengerRideRequestHistoryRepository? rideRequestHistoryRepository;
   final PassengerPaymentRatingRepository? paymentRatingRepository;
@@ -361,6 +369,47 @@ class _BookingPageState extends State<BookingPage> {
     }
   }
 
+  /// True when the passenger chose to sign in again instead of booking.
+  Future<bool> _renewSignInFirst() async {
+    final timeLeft = widget.signInTimeLeft;
+    if (timeLeft == null) {
+      return false;
+    }
+    final Duration? left;
+    try {
+      left = await timeLeft();
+    } on Object {
+      return false;
+    }
+    if (left == null || left > passengerSignInRenewalWindow || !mounted) {
+      return false;
+    }
+    final renew = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text(authSignInEndsSoonMessage),
+        actions: [
+          TextButton(
+            key: const Key('booking-renew-sign-in-later'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Continue'),
+          ),
+          FilledButton(
+            key: const Key('booking-renew-sign-in-now'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign in again'),
+          ),
+        ],
+      ),
+    );
+    if (renew != true || !mounted) {
+      return false;
+    }
+    widget.onSignInRequired?.call();
+    return true;
+  }
+
   Future<void> _confirmRequest() async {
     final draft = _draft;
     if (draft == null ||
@@ -376,6 +425,10 @@ class _BookingPageState extends State<BookingPage> {
       _returnToFormWithPickupError(
         PassengerRideRequestSubmissionException.pickupTooSoonMessage,
       );
+      return;
+    }
+
+    if (await _renewSignInFirst() || !mounted) {
       return;
     }
 
@@ -477,6 +530,7 @@ class _BookingPageState extends State<BookingPage> {
                     rideRequestSubmitter: page.rideRequestSubmitter,
                     idempotencyKeyFactory: page.idempotencyKeyFactory,
                     onSignInRequired: page.onSignInRequired,
+                    signInTimeLeft: page.signInTimeLeft,
                     requestNotificationPermission:
                         page.requestNotificationPermission,
                     rideRequestHistoryRepository:

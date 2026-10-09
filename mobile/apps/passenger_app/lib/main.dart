@@ -940,6 +940,10 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         phoneNumber: _passengerPhoneNumber,
         passengerName: _passengerName,
         onSignInRequired: _returnToSignIn,
+        signInTimeLeft: _signedIn
+            ? () async =>
+                  authTokenTimeLeft(await _tokenStore.readRefreshToken())
+            : null,
         requestNotificationPermission: _signedIn
             ? _pushDeviceRegistrar?.requestNotificationPermission
             : null,

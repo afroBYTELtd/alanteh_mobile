@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -453,6 +455,13 @@ class AsmAuthApiGateway implements AuthApiGateway {
   }
 }
 
+/// Refreshes in flight, by the refresh token they present. Callers that
+/// would present the same token share one request, even from different
+/// [AuthService] objects: with rotation, the server refuses a second use of
+/// a token.
+final Map<String, Future<ApiResponse<Map<String, Object?>>>>
+_refreshesInFlight = <String, Future<ApiResponse<Map<String, Object?>>>>{};
+
 /// Mock-testable authentication service foundation.
 class AuthService {
   AuthService({
@@ -549,7 +558,12 @@ class AuthService {
     final ApiResponse<Map<String, Object?>> response;
     try {
       final retry = _refreshRetry;
-      response = await (retry == null ? attempt() : retry(attempt));
+      response = await (_refreshesInFlight[storedRefreshToken] ??=
+          (retry == null ? attempt() : retry(attempt)).whenComplete(() {
+            // A block body: returning the removed future would make this
+            // wait for itself.
+            _refreshesInFlight.remove(storedRefreshToken);
+          }));
     } on Object catch (error) {
       // Nothing came back from the server, so nothing was rejected.
       return AuthState.unauthenticated(_temporarilyUnavailable(error));
@@ -563,7 +577,10 @@ class AuthService {
     }
 
     if (!response.isSuccess || response.data == null) {
-      if (_serverUnreachable(response)) {
+      // Only a 401 from the refresh endpoint means the token was refused.
+      // Anything else (no network, a 5xx, a proxy's 403 or 404, a 429, a
+      // page that is not JSON) leaves the sign-in as it was.
+      if (response.statusCode != 401) {
         return AuthState.unauthenticated(
           _temporarilyUnavailable(response.error),
         );
@@ -572,11 +589,18 @@ class AuthService {
       return AuthState.unauthenticated(_authError(response));
     }
 
+    final AuthTokens tokens;
     try {
-      final tokens = _tokensFromResponse(
+      tokens = _tokensFromResponse(
         response.data!,
         fallbackRefreshToken: storedRefreshToken,
       );
+    } on Object catch (error) {
+      // A 200 the app cannot read is not a refusal either.
+      return AuthState.unauthenticated(_temporarilyUnavailable(error));
+    }
+
+    try {
       await _tokenStore.saveTokens(tokens);
       final passengerDisplayName = await _readPassengerDisplayName();
       final passengerPhoneNumber = await _readPassengerPhoneNumber();
@@ -802,16 +826,6 @@ class AuthService {
     return null;
   }
 
-  /// No network, a timeout, or the server failing: the refresh token was
-  /// not judged, so it is kept.
-  static bool _serverUnreachable(ApiResponse<dynamic> response) {
-    final type = response.error?.type;
-    return type == AsmApiExceptionType.network ||
-        type == AsmApiExceptionType.timeout ||
-        type == AsmApiExceptionType.server ||
-        const <int>{502, 503, 504}.contains(response.statusCode);
-  }
-
   static AuthException _temporarilyUnavailable(Object? cause) {
     return AuthException(
       type: AuthExceptionType.temporarilyUnavailable,
@@ -846,4 +860,37 @@ class AuthService {
       cause: error,
     );
   }
+}
+
+/// Asked before a shift check or a booking when the sign-in ends soon.
+const authSignInEndsSoonMessage =
+    "Your sign-in ends soon. Sign in again now so it doesn't stop you "
+    'mid-trip.';
+
+/// Time left before [token] (a JWT) expires, read from its own `exp` claim.
+/// Null when there is no token or its expiry cannot be read. Zero once it
+/// has expired.
+Duration? authTokenTimeLeft(String? token, {DateTime? now}) {
+  final parts = token?.trim().split('.');
+  if (parts == null || parts.length != 3) {
+    return null;
+  }
+  final Object? payload;
+  try {
+    payload = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
+  } on Object {
+    return null;
+  }
+  final exp = payload is Map ? payload['exp'] : null;
+  if (exp is! num || !exp.isFinite) {
+    return null;
+  }
+  final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+    (exp * 1000).round(),
+    isUtc: true,
+  );
+  final left = expiresAt.difference((now ?? DateTime.now()).toUtc());
+  return left.isNegative ? Duration.zero : left;
 }

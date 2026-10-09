@@ -151,6 +151,11 @@ final class DriverSessionRefreshController {
   final AuthTokenStore tokenStore;
   final GhanaRetryPolicy _retryPolicy;
 
+  /// Refreshes in flight, by the refresh token they present: callers that
+  /// would present the same token share one request (with rotation, the
+  /// server refuses a second use of a token).
+  final _inFlight = <String, Future<DriverTokenRefreshOutcome>>{};
+
   Future<DriverTokenRefreshOutcome> refresh() async {
     final storedRefreshToken = (await tokenStore.readRefreshToken())?.trim();
 
@@ -159,6 +164,15 @@ final class DriverSessionRefreshController {
       return DriverTokenRefreshOutcome.sessionExpired;
     }
 
+    return _inFlight[storedRefreshToken] ??= _refresh(storedRefreshToken)
+        .whenComplete(() {
+          // A block body: returning the removed future would make this wait
+          // for itself.
+          _inFlight.remove(storedRefreshToken);
+        });
+  }
+
+  Future<DriverTokenRefreshOutcome> _refresh(String storedRefreshToken) async {
     final response = await _retryPolicy.execute<Map<String, Object?>>(
       safeToRetry: true,
       operation: () => apiGateway.post<Map<String, Object?>>(
@@ -183,8 +197,17 @@ final class DriverSessionRefreshController {
           storedRefreshToken;
 
       if (accessToken == null || refreshToken.trim().isEmpty) {
-        await tokenStore.clearTokens();
-        return DriverTokenRefreshOutcome.sessionExpired;
+        // A 200 the app cannot use is not a refusal: keep the sign-in.
+        return DriverTokenRefreshOutcome.temporarilyUnavailable;
+      }
+
+      // A sign-out or a newer sign-in while the request was out replaced
+      // the session this refresh was for; leave the new one alone.
+      final current = await _currentRefreshToken();
+      if (current != storedRefreshToken) {
+        return current == null
+            ? DriverTokenRefreshOutcome.sessionExpired
+            : DriverTokenRefreshOutcome.refreshed;
       }
 
       await tokenStore.saveTokens(
@@ -193,12 +216,26 @@ final class DriverSessionRefreshController {
       return DriverTokenRefreshOutcome.refreshed;
     }
 
-    if (_isTransientRefreshResponse(response)) {
+    // Only a 401 from the refresh endpoint means the token was refused.
+    // Anything else (no network, a 5xx, a proxy's 403 or 404, a 429, a page
+    // that is not JSON) keeps the sign-in.
+    if (response.statusCode != 401) {
       return DriverTokenRefreshOutcome.temporarilyUnavailable;
     }
 
+    // Refused - but if another refresh has already stored a newer token,
+    // this 401 was for the old one.
+    final current = await _currentRefreshToken();
+    if (current != null && current != storedRefreshToken) {
+      return DriverTokenRefreshOutcome.refreshed;
+    }
     await tokenStore.clearTokens();
     return DriverTokenRefreshOutcome.sessionExpired;
+  }
+
+  Future<String?> _currentRefreshToken() async {
+    final value = (await tokenStore.readRefreshToken())?.trim();
+    return value == null || value.isEmpty ? null : value;
   }
 
   static Map<String, Object?> _decodeRefreshResponse(Object? json) {
@@ -223,18 +260,6 @@ final class DriverSessionRefreshController {
       }
     }
     return null;
-  }
-
-  static bool _isTransientRefreshResponse(
-    ApiResponse<Map<String, Object?>> response,
-  ) {
-    final error = response.error;
-    return error?.type == AsmApiExceptionType.network ||
-        error?.type == AsmApiExceptionType.timeout ||
-        error?.type == AsmApiExceptionType.server ||
-        response.statusCode == 502 ||
-        response.statusCode == 503 ||
-        response.statusCode == 504;
   }
 }
 
@@ -671,9 +696,15 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   AppLifecycleListener? _lifecycle;
   bool _offerScreenOpen = false;
 
+  /// What a "Session expired" panel's Sign in does: end the session and
+  /// show this sign-in screen.
+  Future<void> _signInAgain() =>
+      _handleOfferSessionExpired(driverSessionExpiredMessage);
+
   @override
   void initState() {
     super.initState();
+    DriverSessionEnd.signIn = _signInAgain;
     _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
       widget.authTokenStore,
     );
@@ -1037,6 +1068,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
     _lifecycle?.dispose();
     _offers?.dispose();
+    // Tear-offs of the same method on the same object are equal.
+    if (DriverSessionEnd.signIn == _signInAgain) {
+      DriverSessionEnd.signIn = null;
+    }
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
@@ -1255,6 +1290,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        signInTimeLeft: _signedIn
+            ? () async => authTokenTimeLeft(
+                await widget.authTokenStore.readRefreshToken(),
+              )
+            : null,
         pendingOffersPanelBuilder: _offers == null
             ? null
             : (waitingPanel) =>

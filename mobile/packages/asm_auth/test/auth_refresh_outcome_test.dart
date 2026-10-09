@@ -75,30 +75,132 @@ void main() {
     expect(await store.readRefreshToken(), 'refresh-one');
   });
 
-  for (final status in <int>[400, 401, 403]) {
-    test('server rejects with $status: rejected, sign-in cleared', () async {
+  test('server rejects with 401: rejected, sign-in cleared', () async {
+    final store = await storedSession();
+    final service = AuthService(
+      apiGateway: _ScriptedGateway(<Object>[_status(401)]),
+      tokenStore: store,
+    );
+
+    final state = await service.refresh();
+
+    expect(state.refreshOutcome, AuthRefreshOutcome.rejected);
+    expect(state.isTemporarilyUnavailable, isFalse);
+    expect(await store.readAccessToken(), isNull);
+    expect(await store.readRefreshToken(), isNull);
+  });
+
+  // Only a 401 from the refresh endpoint means the token was refused. A 400,
+  // 403, 404 or 429 is a proxy, a rate limit or a fault: keep the sign-in.
+  for (final status in <int>[400, 403, 404, 429]) {
+    test('a $status from the refresh endpoint: kept', () async {
       final store = await storedSession();
       final service = AuthService(
-        apiGateway: _ScriptedGateway(<Object>[
-          ApiResponse<Map<String, Object?>>.apiFailure(
-            AsmApiException(
-              type: AsmApiExceptionType.authentication,
-              message: 'Token is invalid or expired',
-              statusCode: status,
-            ),
-          ),
-        ]),
+        apiGateway: _ScriptedGateway(<Object>[_status(status)]),
         tokenStore: store,
       );
 
       final state = await service.refresh();
 
-      expect(state.refreshOutcome, AuthRefreshOutcome.rejected);
-      expect(state.isTemporarilyUnavailable, isFalse);
-      expect(await store.readAccessToken(), isNull);
-      expect(await store.readRefreshToken(), isNull);
+      expect(state.refreshOutcome, AuthRefreshOutcome.temporarilyUnavailable);
+      expect(await store.readAccessToken(), 'old-access');
+      expect(await store.readRefreshToken(), 'refresh-one');
     });
   }
+
+  test('a non-JSON 200 (a Wi-Fi login page): kept', () async {
+    final store = await storedSession();
+    final service = AuthService(
+      // What AsmApiClient returns when the decoder cannot read the body.
+      apiGateway: _ScriptedGateway(<Object>[
+        ApiResponse<Map<String, Object?>>.clientException(
+          const AsmApiException(
+            type: AsmApiExceptionType.badResponse,
+            message: 'The API request failed before a valid response was read.',
+          ),
+        ),
+      ]),
+      tokenStore: store,
+    );
+
+    final state = await service.refresh();
+
+    expect(state.refreshOutcome, AuthRefreshOutcome.temporarilyUnavailable);
+    expect(await store.readRefreshToken(), 'refresh-one');
+  });
+
+  test('a 200 without tokens: kept', () async {
+    final store = await storedSession();
+    final service = AuthService(
+      apiGateway: _ScriptedGateway(<Object>[
+        ApiResponse<Map<String, Object?>>.success(const <String, Object?>{
+          'detail': 'unexpected',
+        }),
+      ]),
+      tokenStore: store,
+    );
+
+    final state = await service.refresh();
+
+    expect(state.refreshOutcome, AuthRefreshOutcome.temporarilyUnavailable);
+    expect(await store.readRefreshToken(), 'refresh-one');
+  });
+
+  group('refreshes at the same time share one request', () {
+    test('two at once, with a server that rotates and blacklists: one request, '
+        'both signed in', () async {
+      final store = await storedSession();
+      final server = _RotatingServer();
+      // Two services, as the passenger app builds one per screen.
+      final first = AuthService(apiGateway: server, tokenStore: store);
+      final second = AuthService(apiGateway: server, tokenStore: store);
+
+      final a = first.refresh();
+      final b = second.refresh();
+      await pumpEventQueue();
+      // The server accepts the first request it received; its answer
+      // arrives after the answer to any second one.
+      server.answerInReverseOrder();
+      final states = await Future.wait([a, b]);
+
+      expect(server.received, ['refresh-one']);
+      expect(states.every((state) => state.isAuthenticated), isTrue);
+      expect(await store.readRefreshToken(), 'refresh-two');
+    });
+
+    test('one that read the token just before another rotated it: the late '
+        '401 does not clear the new sign-in', () async {
+      final store = await storedSession();
+      final server = _RotatingServer(answerAtOnce: true);
+      final gate = Completer<void>();
+      final late = AuthService(
+        apiGateway: server,
+        tokenStore: _StaleReadStore(store, gate.future),
+      );
+      final early = AuthService(apiGateway: server, tokenStore: store);
+
+      final lateRefresh = late.refresh(); // reads refresh-one, then waits
+      await pumpEventQueue();
+      expect((await early.refresh()).isAuthenticated, isTrue);
+      gate.complete();
+      final state = await lateRefresh;
+
+      expect(server.received, ['refresh-one', 'refresh-one']);
+      expect(state.isAuthenticated, isTrue);
+      expect(await store.readRefreshToken(), 'refresh-two');
+    });
+
+    test('a later refresh after the shared one finished asks again', () async {
+      final store = await storedSession();
+      final server = _RotatingServer(answerAtOnce: true);
+      final service = AuthService(apiGateway: server, tokenStore: store);
+
+      await service.refresh();
+      await service.refresh();
+
+      expect(server.received, ['refresh-one', 'refresh-two']);
+    });
+  });
 
   test('success: refreshed', () async {
     final store = await storedSession();
@@ -265,4 +367,95 @@ class _ScriptedGateway implements AuthApiGateway {
     }
     throw next;
   }
+}
+
+ApiResponse<Map<String, Object?>> _status(int status) =>
+    ApiResponse<Map<String, Object?>>.apiFailure(
+      AsmApiException(
+        type: status == 401
+            ? AsmApiExceptionType.authentication
+            : status == 404
+            ? AsmApiExceptionType.notFound
+            : AsmApiExceptionType.badResponse,
+        message: 'refused',
+        statusCode: status,
+      ),
+    );
+
+/// A server with rotation and blacklist-after-rotation: each refresh token
+/// works once and returns a new one; using it again gets a 401.
+class _RotatingServer implements AuthApiGateway {
+  _RotatingServer({this.answerAtOnce = false});
+
+  final bool answerAtOnce;
+  final received = <String>[];
+  final _pending = <Completer<ApiResponse<Map<String, Object?>>>>[];
+  final _used = <String>{};
+  var _issued = 1;
+
+  static const _names = ['one', 'two', 'three', 'four'];
+
+  ApiResponse<Map<String, Object?>> _answer(String token) {
+    if (!_used.add(token)) {
+      return _status(401);
+    }
+    _issued += 1;
+    return ApiResponse<Map<String, Object?>>.success(<String, Object?>{
+      'access': 'access-${_names[_issued - 1]}',
+      'refresh': 'refresh-${_names[_issued - 1]}',
+    });
+  }
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) {
+    final token = body['refresh']! as String;
+    received.add(token);
+    if (answerAtOnce) {
+      return Future.value(_answer(token));
+    }
+    final pending = Completer<ApiResponse<Map<String, Object?>>>();
+    _pending.add(pending);
+    return pending.future;
+  }
+
+  /// The server handles the requests in the order received, but the
+  /// answers arrive last-first.
+  void answerInReverseOrder() {
+    final answers = [for (final token in received) _answer(token)];
+    for (var i = _pending.length - 1; i >= 0; i -= 1) {
+      _pending[i].complete(answers[i]);
+    }
+  }
+}
+
+/// Reads the refresh token, then hands it back only when [gate] opens:
+/// another refresh can rotate the stored token in between.
+class _StaleReadStore implements AuthTokenStore {
+  _StaleReadStore(this.inner, this.gate);
+
+  final AuthTokenStore inner;
+  final Future<void> gate;
+  var _first = true;
+
+  @override
+  Future<String?> readRefreshToken() async {
+    final value = await inner.readRefreshToken();
+    if (_first) {
+      _first = false;
+      await gate;
+    }
+    return value;
+  }
+
+  @override
+  Future<String?> readAccessToken() => inner.readAccessToken();
+
+  @override
+  Future<void> saveTokens(AuthTokens tokens) => inner.saveTokens(tokens);
+
+  @override
+  Future<void> clearTokens() => inner.clearTokens();
 }
