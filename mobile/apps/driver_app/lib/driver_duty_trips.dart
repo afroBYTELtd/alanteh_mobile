@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'rating/driver_rating_page.dart';
@@ -674,6 +675,15 @@ final class DriverAssignedTrip {
 
 bool driverIsOfferPending(String? status) {
   return status?.trim() == 'driver_offer_sent';
+}
+
+/// The passenger or staff cancelled the trip.
+bool driverTripIsCancelled(String? status) {
+  return const <String>{
+    'cancelled',
+    'cancelled_by_passenger',
+    'cancelled_by_operations',
+  }.contains(status?.trim());
 }
 
 bool driverCanOpenLiveTripActions(String? status) {
@@ -1361,7 +1371,8 @@ class DriverTripDetailScreen extends StatefulWidget {
   State<DriverTripDetailScreen> createState() => _DriverTripDetailScreenState();
 }
 
-class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
+class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
+    with WidgetsBindingObserver {
   late Future<DriverAssignedTrip> _future;
   bool _openingLiveActions = false;
   bool _preparingOfferResponse = false;
@@ -1386,6 +1397,47 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
           initialization.qaDisplayText;
     }
     _future = _loadTrip();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Back in front: the trip may have changed meanwhile (seen on the test
+  /// phone: cancelled while the app was away).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_reloadOnResume());
+    }
+  }
+
+  /// Reloads without the loading card; a failed reload keeps what is on
+  /// screen (Refresh still works).
+  Future<void> _reloadOnResume() async {
+    if (_openingLiveActions ||
+        _submittingOfferResponse ||
+        _submittingDeclineResponse) {
+      return;
+    }
+    final DriverAssignedTrip trip;
+    try {
+      trip = await widget.gateway.fetchTripDetail(widget.tripReference);
+    } on Object {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _future = SynchronousFuture<DriverAssignedTrip>(trip);
+    });
+    if (driverIsOfferPending(trip.status)) {
+      unawaited(_prepareOfferResponse(trip, notify: true));
+    }
   }
 
   Future<DriverAssignedTrip> _loadTrip() async {
@@ -1733,6 +1785,13 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                 key: const Key('driver-trip-detail-error'),
                 title: 'Trip detail could not be loaded.',
                 onRetry: _refresh,
+              );
+            }
+
+            if (driverTripIsCancelled(trip.status)) {
+              return _DriverTripCancelledCard(
+                key: const Key('driver-trip-cancelled'),
+                trip: trip,
               );
             }
 
@@ -2300,6 +2359,47 @@ class _DriverDeclineReasonSheetState
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The trip was cancelled: say so plainly, with the way back to Work.
+class _DriverTripCancelledCard extends StatelessWidget {
+  const _DriverTripCancelledCard({super.key, required this.trip});
+
+  final DriverAssignedTrip trip;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DriverCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.cancel_outlined,
+            color: AsmColors.driverMintAction,
+            size: 32,
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          const Text(
+            'Trip cancelled',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          Text(
+            '${trip.reference}: no need to go to the pickup.',
+            style: const TextStyle(color: AsmColors.driverTextSecondary),
+          ),
+          const SizedBox(height: AsmSpacing.space16),
+          FilledButton(
+            key: const Key('driver-trip-cancelled-back'),
+            onPressed: () =>
+                Navigator.of(context).popUntil((route) => route.isFirst),
+            child: const Text('Back to Work'),
+          ),
+        ],
       ),
     );
   }
