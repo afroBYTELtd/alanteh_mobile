@@ -29,6 +29,7 @@ class DriverPendingOfferCard extends StatefulWidget {
     this.pickDeclineReason = showDriverDeclineReasonSheet,
     this.onAccepted,
     this.onFinished,
+    this.onEnded,
     this.tickInterval = const Duration(seconds: 1),
     this.detailsTimeout = DriverOfferCardTiming.detailsTimeout,
     super.key,
@@ -47,6 +48,11 @@ class DriverPendingOfferCard extends StatefulWidget {
 
   /// Declined, expired or ended; the card can go.
   final ValueChanged<String>? onFinished;
+
+  /// Called once when the offer can no longer be answered here (time ran
+  /// out, it ended, or the driver answered). Only a live card should pause
+  /// the offers poll.
+  final VoidCallback? onEnded;
   final Duration tickInterval;
   final Duration detailsTimeout;
 
@@ -71,6 +77,13 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   bool _sending = false;
   bool _responded = false;
   bool _expired = false;
+  bool _reportedEnded = false;
+
+  /// When the countdown reached zero (monotonic), for the re-check and the
+  /// local removal after it.
+  Duration? _ranOutAt;
+  bool _rechecked = false;
+  bool _removedLocally = false;
 
   /// Final: the offer ended (expiry race, taken back, gone from the list).
   String? _endedMessage;
@@ -97,7 +110,21 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     _store.removeListener(_onStoreChanged);
     _ticker?.cancel();
     _detailsTimer?.cancel();
+    if (_locked && !_responded) {
+      // Closing an ended card clears it from the home screen too. Not
+      // during dispose itself: the store's listeners rebuild.
+      final store = _store;
+      final reference = _reference;
+      scheduleMicrotask(() => store.forget(reference));
+    }
     super.dispose();
+  }
+
+  void _reportIfEnded() {
+    if (_locked && !_reportedEnded) {
+      _reportedEnded = true;
+      widget.onEnded?.call();
+    }
   }
 
   Future<DriverOfferResponseResilienceController?> _prepare() async {
@@ -139,6 +166,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         _endedMessage = driverOfferNoLongerAvailableMessage;
       }
     }
+    _reportIfEnded();
     if (rebuild && mounted) {
       setState(() {});
     }
@@ -151,8 +179,23 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     final left = _remaining;
     if (left == Duration.zero && !_locked && !_sending) {
       _expired = true;
+      _ranOutAt = _store.clock.now;
       unawaited(_store.refresh());
     }
+    final ranOutAt = _ranOutAt;
+    if (ranOutAt != null) {
+      final since = _store.clock.now - ranOutAt;
+      if (!_rechecked && since >= DriverOfferCardTiming.expiredRecheckDelay) {
+        _rechecked = true;
+        unawaited(_store.refresh());
+      }
+      if (!_removedLocally &&
+          since >= DriverOfferCardTiming.expiredRemovalDelay) {
+        _removedLocally = true;
+        _store.forget(_reference);
+      }
+    }
+    _reportIfEnded();
     setState(() {});
   }
 
@@ -236,6 +279,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         _applyFailure(result.error, result.message);
       }
     });
+    _reportIfEnded();
     if (result.accepted) {
       _store.forget(_reference);
       widget.onAccepted?.call(_reference);
@@ -281,6 +325,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         _applyFailure(result.error, result.message);
       }
     });
+    _reportIfEnded();
     if (result.succeeded) {
       _store.forget(_reference);
       widget.onFinished?.call(_reference);

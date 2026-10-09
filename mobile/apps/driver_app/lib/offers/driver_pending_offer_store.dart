@@ -36,6 +36,14 @@ abstract final class DriverOfferCardTiming {
   /// Foreground check while on duty.
   static const pollInterval = Duration(seconds: 12);
 
+  /// An automatic offer's time ran out, but the check at zero can come a
+  /// moment before the server expires it: ask again this long after zero.
+  static const expiredRecheckDelay = Duration(seconds: 3);
+
+  /// An automatic offer whose time ran out leaves the home screen this long
+  /// after zero, even if the server still lists it as pending.
+  static const expiredRemovalDelay = Duration(seconds: 5);
+
   /// A push tap that arrived before sign-in is dropped after this long.
   static const coldStartTapLifetime = Duration(minutes: 2);
 }

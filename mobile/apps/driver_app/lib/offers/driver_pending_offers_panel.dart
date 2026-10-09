@@ -29,7 +29,11 @@ class DriverPendingOffersPanel extends StatefulWidget {
 }
 
 class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
+  /// True while a live card is shown: only then is the poll paused.
   bool _showingCard = false;
+
+  /// The offer whose card said it can no longer be answered.
+  String? _endedReference;
 
   @override
   void initState() {
@@ -67,7 +71,10 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
   @override
   Widget build(BuildContext context) {
     final offer = widget.coordinator.store.firstOffer;
-    _track(offer != null);
+    if (offer == null) {
+      _endedReference = null;
+    }
+    _track(offer != null && offer.tripReference != _endedReference);
     if (offer == null) {
       return widget.waitingPanel;
     }
@@ -78,6 +85,10 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
       controllerFactory: widget.controllerFactory,
       pickupTimeLookup: widget.pickupTimeLookup,
       onAccepted: widget.onAccepted,
+      onEnded: () {
+        _endedReference = offer.tripReference;
+        _track(false);
+      },
     );
   }
 }
@@ -111,22 +122,38 @@ class DriverPendingOfferScreen extends StatefulWidget {
 class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
   late String _reference = widget.tripReference;
 
+  /// True while the card here is live: only then is the poll paused.
+  bool _pausing = false;
+
   @override
   void initState() {
     super.initState();
-    widget.coordinator.cardOpened();
+    _setPausing(true);
   }
 
   @override
   void dispose() {
-    widget.coordinator.cardClosed();
+    _setPausing(false);
     super.dispose();
+  }
+
+  void _setPausing(bool pausing) {
+    if (pausing == _pausing) {
+      return;
+    }
+    _pausing = pausing;
+    if (pausing) {
+      widget.coordinator.cardOpened();
+    } else {
+      widget.coordinator.cardClosed();
+    }
   }
 
   void _finished(String reference) {
     final next = widget.coordinator.store.firstOffer;
     if (next != null && next.tripReference != reference) {
       setState(() => _reference = next.tripReference);
+      _setPausing(true);
       return;
     }
     Navigator.of(context).maybePop();
@@ -150,6 +177,7 @@ class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
             onAccepted: (reference) =>
                 widget.onAccepted?.call(context, reference),
             onFinished: _finished,
+            onEnded: () => _setPausing(false),
           ),
         ),
       ),
