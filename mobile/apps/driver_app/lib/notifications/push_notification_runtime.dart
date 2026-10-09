@@ -73,6 +73,7 @@ class FirebaseForegroundPushListener extends StatefulWidget {
   const FirebaseForegroundPushListener({
     required this.child,
     this.onNavigationIntent,
+    this.onInitialIntent,
     this.onForegroundIntent,
     this.foregroundEnabled = true,
     this.messageSource,
@@ -82,6 +83,11 @@ class FirebaseForegroundPushListener extends StatefulWidget {
   final Widget child;
   final Future<void> Function(DriverPushNavigationIntent intent)?
   onNavigationIntent;
+
+  /// The tap that launched the app, if any. Without this, it goes to
+  /// [onNavigationIntent] like any other tap.
+  final Future<void> Function(DriverPushNavigationIntent intent)?
+  onInitialIntent;
 
   /// An offer push while the app is open. Returns true when it was shown
   /// (for example as the offer card); otherwise the text snackbar appears,
@@ -127,6 +133,12 @@ class _FirebaseForegroundPushListenerState
       return;
     }
 
+    final onInitial = widget.onInitialIntent;
+    final intent = driverPushNavigationIntentFromMessage(message);
+    if (onInitial != null && intent != null) {
+      unawaited(onInitial(intent));
+      return;
+    }
     _handleNavigationMessage(message);
   }
 

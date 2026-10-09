@@ -165,10 +165,7 @@ final class ApiDriverTrustedContactRepository
         return DriverTrustedContact.fromJson(response.data);
       }
 
-      return DriverTrustedContact(
-        name: normalizedName,
-        phone: normalizedPhone,
-      );
+      return DriverTrustedContact(name: normalizedName, phone: normalizedPhone);
     }
 
     throw DriverTrustedContactException(
@@ -279,7 +276,11 @@ final class DriverSafetyAlertException implements Exception {
 }
 
 abstract interface class DriverSafetyAlertRepository {
-  Future<void> send({String? tripReference, double? latitude, double? longitude});
+  Future<void> send({
+    String? tripReference,
+    double? latitude,
+    double? longitude,
+  });
 }
 
 abstract interface class DriverSafetyAlertApiGateway {

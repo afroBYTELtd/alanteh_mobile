@@ -19,17 +19,13 @@ class DriverRatingSnapshot {
       );
     }
 
-    final map = json.map(
-      (key, value) => MapEntry(key.toString(), value),
-    );
+    final map = json.map((key, value) => MapEntry(key.toString(), value));
 
     final rating = map['rating'];
 
     Map<String, Object?>? ratingMap;
     if (rating is Map) {
-      ratingMap = rating.map(
-        (key, value) => MapEntry(key.toString(), value),
-      );
+      ratingMap = rating.map((key, value) => MapEntry(key.toString(), value));
     }
 
     return DriverRatingSnapshot(

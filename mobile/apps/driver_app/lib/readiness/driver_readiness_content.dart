@@ -4,12 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'driver_readiness_check.dart';
 
-enum DriverReadinessSubmissionState {
-  idle,
-  submitting,
-  submitted,
-  queued,
-}
+enum DriverReadinessSubmissionState { idle, submitting, submitted, queued }
 
 class DriverReadinessContent extends StatelessWidget {
   const DriverReadinessContent({
@@ -40,9 +35,7 @@ class DriverReadinessContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (submissionState != DriverReadinessSubmissionState.idle) {
-      return _DriverShiftCheckSubmissionState(
-        state: submissionState,
-      );
+      return _DriverShiftCheckSubmissionState(state: submissionState);
     }
 
     final totalCount = DriverReadinessItem.values.length;
@@ -104,18 +97,12 @@ class DriverReadinessContent extends StatelessWidget {
                 const SizedBox(height: AsmSpacing.space12),
                 for (final item in DriverReadinessItem.values) ...[
                   Card(
-                    margin: const EdgeInsets.only(
-                      bottom: AsmSpacing.space8,
-                    ),
+                    margin: const EdgeInsets.only(bottom: AsmSpacing.space8),
                     color: AsmColors.driverCard,
                     surfaceTintColor: Colors.transparent,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AsmRadii.radius16,
-                      ),
-                      side: const BorderSide(
-                        color: AsmColors.driverLine,
-                      ),
+                      borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                      side: const BorderSide(color: AsmColors.driverLine),
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: CheckboxListTile(
@@ -124,13 +111,10 @@ class DriverReadinessContent extends StatelessWidget {
                       onChanged: (_) => onToggle(item),
                       title: Text(
                         item.label,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w900),
                       ),
                       subtitle: Text(item.description),
-                      controlAffinity:
-                          ListTileControlAffinity.leading,
+                      controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: AsmSpacing.space12,
                         vertical: AsmSpacing.space4,
@@ -143,16 +127,10 @@ class DriverReadinessContent extends StatelessWidget {
                     Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
-                        key: const Key(
-                          'readiness-battery-needs-attention',
-                        ),
+                        key: const Key('readiness-battery-needs-attention'),
                         onPressed: onBatteryNeedsAttention,
-                        icon: const Icon(
-                          Icons.battery_alert_outlined,
-                        ),
-                        label: const Text(
-                          'Battery needs attention',
-                        ),
+                        icon: const Icon(Icons.battery_alert_outlined),
+                        label: const Text('Battery needs attention'),
                       ),
                     ),
                 ],
@@ -166,12 +144,8 @@ class DriverReadinessContent extends StatelessWidget {
               padding: const EdgeInsets.all(AsmSpacing.space16),
               decoration: BoxDecoration(
                 color: AsmColors.driverCard,
-                borderRadius: BorderRadius.circular(
-                  AsmRadii.radius16,
-                ),
-                border: Border.all(
-                  color: AsmColors.driverWarningSurface,
-                ),
+                borderRadius: BorderRadius.circular(AsmRadii.radius16),
+                border: Border.all(color: AsmColors.driverWarningSurface),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,12 +193,8 @@ class DriverReadinessContent extends StatelessWidget {
               padding: const EdgeInsets.all(AsmSpacing.space20),
               decoration: BoxDecoration(
                 color: AsmColors.driverCardElevated,
-                borderRadius: BorderRadius.circular(
-                  AsmRadii.radius20,
-                ),
-                border: Border.all(
-                  color: AsmColors.driverMintAction,
-                ),
+                borderRadius: BorderRadius.circular(AsmRadii.radius20),
+                border: Border.all(color: AsmColors.driverMintAction),
               ),
               child: const Column(
                 children: [
@@ -238,10 +208,7 @@ class DriverReadinessContent extends StatelessWidget {
                   Text(
                     'Shift check complete',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                   ),
                   SizedBox(height: AsmSpacing.space8),
                   Text(
@@ -297,9 +264,7 @@ class DriverReadinessContent extends StatelessWidget {
 }
 
 class _DriverShiftCheckSubmissionState extends StatelessWidget {
-  const _DriverShiftCheckSubmissionState({
-    required this.state,
-  });
+  const _DriverShiftCheckSubmissionState({required this.state});
 
   final DriverReadinessSubmissionState state;
 
@@ -335,36 +300,25 @@ class _DriverShiftCheckSubmissionState extends StatelessWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AsmSpacing.space24),
           child: Container(
-            key: Key(
-              'readiness-submission-${state.name}',
-            ),
+            key: Key('readiness-submission-${state.name}'),
             width: double.infinity,
             padding: const EdgeInsets.all(AsmSpacing.space24),
             decoration: BoxDecoration(
               color: AsmColors.driverCardElevated,
-              borderRadius: BorderRadius.circular(
-                AsmRadii.radius24,
-              ),
-              border: Border.all(
-                color: AsmColors.driverMintAction,
-              ),
+              borderRadius: BorderRadius.circular(AsmRadii.radius24),
+              border: Border.all(color: AsmColors.driverMintAction),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (state ==
-                    DriverReadinessSubmissionState.submitting)
+                if (state == DriverReadinessSubmissionState.submitting)
                   const SizedBox(
                     width: 42,
                     height: 42,
                     child: CircularProgressIndicator(),
                   )
                 else
-                  Icon(
-                    icon,
-                    size: 52,
-                    color: AsmColors.driverMintAction,
-                  ),
+                  Icon(icon, size: 52, color: AsmColors.driverMintAction),
                 const SizedBox(height: AsmSpacing.space16),
                 Text(
                   heading,

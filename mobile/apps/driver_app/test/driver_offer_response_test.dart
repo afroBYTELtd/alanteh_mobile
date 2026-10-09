@@ -466,35 +466,40 @@ void main() {
   });
 
   group('Driver offer-response gateway declines (DRIVER-MANUAL-DECLINE)', () {
-    test('uses exact endpoint, bearer token, and includes reason in body', () async {
-      final accessToken = _jwtExpiringAt(DateTime.utc(2100));
-      final store = await _tokenStore(accessToken: accessToken);
-      final api = _RecordingOfferApi(
-        responses: <ApiResponse<DriverOfferResponseReceipt>>[
-          _declineSuccess(statusCode: 201, tripReference: 'TRIP-DECLINE-001'),
-        ],
-      );
-      final gateway = ApiDriverOfferResponseGateway(
-        apiGateway: api,
-        tokenStore: store,
-      );
+    test(
+      'uses exact endpoint, bearer token, and includes reason in body',
+      () async {
+        final accessToken = _jwtExpiringAt(DateTime.utc(2100));
+        final store = await _tokenStore(accessToken: accessToken);
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _declineSuccess(statusCode: 201, tripReference: 'TRIP-DECLINE-001'),
+          ],
+        );
+        final gateway = ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+        );
 
-      final receipt = await gateway.decline(
-        tripReference: 'TRIP-DECLINE-001',
-        idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-001-stable',
-        deviceTimestamp: '2026-09-18T09:00:00.000Z',
-        reason: DriverDeclineReason.vehicleIssue,
-      );
+        final receipt = await gateway.decline(
+          tripReference: 'TRIP-DECLINE-001',
+          idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-001-stable',
+          deviceTimestamp: '2026-09-18T09:00:00.000Z',
+          reason: DriverDeclineReason.vehicleIssue,
+        );
 
-      expect(receipt.tripStatus, 'driver_declined');
-      expect(api.paths, <String>['/api/driver/trips/TRIP-DECLINE-001/response/']);
-      expect(api.headers.single['Authorization'], 'Bearer $accessToken');
-      expect(api.bodies.single, <String, Object?>{
-        'response': 'decline',
-        'device_timestamp': '2026-09-18T09:00:00.000Z',
-        'reason': 'vehicle_issue',
-      });
-    });
+        expect(receipt.tripStatus, 'driver_declined');
+        expect(api.paths, <String>[
+          '/api/driver/trips/TRIP-DECLINE-001/response/',
+        ]);
+        expect(api.headers.single['Authorization'], 'Bearer $accessToken');
+        expect(api.bodies.single, <String, Object?>{
+          'response': 'decline',
+          'device_timestamp': '2026-09-18T09:00:00.000Z',
+          'reason': 'vehicle_issue',
+        });
+      },
+    );
 
     test('reason=other includes reason_note; other reasons omit it', () async {
       final store = await _tokenStore();
@@ -537,81 +542,87 @@ void main() {
       });
     });
 
-    test('reason=other without a note throws before any network call', () async {
-      final store = await _tokenStore();
-      final api = _RecordingOfferApi(
-        responses: <ApiResponse<DriverOfferResponseReceipt>>[
-          _declineSuccess(statusCode: 201),
-        ],
-      );
-      final gateway = ApiDriverOfferResponseGateway(
-        apiGateway: api,
-        tokenStore: store,
-      );
+    test(
+      'reason=other without a note throws before any network call',
+      () async {
+        final store = await _tokenStore();
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _declineSuccess(statusCode: 201),
+          ],
+        );
+        final gateway = ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+        );
 
-      await expectLater(
-        gateway.decline(
-          tripReference: 'TRIP-DECLINE-003',
-          idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-003',
-          deviceTimestamp: '2026-09-18T09:00:00.000Z',
-          reason: DriverDeclineReason.other,
-        ),
-        throwsA(isA<DriverOfferResponseException>()),
-      );
-      expect(api.paths, isEmpty);
-    });
+        await expectLater(
+          gateway.decline(
+            tripReference: 'TRIP-DECLINE-003',
+            idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-003',
+            deviceTimestamp: '2026-09-18T09:00:00.000Z',
+            reason: DriverDeclineReason.other,
+          ),
+          throwsA(isA<DriverOfferResponseException>()),
+        );
+        expect(api.paths, isEmpty);
+      },
+    );
 
-    test('confirms validates against driver_declined, not driver_accepted', () async {
-      final store = await _tokenStore();
-      final api = _RecordingOfferApi(
-        responses: <ApiResponse<DriverOfferResponseReceipt>>[
-          // A response that reports the accept-flavored status is invalid
-          // for a decline submission and must be rejected, not accepted.
-          _offerSuccess(statusCode: 201, tripReference: 'TRIP-DECLINE-004'),
-        ],
-      );
-      final gateway = ApiDriverOfferResponseGateway(
-        apiGateway: api,
-        tokenStore: store,
-      );
+    test(
+      'confirms validates against driver_declined, not driver_accepted',
+      () async {
+        final store = await _tokenStore();
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            // A response that reports the accept-flavored status is invalid
+            // for a decline submission and must be rejected, not accepted.
+            _offerSuccess(statusCode: 201, tripReference: 'TRIP-DECLINE-004'),
+          ],
+        );
+        final gateway = ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+        );
 
-      await expectLater(
-        gateway.decline(
-          tripReference: 'TRIP-DECLINE-004',
-          idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-004',
-          deviceTimestamp: '2026-09-18T09:00:00.000Z',
-          reason: DriverDeclineReason.unableToReachPickup,
-        ),
-        throwsA(
-          isA<DriverOfferResponseException>()
-              .having(
-                (error) => error.type,
-                'type',
-                DriverOfferResponseFailureType.badResponse,
-              )
-              // Caught live: this used to say "...offer acceptance" even
-              // for a decline submission, copied verbatim from accept()'s
-              // default. It fires whenever a duplicate-idempotency-key
-              // response reflects the trip's current (non-declined) status,
-              // e.g. the same trip reference re-offered after an earlier
-              // decline reused the same locally persisted queue record.
-              .having(
-                (error) => error.message,
-                'message',
-                'The server response could not confirm offer decline.',
-              )
-              // Content-based, not just the exact string above: a future
-              // edit that reintroduces accept-flavored wording here must
-              // fail even if someone updates the exact-string expectation
-              // above to match it.
-              .having(
-                (error) => error.message.toLowerCase(),
-                'message (lowercase)',
-                allOf(contains('decline'), isNot(contains('accept'))),
-              ),
-        ),
-      );
-    });
+        await expectLater(
+          gateway.decline(
+            tripReference: 'TRIP-DECLINE-004',
+            idempotencyKey: 'DRIVER-OFFER-DECLINE-TRIP-DECLINE-004',
+            deviceTimestamp: '2026-09-18T09:00:00.000Z',
+            reason: DriverDeclineReason.unableToReachPickup,
+          ),
+          throwsA(
+            isA<DriverOfferResponseException>()
+                .having(
+                  (error) => error.type,
+                  'type',
+                  DriverOfferResponseFailureType.badResponse,
+                )
+                // Caught live: this used to say "...offer acceptance" even
+                // for a decline submission, copied verbatim from accept()'s
+                // default. It fires whenever a duplicate-idempotency-key
+                // response reflects the trip's current (non-declined) status,
+                // e.g. the same trip reference re-offered after an earlier
+                // decline reused the same locally persisted queue record.
+                .having(
+                  (error) => error.message,
+                  'message',
+                  'The server response could not confirm offer decline.',
+                )
+                // Content-based, not just the exact string above: a future
+                // edit that reintroduces accept-flavored wording here must
+                // fail even if someone updates the exact-string expectation
+                // above to match it.
+                .having(
+                  (error) => error.message.toLowerCase(),
+                  'message (lowercase)',
+                  allOf(contains('decline'), isNot(contains('accept'))),
+                ),
+          ),
+        );
+      },
+    );
 
     test('401 refreshes once and preserves reason across retry', () async {
       final initialAccessToken = _jwtExpiringAt(DateTime.utc(2100));
@@ -680,8 +691,16 @@ void main() {
         ),
         throwsA(
           isA<DriverOfferResponseException>()
-              .having((error) => error.type, 'type', DriverOfferResponseFailureType.conflict)
-              .having((error) => error.message, 'message', driverOfferConflictMessage),
+              .having(
+                (error) => error.type,
+                'type',
+                DriverOfferResponseFailureType.conflict,
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                driverOfferConflictMessage,
+              ),
         ),
       );
       expect(api.paths, hasLength(1));
@@ -709,7 +728,11 @@ void main() {
         ),
         throwsA(
           isA<DriverOfferResponseException>()
-              .having((error) => error.type, 'type', DriverOfferResponseFailureType.clientFailure)
+              .having(
+                (error) => error.type,
+                'type',
+                DriverOfferResponseFailureType.clientFailure,
+              )
               .having(
                 (error) => error.message,
                 'message',
@@ -1875,77 +1898,84 @@ void main() {
   });
 
   group('Driver persistent offer decline (DRIVER-MANUAL-DECLINE)', () {
-    test('first decline creates a record distinct from any accept record', () async {
-      final queue = _MemoryOfferQueue();
-      final controller = _controller(
-        queue: queue,
-        gateway: _RecordingOfferGateway(),
-        verifyStatus: 'driver_declined',
-      );
+    test(
+      'first decline creates a record distinct from any accept record',
+      () async {
+        final queue = _MemoryOfferQueue();
+        final controller = _controller(
+          queue: queue,
+          gateway: _RecordingOfferGateway(),
+          verifyStatus: 'driver_declined',
+        );
 
-      await controller.prepareWhenOfferDisplayed();
-      final result = await controller.decline(
-        reason: DriverDeclineReason.other,
-        reasonNote: 'Passenger requested a route I will not take at night.',
-      );
+        await controller.prepareWhenOfferDisplayed();
+        final result = await controller.decline(
+          reason: DriverDeclineReason.other,
+          reasonNote: 'Passenger requested a route I will not take at night.',
+        );
 
-      expect(result.succeeded, isTrue);
-      expect(queue.events, hasLength(2));
-      final acceptRecord = queue.events.firstWhere(
-        (event) => event.id == 'driver-offer-accept:trip-offer-001',
-      );
-      final declineRecord = queue.events.firstWhere(
-        (event) => event.id == 'driver-offer-decline:trip-offer-001',
-      );
-      expect(acceptRecord.id, isNot(declineRecord.id));
-      expect(acceptRecord.eventType, isNot(declineRecord.eventType));
-      expect(declineRecord.payloadJson, <String, Object?>{
-        'response': 'decline',
-        'reason': 'other',
-        'reason_note': 'Passenger requested a route I will not take at night.',
-        'device_timestamp': declineRecord.payloadJson['device_timestamp'],
-      });
-      expect(
-        declineRecord.idempotencyKey,
-        startsWith('DRIVER-OFFER-DECLINE-TRIP-OFFER-001-'),
-      );
-    });
+        expect(result.succeeded, isTrue);
+        expect(queue.events, hasLength(2));
+        final acceptRecord = queue.events.firstWhere(
+          (event) => event.id == 'driver-offer-accept:trip-offer-001',
+        );
+        final declineRecord = queue.events.firstWhere(
+          (event) => event.id == 'driver-offer-decline:trip-offer-001',
+        );
+        expect(acceptRecord.id, isNot(declineRecord.id));
+        expect(acceptRecord.eventType, isNot(declineRecord.eventType));
+        expect(declineRecord.payloadJson, <String, Object?>{
+          'response': 'decline',
+          'reason': 'other',
+          'reason_note':
+              'Passenger requested a route I will not take at night.',
+          'device_timestamp': declineRecord.payloadJson['device_timestamp'],
+        });
+        expect(
+          declineRecord.idempotencyKey,
+          startsWith('DRIVER-OFFER-DECLINE-TRIP-OFFER-001-'),
+        );
+      },
+    );
 
-    test('reason is posted to the gateway and preserved across retry', () async {
-      final queue = _MemoryOfferQueue();
-      final gateway = _RecordingOfferGateway(
-        declineErrors: <DriverOfferResponseException>[
-          const DriverOfferResponseException(
-            type: DriverOfferResponseFailureType.temporarilyUnavailable,
-            message: driverOfferDeclineFailureMessage,
-          ),
-        ],
-      );
-      final controller = _controller(
-        queue: queue,
-        gateway: gateway,
-        verifyStatus: 'driver_declined',
-        utcNow: () => DateTime.utc(2026, 9, 18, 9),
-      );
+    test(
+      'reason is posted to the gateway and preserved across retry',
+      () async {
+        final queue = _MemoryOfferQueue();
+        final gateway = _RecordingOfferGateway(
+          declineErrors: <DriverOfferResponseException>[
+            const DriverOfferResponseException(
+              type: DriverOfferResponseFailureType.temporarilyUnavailable,
+              message: driverOfferDeclineFailureMessage,
+            ),
+          ],
+        );
+        final controller = _controller(
+          queue: queue,
+          gateway: gateway,
+          verifyStatus: 'driver_declined',
+          utcNow: () => DateTime.utc(2026, 9, 18, 9),
+        );
 
-      final first = await controller.decline(
-        reason: DriverDeclineReason.unableToReachPickup,
-      );
-      final second = await controller.retryDecline(
-        reason: DriverDeclineReason.unableToReachPickup,
-      );
+        final first = await controller.decline(
+          reason: DriverDeclineReason.unableToReachPickup,
+        );
+        final second = await controller.retryDecline(
+          reason: DriverDeclineReason.unableToReachPickup,
+        );
 
-      expect(first.succeeded, isFalse);
-      expect(first.permitsManualRetry, isTrue);
-      expect(second.succeeded, isTrue);
-      expect(gateway.declineReasons, <DriverDeclineReason>[
-        DriverDeclineReason.unableToReachPickup,
-        DriverDeclineReason.unableToReachPickup,
-      ]);
-      expect(gateway.declineIdempotencyKeys.toSet(), hasLength(1));
-      expect(gateway.declineDeviceTimestamps.toSet(), hasLength(1));
-      expect(queue.events.single.syncStatus, QueueSyncStatus.synced);
-    });
+        expect(first.succeeded, isFalse);
+        expect(first.permitsManualRetry, isTrue);
+        expect(second.succeeded, isTrue);
+        expect(gateway.declineReasons, <DriverDeclineReason>[
+          DriverDeclineReason.unableToReachPickup,
+          DriverDeclineReason.unableToReachPickup,
+        ]);
+        expect(gateway.declineIdempotencyKeys.toSet(), hasLength(1));
+        expect(gateway.declineDeviceTimestamps.toSet(), hasLength(1));
+        expect(queue.events.single.syncStatus, QueueSyncStatus.synced);
+      },
+    );
 
     test('duplicate replay requires refreshed driver_declined truth', () async {
       final queue = _MemoryOfferQueue();
@@ -1998,8 +2028,12 @@ void main() {
           verifyStatus: 'driver_declined',
         );
 
-        final first = controller.decline(reason: DriverDeclineReason.vehicleIssue);
-        final second = controller.decline(reason: DriverDeclineReason.vehicleIssue);
+        final first = controller.decline(
+          reason: DriverDeclineReason.vehicleIssue,
+        );
+        final second = controller.decline(
+          reason: DriverDeclineReason.vehicleIssue,
+        );
 
         expect(identical(first, second), isTrue);
         await Future<void>.delayed(Duration.zero);
@@ -2020,9 +2054,14 @@ void main() {
           second,
         ]);
 
-        expect(results, everyElement(predicate<DriverOfferAcceptanceResult>(
-          (result) => result.succeeded,
-        )));
+        expect(
+          results,
+          everyElement(
+            predicate<DriverOfferAcceptanceResult>(
+              (result) => result.succeeded,
+            ),
+          ),
+        );
         expect(gateway.declineCalls, 1);
       },
     );
@@ -2211,7 +2250,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      return (queue: queue, offerGateway: offerGateway, dutyGateway: dutyGateway);
+      return (
+        queue: queue,
+        offerGateway: offerGateway,
+        dutyGateway: dutyGateway,
+      );
     }
 
     testWidgets(
@@ -2233,14 +2276,8 @@ void main() {
           );
           expect(find.text(reason.label), findsOneWidget);
         }
-        expect(
-          find.textContaining('Emergency 191'),
-          findsOneWidget,
-        );
-        expect(
-          find.textContaining('Alert Dispatch'),
-          findsOneWidget,
-        );
+        expect(find.textContaining('Emergency 191'), findsOneWidget);
+        expect(find.textContaining('Alert Dispatch'), findsOneWidget);
         expect(
           tester
               .widget<FilledButton>(

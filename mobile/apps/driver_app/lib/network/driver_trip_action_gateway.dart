@@ -429,7 +429,10 @@ final class ApiDriverTripActionGateway
       tripReference: normalizedReference,
       idempotencyKey: normalizedKey,
       accessToken: accessToken,
-      body: _requestBody(action: action, pickupVerificationCode: pickupVerificationCode),
+      body: _requestBody(
+        action: action,
+        pickupVerificationCode: pickupVerificationCode,
+      ),
       telemetrySink: telemetrySink,
     );
 
@@ -468,7 +471,10 @@ final class ApiDriverTripActionGateway
             tripReference: normalizedReference,
             idempotencyKey: normalizedKey,
             accessToken: refreshedAccessToken,
-            body: _requestBody(action: action, pickupVerificationCode: pickupVerificationCode),
+            body: _requestBody(
+              action: action,
+              pickupVerificationCode: pickupVerificationCode,
+            ),
             telemetrySink: telemetrySink,
           );
           final retryReceipt = _validatedReceipt(

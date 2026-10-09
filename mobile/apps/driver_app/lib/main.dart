@@ -808,6 +808,27 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
   }
 
+  /// The tap that launched the app. Wherever the session restore has got
+  /// to, the same rule applies: queued while restoring, opened only while
+  /// the offer is still pending, dropped if the restore failed.
+  Future<void> _handleLaunchTap(DriverPushNavigationIntent intent) async {
+    final offers = _offers;
+    if (offers == null ||
+        _localDemoOpened ||
+        intent.eventType != 'driver_assigned') {
+      return;
+    }
+    if (_restoringSession && !_signedIn) {
+      offers.queueTap(intent.tripReference);
+      return;
+    }
+    if (!_signedIn) {
+      return;
+    }
+    offers.queueTap(intent.tripReference);
+    await _openQueuedOfferTap(offers.takeTap());
+  }
+
   Future<bool> _handleForegroundOffer(DriverPushNavigationIntent intent) async {
     final offers = _offers;
     if (offers == null || intent.eventType != 'driver_assigned') {
@@ -1188,6 +1209,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     // the app is seen (and queued) while the session is still restoring.
     return FirebaseForegroundPushListener(
       onNavigationIntent: _handlePushNavigationIntent,
+      onInitialIntent: _handleLaunchTap,
       onForegroundIntent: _handleForegroundOffer,
       foregroundEnabled: _signedIn,
       messageSource: widget.pushMessageSource,

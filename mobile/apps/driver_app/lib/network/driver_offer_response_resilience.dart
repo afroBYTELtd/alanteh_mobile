@@ -717,7 +717,9 @@ final class DriverOfferResponseResilienceController {
     final rawReason = event.payloadJson['reason'];
     final reasonIsValid =
         rawReason is String &&
-        DriverDeclineReason.values.any((candidate) => candidate.code == rawReason);
+        DriverDeclineReason.values.any(
+          (candidate) => candidate.code == rawReason,
+        );
 
     final rawNote = event.payloadJson['reason_note'];
     final noteIsValid = rawNote == null || rawNote is String;
