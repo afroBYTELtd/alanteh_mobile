@@ -247,6 +247,8 @@ void main() {
     testWidgets('gone before its details arrived: "Offer ended", and no '
         '"Loading trip details…"', (tester) async {
       await h.pump(tester);
+      // The fetch leaves after the card opened (the tap comes first).
+      h.clock.value += const Duration(seconds: 1);
       await h.deliver(tester, const []);
 
       expect(h.countdownText(tester), 'Offer ended');
@@ -277,6 +279,31 @@ void main() {
       await tester.tap(find.byKey(const Key('offer-card-accept')));
       await tester.pumpAndSettle(const Duration(milliseconds: 10));
 
+      expect(h.countdownText(tester), 'Offer ended');
+      await h.dispose(tester);
+    });
+
+    testWidgets('a poll that started before the card opened does not end '
+        'it', (tester) async {
+      // The poll leaves before the offer exists; a push tap opens the card;
+      // the old poll then comes back without the offer.
+      final oldPoll = h.store.refresh();
+      h.clock.value += const Duration(seconds: 1);
+      await h.pump(tester);
+      h.clock.value += const Duration(seconds: 1);
+      h.source.complete(<String, Object?>{
+        'server_time': '2026-10-09T10:00:05+00:00',
+        'offers': const <Object?>[],
+      });
+      await oldPoll;
+      await tester.pump();
+
+      expect(h.countdownText(tester), 'Respond quickly');
+      expect(find.text('This offer is no longer available'), findsNothing);
+      expect(h.enabled(tester, 'offer-card-decline'), isTrue);
+
+      // A poll that leaves after the card opened does count.
+      await h.deliver(tester, const []);
       expect(h.countdownText(tester), 'Offer ended');
       await h.dispose(tester);
     });

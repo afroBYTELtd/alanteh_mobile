@@ -162,9 +162,10 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _lookUpPickupTimeIfNeeded(current);
     } else if (!_responded && !_locked) {
       final snapshot = _store.snapshot;
-      // Only a fetch that arrived after the card opened can say the offer
-      // is gone; one from the same moment came before it.
-      if (snapshot != null && snapshot.receivedAt > _openedAt) {
+      // Only a fetch that left after the card opened can say the offer is
+      // gone: a poll already out when a push tap opened the card may come
+      // back without an offer that is live.
+      if (snapshot != null && snapshot.requestedAt > _openedAt) {
         _endedMessage = driverOfferNoLongerAvailableMessage;
       }
     }

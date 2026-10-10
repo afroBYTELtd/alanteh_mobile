@@ -94,6 +94,10 @@ final class DriverPendingOffersSnapshot {
   /// How long the request took, from sending to the response.
   final Duration requestDuration;
 
+  /// The monotonic clock's reading when the request left. With a request
+  /// duration of zero (not measured) this is the arrival time.
+  Duration get requestedAt => receivedAt - requestDuration;
+
   DriverPendingOffer? offerFor(String tripReference) {
     final wanted = tripReference.trim();
     for (final offer in offers) {
