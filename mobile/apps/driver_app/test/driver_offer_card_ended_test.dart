@@ -114,6 +114,12 @@ void main() {
 
       expect(h.countdown(tester), matches(RegExp(r'^0:4\d left$')));
       expect(h.coordinator.polling, isFalse, reason: 'a live card again');
+
+      // The old card's clean-up (closing, its 5 s removal) must not drop
+      // the re-offer: it is still there 10 s later.
+      await h.advance(tester, const Duration(seconds: 10));
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(h.countdown(tester), matches(RegExp(r'^0:3\d left$')));
     });
 
     testWidgets('a staff offer has no expiry: it stays and keeps the poll '
@@ -131,6 +137,18 @@ void main() {
   });
 
   group('the full-screen card', () {
+    testWidgets('its 5 s removal drops only its own offer, not a re-offer '
+        'of the trip listed meanwhile', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+
+      h.server.offers = [h.offer(assignedAfter: 46, expiresAt: 91)];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 6));
+
+      expect(h.store.offerFor(_ref), isNotNull);
+    });
+
     testWidgets('stays until the driver closes it, and does not pause the '
         'poll once ended', (tester) async {
       await h.pumpScreen(tester);
@@ -177,9 +195,11 @@ final class _Harness {
   Map<String, Object?> offer({
     Object? expiresAt = 45,
     int assignedAfter = 0,
+    String reference = _ref,
+    String pickup = 'Pinned location',
   }) => <String, Object?>{
-    'trip_reference': _ref,
-    'pickup_location': 'Pinned location',
+    'trip_reference': reference,
+    'pickup_location': pickup,
     'passenger_count': 1,
     'fare_amount': null,
     'fare_currency': 'GHS',

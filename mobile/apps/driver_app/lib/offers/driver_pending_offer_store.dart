@@ -304,6 +304,13 @@ final class DriverPendingOfferStore extends ChangeNotifier {
     }
   }
 
+  /// Drop exactly [identity] locally (a card dropping the offer it showed).
+  void forgetOffer(DriverOfferIdentity identity) {
+    if (_forgotten.add(identity)) {
+      notifyListeners();
+    }
+  }
+
   /// Sign-out, session end or a different driver: forget everything, and
   /// ignore the answer of any fetch still running for the old session.
   void clear() {

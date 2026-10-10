@@ -113,9 +113,8 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     if (_locked && !_responded) {
       // Closing an ended card clears it from the home screen too. Not
       // during dispose itself: the store's listeners rebuild.
-      final store = _store;
-      final reference = _reference;
-      scheduleMicrotask(() => store.forget(reference));
+      final forget = _forgetOwnOffer;
+      scheduleMicrotask(forget);
     }
     super.dispose();
   }
@@ -155,8 +154,22 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     });
   }
 
+  /// Drops the offer this card showed, not whatever is listed for the trip
+  /// now: that may already be a re-offer.
+  void _forgetOwnOffer() {
+    final own = _lastOffer;
+    if (own == null) {
+      _store.forget(_reference);
+    } else {
+      _store.forgetOffer(DriverOfferIdentity.of(own));
+    }
+  }
+
   void _onStoreChanged({bool rebuild = true}) {
-    final current = _store.offerFor(_reference);
+    final listed = _store.offerFor(_reference);
+    // An ended card keeps the offer it showed; a re-offer of the trip is
+    // another card's.
+    final current = _locked && _lastOffer != null ? null : listed;
     if (current != null) {
       _lastOffer = current;
       _lookUpPickupTimeIfNeeded(current);
@@ -195,7 +208,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       if (!_removedLocally &&
           since >= DriverOfferCardTiming.expiredRemovalDelay) {
         _removedLocally = true;
-        _store.forget(_reference);
+        _forgetOwnOffer();
       }
     }
     _reportIfEnded();
@@ -221,7 +234,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         .whenComplete(() => _lookupRunning = false);
   }
 
-  DriverPendingOffer? get _offer => _store.offerFor(_reference) ?? _lastOffer;
+  DriverPendingOffer? get _offer => _locked && _lastOffer != null
+      ? _lastOffer
+      : _store.offerFor(_reference) ?? _lastOffer;
 
   Duration? get _remaining => _store.remaining(_reference);
 
@@ -284,7 +299,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     });
     _reportIfEnded();
     if (result.accepted) {
-      _store.forget(_reference);
+      _forgetOwnOffer();
       widget.onAccepted?.call(_reference);
     }
   }
@@ -330,7 +345,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     });
     _reportIfEnded();
     if (result.succeeded) {
-      _store.forget(_reference);
+      _forgetOwnOffer();
       widget.onFinished?.call(_reference);
     }
   }
