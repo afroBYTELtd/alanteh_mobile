@@ -156,6 +156,29 @@ final class ApiDriverPendingOffersSource implements DriverPendingOffersSource {
   }
 }
 
+/// One offer: a trip reference and when it was assigned. A re-offer of the
+/// same trip is a different offer. [assignedAt] is null when the server did
+/// not send it (an older server).
+@immutable
+final class DriverOfferIdentity {
+  const DriverOfferIdentity(this.tripReference, [this.assignedAt]);
+
+  DriverOfferIdentity.of(DriverPendingOffer offer)
+    : this(offer.tripReference, offer.assignedAt);
+
+  final String tripReference;
+  final DateTime? assignedAt;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DriverOfferIdentity &&
+      other.tripReference == tripReference &&
+      other.assignedAt == assignedAt;
+
+  @override
+  int get hashCode => Object.hash(tripReference, assignedAt);
+}
+
 /// The latest pending offers, shared by the home screen, the push handler
 /// and the offer card.
 final class DriverPendingOfferStore extends ChangeNotifier {
@@ -174,7 +197,11 @@ final class DriverPendingOfferStore extends ChangeNotifier {
   DriverPendingOffersSnapshot? _snapshot;
   bool _lastFetchFailed = false;
   Future<void>? _inFlight;
-  final Set<String> _forgotten = <String>{};
+
+  /// Offers dropped locally, by trip reference and `assigned_at`: a re-offer
+  /// of the same trip has a new `assigned_at` and is a new offer. Without an
+  /// `assigned_at` (an older server) the whole trip is dropped, as before.
+  final Set<DriverOfferIdentity> _forgotten = <DriverOfferIdentity>{};
 
   /// Bumped by [clear]; a fetch started under an older generation is ignored.
   int _generation = 0;
@@ -211,9 +238,12 @@ final class DriverPendingOfferStore extends ChangeNotifier {
             receivedAt: arrived,
             requestDuration: arrived - started,
           );
-          _forgotten.retainWhere(
-            (reference) => _snapshot!.offerFor(reference) != null,
-          );
+          _forgotten.retainWhere((forgotten) {
+            final listed = _snapshot!.offerFor(forgotten.tripReference);
+            return listed != null &&
+                (forgotten.assignedAt == null ||
+                    forgotten.assignedAt == listed.assignedAt);
+          });
           _lastFetchFailed = false;
         } on FormatException {
           _lastFetchFailed = true;
@@ -242,17 +272,19 @@ final class DriverPendingOfferStore extends ChangeNotifier {
   }
 
   DriverPendingOffer? offerFor(String tripReference) {
-    if (_forgotten.contains(tripReference.trim())) {
-      return null;
-    }
-    return _snapshot?.offerFor(tripReference);
+    final offer = _snapshot?.offerFor(tripReference);
+    return offer == null || _isForgotten(offer) ? null : offer;
   }
 
   /// The offers still to answer, earliest expiry first.
   List<DriverPendingOffer> get offers => <DriverPendingOffer>[
     for (final offer in _snapshot?.offers ?? const <DriverPendingOffer>[])
-      if (!_forgotten.contains(offer.tripReference)) offer,
+      if (!_isForgotten(offer)) offer,
   ];
+
+  bool _isForgotten(DriverPendingOffer offer) =>
+      _forgotten.contains(DriverOfferIdentity.of(offer)) ||
+      _forgotten.contains(DriverOfferIdentity(offer.tripReference));
 
   /// The offer the card should show first: the earliest expiry.
   DriverPendingOffer? get firstOffer {
@@ -260,9 +292,14 @@ final class DriverPendingOfferStore extends ChangeNotifier {
     return remainingOffers.isEmpty ? null : remainingOffers.first;
   }
 
-  /// Drop one offer locally after it was answered or ran out.
+  /// Drop one offer locally after it was answered or ran out: the offer
+  /// listed now for [tripReference], or the whole trip if none is listed.
   void forget(String tripReference) {
-    if (_forgotten.add(tripReference.trim())) {
+    final listed = _snapshot?.offerFor(tripReference);
+    final identity = listed == null
+        ? DriverOfferIdentity(tripReference.trim())
+        : DriverOfferIdentity.of(listed);
+    if (_forgotten.add(identity)) {
       notifyListeners();
     }
   }

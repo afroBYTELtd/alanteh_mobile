@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../network/driver_offer_response_resilience.dart';
 import 'driver_offer_coordinator.dart';
 import 'driver_pending_offer_card.dart';
+import 'driver_pending_offer_store.dart';
 
 /// The home screen's offers area: the card for the earliest-expiring
 /// pending offer, or [waitingPanel] when there is none.
@@ -32,8 +33,9 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
   /// True while a live card is shown: only then is the poll paused.
   bool _showingCard = false;
 
-  /// The offer whose card said it can no longer be answered.
-  String? _endedReference;
+  /// The offer whose card said it can no longer be answered. A re-offer of
+  /// the same trip is a different offer, and a live one.
+  DriverOfferIdentity? _ended;
 
   @override
   void initState() {
@@ -71,22 +73,23 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
   @override
   Widget build(BuildContext context) {
     final offer = widget.coordinator.store.firstOffer;
+    final identity = offer == null ? null : DriverOfferIdentity.of(offer);
     if (offer == null) {
-      _endedReference = null;
+      _ended = null;
     }
-    _track(offer != null && offer.tripReference != _endedReference);
+    _track(identity != null && identity != _ended);
     if (offer == null) {
       return widget.waitingPanel;
     }
     return DriverPendingOfferCard(
-      key: ValueKey<String>('home-offer-${offer.tripReference}'),
+      key: ValueKey<DriverOfferIdentity>(identity!),
       tripReference: offer.tripReference,
       store: widget.coordinator.store,
       controllerFactory: widget.controllerFactory,
       pickupTimeLookup: widget.pickupTimeLookup,
       onAccepted: widget.onAccepted,
       onEnded: () {
-        _endedReference = offer.tripReference;
+        _ended = identity;
         _track(false);
       },
     );

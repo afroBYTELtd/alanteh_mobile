@@ -85,6 +85,37 @@ void main() {
       expect(find.byKey(const Key('offer-card')), findsNothing);
     });
 
+    testWidgets('a new offer for the same trip after the old one was removed '
+        'shows on the home screen', (tester) async {
+      await h.pumpHome(tester);
+      await h.advance(tester, const Duration(seconds: 51));
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+
+      // Re-offered to the same driver (our only driver can be): a new
+      // assignment, with no fetch in between that left the trip out.
+      h.server.offers = [h.offer(assignedAfter: 55, expiresAt: 100)];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      // A live countdown (about 48 s left, minus the fetch time).
+      expect(h.countdown(tester), matches(RegExp(r'^0:4\d left$')));
+    });
+
+    testWidgets('a re-offer of the same trip while the ended home card is '
+        'still shown replaces it with a live card', (tester) async {
+      await h.pumpHome(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+      expect(h.countdown(tester), 'Offer expired');
+
+      h.server.offers = [h.offer(assignedAfter: 46, expiresAt: 91)];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(h.countdown(tester), matches(RegExp(r'^0:4\d left$')));
+      expect(h.coordinator.polling, isFalse, reason: 'a live card again');
+    });
+
     testWidgets('a staff offer has no expiry: it stays and keeps the poll '
         'paused', (tester) async {
       h.server.offers = [h.offer(expiresAt: null)];
@@ -143,13 +174,18 @@ final class _Harness {
   );
   final _navigator = GlobalKey<NavigatorState>();
 
-  Map<String, Object?> offer({Object? expiresAt = 45}) => <String, Object?>{
+  Map<String, Object?> offer({
+    Object? expiresAt = 45,
+    int assignedAfter = 0,
+  }) => <String, Object?>{
     'trip_reference': _ref,
     'pickup_location': 'Pinned location',
     'passenger_count': 1,
     'fare_amount': null,
     'fare_currency': 'GHS',
-    'assigned_at': _assigned.toIso8601String(),
+    'assigned_at': _assigned
+        .add(Duration(seconds: assignedAfter))
+        .toIso8601String(),
     'offer_expires_at': expiresAt == null
         ? null
         : _assigned.add(Duration(seconds: expiresAt as int)).toIso8601String(),
