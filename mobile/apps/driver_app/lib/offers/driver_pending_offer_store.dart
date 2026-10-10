@@ -216,6 +216,13 @@ final class DriverPendingOfferStore extends ChangeNotifier {
     return _inFlight ??= _fetch().whenComplete(() => _inFlight = null);
   }
 
+  /// A fresh fetch that leaves after any fetch now running has finished
+  /// (a caller that needs an answer newer than that one).
+  Future<void> refreshAfterCurrent() {
+    final running = _inFlight;
+    return running == null ? refresh() : running.then((_) => refresh());
+  }
+
   Future<void> _fetch() async {
     final generation = _generation;
     final started = clock.now;

@@ -82,6 +82,81 @@ void main() {
     await app.dispose(tester);
   });
 
+  testWidgets('a poll already out when the tap opens the card comes back '
+      'without the offer: the card asks again and shows it well before 8 s', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    // A normal poll leaves before the offer exists, and is slow.
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    final callsBefore = app.source.calls;
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+    expect(app.source.calls, callsBefore, reason: 'the tap joined the poll');
+
+    // The old poll returns without the offer; the server now has it.
+    app.source.hold = false;
+    app.source.offers = [_offer('TRIP-1', pickup: 'Accra Mall')];
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(app.source.calls, callsBefore + 1, reason: 'one fresh request');
+    expect(find.text('Accra Mall'), findsOneWidget);
+    expect(find.text("Couldn't load trip details"), findsNothing);
+    await app.dispose(tester);
+  });
+
+  testWidgets('the fresh request fails too: the card does not keep asking', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    final callsBefore = app.source.calls;
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+
+    app.source.failNext = true;
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    for (var i = 0; i < 5; i += 1) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    expect(app.source.calls, callsBefore + 1, reason: 'asked once, not more');
+    await app.dispose(tester);
+  });
+
+  testWidgets('the fresh request also lacks the offer: it has ended', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+
+    app.clock.value += const Duration(seconds: 1);
+    app.source.hold = false;
+    app.source.offers = const [];
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    await _settle(tester);
+
+    expect(find.text('Offer ended'), findsOneWidget);
+    await app.dispose(tester);
+  });
+
   testWidgets('Accept on the card opens the trip', (tester) async {
     final app = _App()..source.offers = [_offer('TRIP-1')];
     await app.pumpSignedIn(tester);
@@ -378,9 +453,16 @@ final class _Source implements DriverPendingOffersSource {
   /// The server's clock; a fixed 10:00:05 when unset.
   DateTime Function()? serverNow;
 
+  /// The next request fails as if there were no network.
+  bool failNext = false;
+
   @override
   Future<DriverPendingOffersFetch> fetch() {
     calls += 1;
+    if (failNext) {
+      failNext = false;
+      return Future.value(const DriverPendingOffersUnavailable());
+    }
     if (hold) {
       final pending = Completer<DriverPendingOffersFetch>();
       _held.add(pending);

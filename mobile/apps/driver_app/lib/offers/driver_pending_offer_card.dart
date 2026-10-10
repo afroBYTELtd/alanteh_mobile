@@ -79,6 +79,10 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   bool _expired = false;
   bool _reportedEnded = false;
 
+  /// True once the card asked for a fresh fetch because an older one came
+  /// back without its offer.
+  bool _askedAgain = false;
+
   /// When the countdown reached zero (monotonic), for the re-check and the
   /// local removal after it.
   Duration? _ranOutAt;
@@ -180,6 +184,11 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       // back without an offer that is live.
       if (snapshot != null && snapshot.requestedAt > _openedAt) {
         _endedMessage = driverOfferNoLongerAvailableMessage;
+      } else if (snapshot != null && !_askedAgain) {
+        // That older fetch says nothing about this offer, and the poll is
+        // paused while the card is live: ask once more, after it.
+        _askedAgain = true;
+        unawaited(_store.refreshAfterCurrent());
       }
     }
     _reportIfEnded();
