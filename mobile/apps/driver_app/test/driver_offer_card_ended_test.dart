@@ -136,6 +136,141 @@ void main() {
     });
   });
 
+  group('an ended full-screen card yields to a newer live offer', () {
+    // Seen on the test phone (10 Oct, repeat 2): an ended card left open
+    // kept the screen, so a tap for the next offer only showed "1 more
+    // offer waiting" under "Offer expired".
+    Map<String, Object?> other() => h.offer(
+      reference: 'TRIP-2',
+      pickup: 'Osu Castle',
+      assignedAfter: 50,
+      expiresAt: 95,
+    );
+
+    testWidgets('a push or tap for a new offer (the offers are fetched): the '
+        'new offer shows', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+      expect(h.countdown(tester), 'Offer expired');
+
+      h.server.offers = [h.offer(), other()];
+      await h.coordinator.offerPushed();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(find.text('Osu Castle'), findsOneWidget);
+      expect(h.countdown(tester), matches(RegExp(r'^0:\d\d left$')));
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      expect(h.coordinator.polling, isFalse, reason: 'a live card again');
+    });
+
+    testWidgets('a poll that lists a newer offer, with no tap: the new offer '
+        'shows', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+      expect(h.coordinator.polling, isTrue);
+
+      h.server.offers = [other()];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(find.text('Osu Castle'), findsOneWidget);
+      expect(h.countdown(tester), matches(RegExp(r'^0:\d\d left$')));
+    });
+
+    testWidgets('a re-offer of the same trip: it shows', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+
+      h.server.offers = [h.offer(assignedAfter: 46, expiresAt: 91)];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(h.countdown(tester), matches(RegExp(r'^0:4\d left$')));
+    });
+
+    testWidgets('a live card is never replaced: "1 more offer waiting"', (
+      tester,
+    ) async {
+      await h.pumpScreen(tester);
+      h.server.offers = [h.offer(), other()];
+      await h.coordinator.offerPushed();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(find.text('Pinned location'), findsOneWidget);
+      expect(find.text('Osu Castle'), findsNothing);
+      expect(find.text('1 more offer waiting'), findsOneWidget);
+    });
+
+    testWidgets('the ended offer itself, still listed, is not "newer"', (
+      tester,
+    ) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 50));
+
+      expect(h.countdown(tester), 'Offer expired');
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+    });
+
+    testWidgets('an offer refused as ended but still listed and not yet '
+        'expired is not "newer": the card stays ended', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 2));
+      h.gateway.acceptError = const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.offerUnavailable,
+        message: driverOfferNoLongerAvailableMessage,
+      );
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await tester.pump();
+      await h.advance(tester, const Duration(seconds: 2));
+
+      expect(h.countdown(tester), 'Offer ended');
+      expect(find.text(driverOfferNoLongerAvailableMessage), findsOneWidget);
+    });
+
+    testWidgets('another offer that has also run out is not live: the card '
+        'stays ended', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 46));
+
+      h.server.offers = [
+        h.offer(),
+        h.offer(reference: 'TRIP-2', pickup: 'Osu Castle', expiresAt: 40),
+      ];
+      h.timers.tick();
+      await h.advance(tester, const Duration(seconds: 1));
+
+      expect(find.text('Osu Castle'), findsNothing);
+      expect(h.countdown(tester), 'Offer expired');
+    });
+
+    testWidgets('the open offer disappears in the same fetch that lists a new '
+        'one: the new offer shows at once, before any poll', (tester) async {
+      await h.pumpScreen(tester);
+      await h.advance(tester, const Duration(seconds: 2));
+      final calls = h.server.calls;
+
+      h.server.offers = [other()];
+      await h.coordinator.offerPushed();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Osu Castle'), findsOneWidget);
+      expect(h.server.calls, calls + 1, reason: 'no second fetch needed');
+    });
+
+    testWidgets('closing an ended card by hand still works', (tester) async {
+      await h.pumpHome(tester);
+      h.openScreen(tester);
+      await tester.pumpAndSettle();
+      await h.advance(tester, const Duration(seconds: 46));
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+    });
+  });
+
   group('the full-screen card', () {
     testWidgets('its 5 s removal drops only its own offer, not a re-offer '
         'of the trip listed meanwhile', (tester) async {
@@ -191,6 +326,7 @@ final class _Harness {
     periodicTimer: timers.create,
   );
   final _navigator = GlobalKey<NavigatorState>();
+  final gateway = _Gateway();
 
   Map<String, Object?> offer({
     Object? expiresAt = 45,
@@ -216,7 +352,7 @@ final class _Harness {
     String reference,
   ) async => DriverOfferResponseResilienceController(
     queue: _MemoryQueue(),
-    gateway: _Gateway(),
+    gateway: gateway,
     tripReference: reference,
     driverId: 'DRV-1',
     verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
@@ -342,17 +478,25 @@ final class _FakeTimer implements Timer {
 }
 
 final class _Gateway implements DriverOfferResponseGateway {
+  DriverOfferResponseException? acceptError;
+
   @override
   Future<DriverOfferResponseReceipt> accept({
     required String tripReference,
     required String idempotencyKey,
     required String deviceTimestamp,
     DriverOfferSubmissionTelemetrySink? telemetrySink,
-  }) async => DriverOfferResponseReceipt(
-    tripReference: tripReference,
-    tripStatus: 'driver_accepted',
-    duplicate: false,
-  );
+  }) async {
+    final error = acceptError;
+    if (error != null) {
+      throw error;
+    }
+    return DriverOfferResponseReceipt(
+      tripReference: tripReference,
+      tripStatus: 'driver_accepted',
+      duplicate: false,
+    );
+  }
 
   @override
   Future<DriverOfferResponseReceipt> decline({

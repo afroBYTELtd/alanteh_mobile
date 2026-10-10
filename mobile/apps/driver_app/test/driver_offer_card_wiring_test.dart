@@ -42,6 +42,46 @@ void main() {
     await app.dispose(tester);
   });
 
+  testWidgets('repeat 2 on the phone: an ended card is open and a tap for '
+      'a new offer arrives; the new offer shows', (tester) async {
+    final app = _App()..source.offers = [_offer('TRIP-1')];
+    // The server's clock runs with the phone's, so a refetch does not
+    // restart the countdown.
+    app.source.serverNow = () => DateTime.utc(
+      2026,
+      10,
+      9,
+      10,
+      0,
+      5,
+    ).add(app.clock.value - const Duration(seconds: 100));
+    await app.pumpSignedIn(tester);
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    for (var i = 0; i < 41; i += 1) {
+      app.clock.value += const Duration(seconds: 1);
+      await tester.pump(const Duration(seconds: 1));
+    }
+    expect(find.text('Offer expired'), findsOneWidget);
+
+    app.source.offers = [
+      _offer('TRIP-1'),
+      _offer(
+        'TRIP-2',
+        pickup: 'Osu Castle',
+        expiresAt: '2026-10-09T10:01:30+00:00',
+      ),
+    ];
+    app.push.emitOpened(_offerMessage('TRIP-2'));
+    await _settle(tester);
+
+    expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+    expect(find.text('Osu Castle'), findsOneWidget);
+    expect(find.text('Offer expired'), findsNothing);
+    expect(find.textContaining(' left'), findsOneWidget);
+    await app.dispose(tester);
+  });
+
   testWidgets('Accept on the card opens the trip', (tester) async {
     final app = _App()..source.offers = [_offer('TRIP-1')];
     await app.pumpSignedIn(tester);
@@ -228,17 +268,20 @@ RemoteMessage _offerMessage(String reference) => RemoteMessage(
   ),
 );
 
-Map<String, Object?> _offer(String reference, {String pickup = 'Accra Mall'}) =>
-    <String, Object?>{
-      'trip_reference': reference,
-      'pickup_location': pickup,
-      'passenger_count': 1,
-      'fare_amount': '35.00',
-      'fare_currency': 'GHS',
-      'assigned_at': '2026-10-09T10:00:00+00:00',
-      'offer_expires_at': '2026-10-09T10:00:45+00:00',
-      'requested_pickup_time': null,
-    };
+Map<String, Object?> _offer(
+  String reference, {
+  String pickup = 'Accra Mall',
+  String expiresAt = '2026-10-09T10:00:45+00:00',
+}) => <String, Object?>{
+  'trip_reference': reference,
+  'pickup_location': pickup,
+  'passenger_count': 1,
+  'fare_amount': '35.00',
+  'fare_currency': 'GHS',
+  'assigned_at': '2026-10-09T10:00:00+00:00',
+  'offer_expires_at': expiresAt,
+  'requested_pickup_time': null,
+};
 
 final class _App {
   _App({RemoteMessage? initial, bool holdInitial = false})
@@ -332,6 +375,9 @@ final class _Source implements DriverPendingOffersSource {
 
   var calls = 0;
 
+  /// The server's clock; a fixed 10:00:05 when unset.
+  DateTime Function()? serverNow;
+
   @override
   Future<DriverPendingOffersFetch> fetch() {
     calls += 1;
@@ -340,27 +386,30 @@ final class _Source implements DriverPendingOffersSource {
       _held.add(pending);
       return pending.future;
     }
-    return Future.value(_reply(offers));
+    return Future.value(_reply(offers, serverNow));
   }
 
   void release(List<Map<String, Object?>> withOffers) {
     hold = false;
     offers = withOffers;
     for (final pending in _held) {
-      pending.complete(_reply(withOffers));
+      pending.complete(_reply(withOffers, serverNow));
     }
     _held.clear();
   }
 
   /// Answers only the oldest held fetch; later ones stay held.
   void releaseOldest(List<Map<String, Object?>> withOffers) =>
-      _held.removeAt(0).complete(_reply(withOffers));
+      _held.removeAt(0).complete(_reply(withOffers, serverNow));
 
-  static DriverPendingOffersFetch _reply(List<Map<String, Object?>> offers) =>
-      DriverPendingOffersFetched(<String, Object?>{
-        'server_time': '2026-10-09T10:00:05+00:00',
-        'offers': offers,
-      });
+  static DriverPendingOffersFetch _reply(
+    List<Map<String, Object?>> offers,
+    DateTime Function()? serverNow,
+  ) => DriverPendingOffersFetched(<String, Object?>{
+    'server_time':
+        serverNow?.call().toIso8601String() ?? '2026-10-09T10:00:05+00:00',
+    'offers': offers,
+  });
 }
 
 final class _Timers {
