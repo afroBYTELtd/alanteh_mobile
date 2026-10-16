@@ -243,6 +243,22 @@ void main() {
     await app.dispose(tester);
   });
 
+  testWidgets("the card's answer is for the listed offer's assigned_at", (
+    tester,
+  ) async {
+    final app = _App()..source.offers = [_offer('TRIP-1')];
+    await app.pumpSignedIn(tester);
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await _settle(tester);
+
+    expect(app.offerGateway.accepts, 1);
+    expect(app.preparedFor.last, DateTime.utc(2026, 10, 9, 10));
+    await app.dispose(tester);
+  });
+
   group('a tap that opened the app (cold start)', () {
     testWidgets('restore succeeds and the offer is pending: the card opens', (
       tester,
@@ -443,6 +459,7 @@ final class _App {
 
   /// One queue for every card, as the real card factory shares one.
   final queue = _Queue();
+  final preparedFor = <DateTime?>[];
   final tokenStore = MemoryAuthTokenStore();
   final duty = _Duty();
   late final coordinator = DriverOfferCoordinator(
@@ -461,17 +478,20 @@ final class _App {
     driverDutyGateway: duty,
     pushMessageSource: push,
     offerCoordinator: coordinator,
-    offerCardControllerFactory: (reference, {assignedAt}) async =>
-        DriverOfferResponseResilienceController(
-          queue: queue,
-          gateway: offerGateway,
+    offerCardControllerFactory: (reference, {assignedAt}) async {
+      preparedFor.add(assignedAt);
+      return DriverOfferResponseResilienceController(
+        queue: queue,
+        gateway: offerGateway,
+        tripReference: reference,
+        driverId: 'DRV-1',
+        assignedAt: assignedAt,
+        verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
           tripReference: reference,
-          driverId: 'DRV-1',
-          verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
-            tripReference: reference,
-            status: receipt.tripStatus,
-          ),
+          status: receipt.tripStatus,
         ),
+      );
+    },
   );
 
   Future<void> pumpSignedOut(WidgetTester tester) async {

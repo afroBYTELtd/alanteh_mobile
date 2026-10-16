@@ -1,7 +1,13 @@
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
+import 'package:driver_app/driver_duty_trips.dart';
+import 'package:driver_app/main.dart'
+    show driverOfferResponseControllerFactoryFor;
 import 'package:driver_app/network/driver_offer_response_gateway.dart';
 import 'package:driver_app/network/driver_offer_response_resilience.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
+import 'package:driver_app/offers/driver_offer_card_wiring.dart';
+import 'package:driver_app/offers/driver_pending_offer_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -35,7 +41,7 @@ void main() {
 
   tearDown(() => queue.close());
 
-  DriverOfferResponseResilienceController controllerFor(DateTime assignedAt) {
+  DriverOfferResponseResilienceController controllerFor(DateTime? assignedAt) {
     return DriverOfferResponseResilienceController(
       queue: queue,
       gateway: server,
@@ -258,7 +264,101 @@ void main() {
       expect(server.timestamps.single, '2026-10-16T02:52:45.000Z');
       expect(await queue.pendingEvents(), isEmpty);
     });
+
+    QueuedEvent pendingAccept(String id) => QueuedEvent(
+      id: id,
+      eventType:
+          '${driverOfferResponsePath(trip)}'
+          '$driverOfferAcceptanceEventIdentity',
+      tripReference: trip,
+      driverId: 'DRV-1',
+      payloadJson: const <String, Object?>{
+        'response': driverOfferAcceptResponse,
+      },
+      idempotencyKey: 'DRIVER-OFFER-$trip-other',
+    );
+
+    test('a pending record that belongs to no offer of this trip still '
+        'blocks, and is kept', () async {
+      await queue.enqueue(pendingAccept('some-other-record'));
+
+      await expectLater(
+        controllerFor(secondOffer).prepareWhenOfferDisplayed(),
+        throwsA(
+          isA<DriverOfferPreparationException>().having(
+            (error) => error.code,
+            'code',
+            DriverOfferPreparationFailureCode.conflictingOfferRecord,
+          ),
+        ),
+      );
+      expect(await queue.pendingEvents(), hasLength(1));
+      expect(server.keys, isEmpty);
+    });
+
+    test('without an assigned_at (an older server) nothing is retired: '
+        "another offer's record blocks, as before", () async {
+      await queue.enqueue(
+        pendingAccept(
+          'driver-offer-accept:${trip.toLowerCase()}:${offerTag(firstOffer)}',
+        ),
+      );
+
+      await expectLater(
+        controllerFor(null).prepareWhenOfferDisplayed(),
+        throwsA(
+          isA<DriverOfferPreparationException>().having(
+            (error) => error.code,
+            'code',
+            DriverOfferPreparationFailureCode.conflictingOfferRecord,
+          ),
+        ),
+      );
+      expect(await queue.pendingEvents(), hasLength(1));
+    });
   });
+
+  group('the factories pass the offer on', () {
+    test('the card factory', () async {
+      final factory = driverOfferCardControllerFactoryFor(
+        baseUrl: 'https://offers.invalid',
+        tokenStore: MemoryAuthTokenStore(),
+        identity: DriverIdentityCachingDutyGateway(_Duty()),
+        persistentQueue: queue,
+      );
+
+      final controller = await factory(trip, assignedAt: secondOffer);
+
+      expect(controller.assignedAt, secondOffer);
+    });
+
+    test('the trip screen factory', () async {
+      final factory = driverOfferResponseControllerFactoryFor(
+        baseUrl: 'https://offers.invalid',
+        tokenStore: MemoryAuthTokenStore(),
+        dutyGateway: _Duty(),
+        persistentQueue: queue,
+        offerGateway: server,
+      )!;
+
+      final controller = await factory(trip, assignedAt: secondOffer);
+
+      expect(controller.assignedAt, secondOffer);
+    });
+  });
+}
+
+final class _Duty implements DriverDutyGateway {
+  @override
+  Future<DriverDutySummary> fetchDuty() async =>
+      const DriverDutySummary(driverReference: 'DRV-1');
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() async => const [];
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) =>
+      throw UnimplementedError();
 }
 
 /// The offer-response rules of the server at 07e86be, for one trip and one
