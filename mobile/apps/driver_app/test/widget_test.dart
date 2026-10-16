@@ -269,7 +269,7 @@ void main() {
                 counters.tripActionControllerFactoryCalls += 1;
                 throw StateError('QA gate invoked trip-action factory early.');
               },
-              driverOfferResponseControllerFactory: (_, {assignedAt}) async {
+              driverOfferResponseControllerFactory: (_, {assignedAt, unknownOffer = false}) async {
                 counters.queueOpens += 1;
                 counters.offerResponseControllerFactoryCalls += 1;
                 throw StateError(

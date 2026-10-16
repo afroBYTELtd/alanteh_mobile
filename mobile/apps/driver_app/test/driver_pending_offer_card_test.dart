@@ -223,6 +223,8 @@ void main() {
     testWidgets('Decline works before the details arrive', (tester) async {
       await h.pump(tester);
       await tester.tap(find.byKey(const Key('offer-card-decline')));
+      // It waits for the offer for up to the details timeout first.
+      await tester.pump(const Duration(seconds: 9));
       await tester.pumpAndSettle(const Duration(milliseconds: 10));
 
       expect(h.gateway.declines, 1);
@@ -364,6 +366,88 @@ void main() {
       await h.dispose(tester);
     });
 
+    testWidgets('Decline before the offer is listed waits for it; if it '
+        'never comes, it goes out once under a fresh key, and Decline again '
+        'after the offer is listed reuses that key', (tester) async {
+      await h.pump(tester);
+      h.gateway.declineError = const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.temporarilyUnavailable,
+        message: 'Network is slow.',
+      );
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+      expect(h.gateway.keys, hasLength(1));
+
+      await h.deliver(tester, [h.offer()]);
+      h.gateway.declineError = null;
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(2));
+      expect(h.gateway.keys.last, h.gateway.keys.first);
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
+    testWidgets('Decline during "Loading…" and the offer turns out to be '
+        'gone: nothing is sent and the card says so', (tester) async {
+      await h.pump(tester);
+      await h.advance(tester, const Duration(seconds: 1));
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 1));
+      await h.deliver(tester, const []);
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, isEmpty);
+      expect(find.text('This offer is no longer available'), findsOneWidget);
+      await h.dispose(tester);
+    });
+
+    // What the installed build leaves behind: its decline record for the
+    // trip, keyed by trip only and already synced. The server keeps the
+    // receipt for that key.
+    void leaveOldDecline() {
+      h.queue = _KeepingQueue()..events[_oldDecline.id] = _oldDecline;
+      h.gateway.seenKeys.add(_oldDecline.idempotencyKey);
+    }
+
+    testWidgets('the trip offered again, Decline during "Loading…", the offer '
+        "listed a moment later: Decline goes out under this offer's key, not "
+        'the old record', (tester) async {
+      leaveOldDecline();
+      await h.pump(tester);
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 1));
+      await h.deliver(tester, [h.offer()]);
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(1));
+      expect(h.gateway.keys.single, isNot(_oldDecline.idempotencyKey));
+      expect(h.gateway.keys.single, contains(offerTag));
+      expect(h.gateway.duplicates, 0);
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
+    testWidgets('the same, but the offer is never listed: after the details '
+        'timeout Decline goes out under a fresh key, not the old record', (
+      tester,
+    ) async {
+      leaveOldDecline();
+      await h.pump(tester);
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(1));
+      expect(h.gateway.keys.single, isNot(_oldDecline.idempotencyKey));
+      expect(h.gateway.duplicates, 0);
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
     testWidgets('opened with its offer listed: prepares for that offer once', (
       tester,
     ) async {
@@ -395,6 +479,9 @@ final class _Harness {
   final accepted = <String>[];
   final finished = <String>[];
   final preparedFor = <DateTime?>[];
+
+  /// Shared by every controller when set; otherwise each gets its own.
+  DriverTripActionPersistentQueue? queue;
   late final store = DriverPendingOfferStore(source: source, clock: clock);
 
   Future<void> pump(
@@ -408,20 +495,23 @@ final class _Harness {
             child: DriverPendingOfferCard(
               tripReference: _ref,
               store: store,
-              controllerFactory: (reference, {assignedAt}) async {
-                preparedFor.add(assignedAt);
-                return DriverOfferResponseResilienceController(
-                  queue: _MemoryQueue(),
-                  gateway: gateway,
-                  tripReference: reference,
-                  driverId: 'DRV-1',
-                  assignedAt: assignedAt,
-                  verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
-                    tripReference: reference,
-                    status: receipt.tripStatus,
-                  ),
-                );
-              },
+              controllerFactory:
+                  (reference, {assignedAt, unknownOffer = false}) async {
+                    preparedFor.add(assignedAt);
+                    return DriverOfferResponseResilienceController(
+                      queue: queue ?? _MemoryQueue(),
+                      gateway: gateway,
+                      tripReference: reference,
+                      driverId: 'DRV-1',
+                      assignedAt: assignedAt,
+                      unknownOffer: unknownOffer,
+                      verifyServerState: (receipt) async =>
+                          DriverOfferVerifiedTrip(
+                            tripReference: reference,
+                            status: receipt.tripStatus,
+                          ),
+                    );
+                  },
               pickupTimeLookup: pickupTimeLookup,
               pickDeclineReason: (_) async => const DriverDeclineChoice(
                 reason: DriverDeclineReason.endOfShift,
@@ -515,6 +605,12 @@ final class _FakeGateway implements DriverOfferResponseGateway {
   var accepts = 0;
   var declines = 0;
   final keys = <String>[];
+  DriverOfferResponseException? declineError;
+
+  /// Keys the server applied an answer for. As at 07e86be, a key seen
+  /// before is answered as a duplicate with the trip as it is now.
+  final seenKeys = <String>{};
+  var duplicates = 0;
   DriverOfferResponseException? acceptError;
   Completer<void>? _accept;
 
@@ -552,6 +648,18 @@ final class _FakeGateway implements DriverOfferResponseGateway {
   }) async {
     declines += 1;
     keys.add(idempotencyKey);
+    final error = declineError;
+    if (error != null) {
+      throw error;
+    }
+    if (!seenKeys.add(idempotencyKey)) {
+      duplicates += 1;
+      return DriverOfferResponseReceipt(
+        tripReference: tripReference,
+        tripStatus: 'driver_offer_sent',
+        duplicate: true,
+      );
+    }
     return DriverOfferResponseReceipt(
       tripReference: tripReference,
       tripStatus: 'driver_declined',
@@ -582,3 +690,48 @@ final class _MemoryQueue implements DriverTripActionPersistentQueue {
   @override
   Future<void> markPermanentlyFailed(String id) async => _events.remove(id);
 }
+
+/// Keeps synced records, as the phone's SQLite queue does.
+final class _KeepingQueue implements DriverTripActionPersistentQueue {
+  final events = <String, QueuedEvent>{};
+
+  bool _pending(QueuedEvent event) =>
+      event.syncStatus == QueueSyncStatus.pending ||
+      event.syncStatus == QueueSyncStatus.failed;
+
+  @override
+  Future<QueuedEvent> enqueue(QueuedEvent event) async =>
+      events[event.id] = event;
+
+  @override
+  Future<QueuedEvent?> eventById(String id) async => events[id];
+
+  @override
+  Future<List<QueuedEvent>> pendingEvents() async =>
+      events.values.where(_pending).toList();
+
+  @override
+  Future<void> markSynced(String id) async =>
+      events[id] = events[id]!.copyWith(syncStatus: QueueSyncStatus.synced);
+
+  @override
+  Future<void> markFailed(String id) async {}
+
+  @override
+  Future<void> markPermanentlyFailed(String id) async => events[id] =
+      events[id]!.copyWith(syncStatus: QueueSyncStatus.permanentlyFailed);
+}
+
+final _oldDecline = QueuedEvent(
+  id: 'driver-offer-decline:${_ref.toLowerCase()}',
+  eventType: '${driverOfferResponsePath(_ref)}$driverOfferDeclineEventIdentity',
+  tripReference: _ref,
+  driverId: 'DRV-1',
+  payloadJson: <String, Object?>{
+    'response': driverOfferDeclineResponse,
+    'reason': DriverDeclineReason.endOfShift.code,
+    'device_timestamp': '2026-10-09T09:00:00.000Z',
+  },
+  idempotencyKey: 'DRIVER-OFFER-DECLINE-$_ref-old-installed-build-key',
+  syncStatus: QueueSyncStatus.synced,
+);

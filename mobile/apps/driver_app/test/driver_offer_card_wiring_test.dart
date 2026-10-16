@@ -259,6 +259,27 @@ void main() {
     await app.dispose(tester);
   });
 
+  testWidgets('Decline while the offer never arrives: the shell asks for '
+      'an answer of its own (unknown offer)', (tester) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('offer-card-decline')));
+    await _settle(tester);
+    await tester.tap(
+      find.byKey(const Key('driver-decline-reason-option-end_of_shift')),
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('driver-decline-reason-confirm')));
+    await tester.pump(const Duration(seconds: 9));
+    await _settle(tester);
+
+    expect(app.unknownOffers, contains(true));
+    await app.dispose(tester);
+  });
+
   group('a tap that opened the app (cold start)', () {
     testWidgets('restore succeeds and the offer is pending: the card opens', (
       tester,
@@ -460,6 +481,7 @@ final class _App {
   /// One queue for every card, as the real card factory shares one.
   final queue = _Queue();
   final preparedFor = <DateTime?>[];
+  final unknownOffers = <bool>[];
   final tokenStore = MemoryAuthTokenStore();
   final duty = _Duty();
   late final coordinator = DriverOfferCoordinator(
@@ -478,20 +500,23 @@ final class _App {
     driverDutyGateway: duty,
     pushMessageSource: push,
     offerCoordinator: coordinator,
-    offerCardControllerFactory: (reference, {assignedAt}) async {
-      preparedFor.add(assignedAt);
-      return DriverOfferResponseResilienceController(
-        queue: queue,
-        gateway: offerGateway,
-        tripReference: reference,
-        driverId: 'DRV-1',
-        assignedAt: assignedAt,
-        verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
-          tripReference: reference,
-          status: receipt.tripStatus,
-        ),
-      );
-    },
+    offerCardControllerFactory:
+        (reference, {assignedAt, unknownOffer = false}) async {
+          preparedFor.add(assignedAt);
+          unknownOffers.add(unknownOffer);
+          return DriverOfferResponseResilienceController(
+            queue: queue,
+            gateway: offerGateway,
+            tripReference: reference,
+            driverId: 'DRV-1',
+            assignedAt: assignedAt,
+            unknownOffer: unknownOffer,
+            verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
+              tripReference: reference,
+              status: receipt.tripStatus,
+            ),
+          );
+        },
   );
 
   Future<void> pumpSignedOut(WidgetTester tester) async {

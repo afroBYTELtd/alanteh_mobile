@@ -41,13 +41,17 @@ void main() {
 
   tearDown(() => queue.close());
 
-  DriverOfferResponseResilienceController controllerFor(DateTime? assignedAt) {
+  DriverOfferResponseResilienceController controllerFor(
+    DateTime? assignedAt, {
+    bool unknownOffer = false,
+  }) {
     return DriverOfferResponseResilienceController(
       queue: queue,
       gateway: server,
       tripReference: trip,
       driverId: 'DRV-1',
       assignedAt: assignedAt,
+      unknownOffer: unknownOffer,
       utcNow: () => now,
       // As on the card: the receipt carries the trip's status.
       verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
@@ -369,6 +373,109 @@ void main() {
     });
   });
 
+  group('which records an offer may retire', () {
+    QueuedEvent pendingAcceptFor(DateTime assignedAt) => QueuedEvent(
+      id: 'driver-offer-accept:${trip.toLowerCase()}:${offerTag(assignedAt)}',
+      eventType:
+          '${driverOfferResponsePath(trip)}'
+          '$driverOfferAcceptanceEventIdentity',
+      tripReference: trip,
+      driverId: 'DRV-1',
+      payloadJson: const <String, Object?>{
+        'response': driverOfferAcceptResponse,
+      },
+      idempotencyKey: 'DRIVER-OFFER-$trip-${offerTag(assignedAt)}-x',
+    );
+
+    test("a newer offer's pending record is not retired by an older offer: "
+        'it blocks, and is kept', () async {
+      await queue.enqueue(pendingAcceptFor(secondOffer));
+
+      await expectLater(
+        controllerFor(firstOffer).prepareWhenOfferDisplayed(),
+        throwsA(
+          isA<DriverOfferPreparationException>().having(
+            (error) => error.code,
+            'code',
+            DriverOfferPreparationFailureCode.conflictingOfferRecord,
+          ),
+        ),
+      );
+      final pending = await queue.pendingEvents();
+      expect(pending.single.id, endsWith(offerTag(secondOffer)));
+      expect(server.keys, isEmpty);
+    });
+
+    test("an older offer's pending record is retired by a newer one", () async {
+      await queue.enqueue(pendingAcceptFor(firstOffer));
+
+      await controllerFor(secondOffer).prepareWhenOfferDisplayed();
+
+      final pending = await queue.pendingEvents();
+      expect(pending.single.id, endsWith(offerTag(secondOffer)));
+    });
+  });
+
+  group('an answer whose offer is not known', () {
+    QueuedEvent oldDecline({required QueueSyncStatus status}) => QueuedEvent(
+      id: 'driver-offer-decline:${trip.toLowerCase()}',
+      eventType:
+          '${driverOfferResponsePath(trip)}'
+          '$driverOfferDeclineEventIdentity',
+      tripReference: trip,
+      driverId: 'DRV-1',
+      payloadJson: <String, Object?>{
+        'response': driverOfferDeclineResponse,
+        'reason': DriverDeclineReason.endOfShift.code,
+        'device_timestamp': '2026-10-16T02:40:00.000Z',
+      },
+      idempotencyKey: 'DRIVER-OFFER-DECLINE-$trip-old',
+      syncStatus: status,
+    );
+
+    test('never reuses the synced record the installed build left: it goes '
+        'out once under a fresh key', () async {
+      await queue.enqueue(oldDecline(status: QueueSyncStatus.synced));
+      server.markSeen('DRIVER-OFFER-DECLINE-$trip-old');
+      now = DateTime.utc(2026, 10, 16, 2, 52, 50);
+
+      final result = await decline(controllerFor(null, unknownOffer: true));
+
+      expect(result.succeeded, isTrue);
+      expect(server.keys.single, isNot('DRIVER-OFFER-DECLINE-$trip-old'));
+      expect(server.keys.single, startsWith('DRIVER-OFFER-DECLINE-$trip-'));
+      expect(server.timestamps.single, '2026-10-16T02:52:50.000Z');
+    });
+
+    test(
+      "leaves this trip's other records alone and is not blocked by them",
+      () async {
+        await queue.enqueue(oldDecline(status: QueueSyncStatus.pending));
+
+        final result = await decline(controllerFor(null, unknownOffer: true));
+
+        expect(result.succeeded, isTrue);
+        expect(server.keys.single, isNot('DRIVER-OFFER-DECLINE-$trip-old'));
+        final pending = await queue.pendingEvents();
+        expect(pending.map((event) => event.idempotencyKey), [
+          'DRIVER-OFFER-DECLINE-$trip-old',
+        ]);
+      },
+    );
+
+    test('two such controllers never share a key', () async {
+      final first = controllerFor(null, unknownOffer: true);
+      server.failNext = true;
+      await decline(first);
+
+      server.reOffer();
+      await decline(controllerFor(null, unknownOffer: true));
+
+      expect(server.keys, hasLength(2));
+      expect(server.keys.last, isNot(server.keys.first));
+    });
+  });
+
   group('the factories pass the offer on', () {
     test('the card factory', () async {
       final factory = driverOfferCardControllerFactoryFor(
@@ -381,6 +488,9 @@ void main() {
       final controller = await factory(trip, assignedAt: secondOffer);
 
       expect(controller.assignedAt, secondOffer);
+      expect(controller.unknownOffer, isFalse);
+      final unknown = await factory(trip, unknownOffer: true);
+      expect(unknown.unknownOffer, isTrue);
     });
 
     test('the trip screen factory', () async {
@@ -395,6 +505,9 @@ void main() {
       final controller = await factory(trip, assignedAt: secondOffer);
 
       expect(controller.assignedAt, secondOffer);
+      expect(controller.unknownOffer, isFalse);
+      final unknown = await factory(trip, unknownOffer: true);
+      expect(unknown.unknownOffer, isTrue);
     });
   });
 }
@@ -428,6 +541,7 @@ final class _Server implements DriverOfferResponseGateway {
   var failNext = false;
 
   void reOffer() => status = 'driver_offer_sent';
+  void markSeen(String key) => _receipts.add(key);
   void expire() => status = 'requested';
   void takeBack() => status = 'under_review';
 

@@ -351,6 +351,7 @@ final class _Harness {
   Future<DriverOfferResponseResilienceController> _controller(
     String reference, {
     DateTime? assignedAt,
+    bool unknownOffer = false,
   }) async => DriverOfferResponseResilienceController(
     queue: _MemoryQueue(),
     gateway: gateway,

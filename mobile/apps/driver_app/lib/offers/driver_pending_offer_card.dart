@@ -62,6 +62,10 @@ class DriverPendingOfferCard extends StatefulWidget {
 
 class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   DriverOfferResponseResilienceController? _controller;
+
+  /// The controller an answer was sent with. The card is one offer, so every
+  /// later answer from it goes out the same way, under the same key.
+  DriverOfferResponseResilienceController? _answeredWith;
   Future<DriverOfferResponseResilienceController?>? _preparing;
   bool _prepareFailed = false;
 
@@ -291,6 +295,10 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   /// The controller for the offer on screen. A card opened by a push tap
   /// can prepare before its offer, and so its `assigned_at`, is listed.
   Future<DriverOfferResponseResilienceController?> _controllerForOffer() async {
+    final answered = _answeredWith;
+    if (answered != null) {
+      return answered;
+    }
     var controller = _controller ?? await _preparing;
     final assignedAt = _offer?.assignedAt;
     if (controller != null &&
@@ -299,6 +307,55 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       controller = null;
     }
     return controller ?? await (_preparing = _prepare());
+  }
+
+  /// Decline is allowed while the card is still loading. It waits for the
+  /// offer, and so its `assigned_at`, for up to [DriverPendingOfferCard.
+  /// detailsTimeout]; without it the decline goes out under a key of its
+  /// own, never one left from an earlier offer of the trip.
+  Future<DriverOfferResponseResilienceController?>
+  _controllerForDecline() async {
+    final answered = _answeredWith;
+    if (answered != null) {
+      return answered;
+    }
+    if (_offer == null) {
+      await _waitForOffer();
+      if (!mounted || _locked) {
+        return null;
+      }
+    }
+    if (_offer?.assignedAt != null) {
+      return _controllerForOffer();
+    }
+    try {
+      return await widget.controllerFactory(_reference, unknownOffer: true);
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> _waitForOffer() async {
+    final done = Completer<void>();
+    void check() {
+      if ((_offer != null || _locked) && !done.isCompleted) {
+        done.complete();
+      }
+    }
+
+    final timer = Timer(widget.detailsTimeout, () {
+      if (!done.isCompleted) {
+        done.complete();
+      }
+    });
+    _store.addListener(check);
+    unawaited(_store.refresh());
+    try {
+      await done.future;
+    } finally {
+      timer.cancel();
+      _store.removeListener(check);
+    }
   }
 
   Future<void> _accept() async {
@@ -320,6 +377,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       });
       return;
     }
+    _answeredWith = controller;
     final result = await controller.accept();
     if (!mounted) {
       return;
@@ -351,8 +409,13 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _sending = true;
       _message = null;
     });
-    final controller = await _controllerForOffer();
+    final controller = await _controllerForDecline();
     if (!mounted) {
+      return;
+    }
+    if (_locked) {
+      // The offer ended while the card waited for it.
+      setState(() => _sending = false);
       return;
     }
     if (controller == null) {
@@ -362,6 +425,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       });
       return;
     }
+    _answeredWith = controller;
     final result = await controller.decline(
       reason: choice.reason,
       reasonNote: choice.reasonNote,

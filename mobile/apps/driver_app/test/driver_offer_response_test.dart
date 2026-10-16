@@ -2065,7 +2065,7 @@ void main() {
           home: DriverTripDetailScreen(
             gateway: dutyGateway,
             tripReference: 'TRIP-OFFER-001',
-            offerResponseControllerFactory: (_, {assignedAt}) async =>
+            offerResponseControllerFactory: (_, {assignedAt, unknownOffer = false}) async =>
                 DriverOfferResponseResilienceController(
                   queue: queue,
                   gateway: offerGateway,
@@ -2183,7 +2183,7 @@ void main() {
           home: DriverTripDetailScreen(
             gateway: dutyGateway,
             tripReference: 'TRIP-OFFER-001',
-            offerResponseControllerFactory: (_, {assignedAt}) async =>
+            offerResponseControllerFactory: (_, {assignedAt, unknownOffer = false}) async =>
                 DriverOfferResponseResilienceController(
                   queue: queue,
                   gateway: offerGateway,
@@ -2423,7 +2423,7 @@ void main() {
             home: DriverTripDetailScreen(
               gateway: dutyGateway,
               tripReference: 'TRIP-OFFER-001',
-              offerResponseControllerFactory: (_, {assignedAt}) async =>
+              offerResponseControllerFactory: (_, {assignedAt, unknownOffer = false}) async =>
                   DriverOfferResponseResilienceController(
                     queue: queue,
                     gateway: offerGateway,
