@@ -217,6 +217,57 @@ void main() {
       expect(server.keys.last, server.keys.first);
     });
 
+    Future<List<QueuedEvent>> pendingFor(
+      String kind,
+      DateTime assignedAt,
+    ) async => (await queue.pendingEvents())
+        .where(
+          (event) =>
+              event.id ==
+              'driver-offer-$kind:${trip.toLowerCase()}:${offerTag(assignedAt)}',
+        )
+        .toList();
+
+    test('an offline Accept on this offer stays pending through a new card '
+        'and a failed retry, and then goes out under its own key', () async {
+      final first = controllerFor(firstOffer);
+      await first.prepareWhenOfferDisplayed();
+      server.failNext = true;
+      await first.accept();
+      final waiting = await pendingFor('accept', firstOffer);
+      expect(waiting, hasLength(1));
+
+      final reopened = controllerFor(firstOffer);
+      await reopened.prepareWhenOfferDisplayed();
+      expect(await pendingFor('accept', firstOffer), hasLength(1));
+
+      server.failNext = true;
+      await reopened.accept();
+      expect(await pendingFor('accept', firstOffer), hasLength(1));
+
+      final result = await reopened.accept();
+      expect(result.accepted, isTrue);
+      expect(server.keys.toSet(), {waiting.single.idempotencyKey});
+    });
+
+    test('an offline Decline on this offer likewise', () async {
+      final first = controllerFor(firstOffer);
+      await first.prepareWhenOfferDisplayed();
+      server.failNext = true;
+      await decline(first);
+      final waiting = await pendingFor('decline', firstOffer);
+      expect(waiting, hasLength(1));
+
+      final reopened = controllerFor(firstOffer);
+      server.failNext = true;
+      await decline(reopened);
+      expect(await pendingFor('decline', firstOffer), hasLength(1));
+
+      final result = await decline(reopened);
+      expect(result.succeeded, isTrue);
+      expect(server.keys.toSet(), {waiting.single.idempotencyKey});
+    });
+
     test("an older offer's unsent record is retired, never sent, and does "
         'not block the re-offer', () async {
       final first = controllerFor(firstOffer);
