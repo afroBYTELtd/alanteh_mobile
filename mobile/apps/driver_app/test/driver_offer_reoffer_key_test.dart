@@ -406,6 +406,22 @@ void main() {
       expect(server.keys, isEmpty);
     });
 
+    test('a pending record from an answer whose offer was not known is '
+        'retired once the offer is known', () async {
+      final unknown = controllerFor(null, unknownOffer: true);
+      server.failNext = true;
+      await decline(unknown);
+      expect(await queue.pendingEvents(), hasLength(1));
+
+      final known = controllerFor(secondOffer);
+      final result = await decline(known);
+
+      expect(result.succeeded, isTrue);
+      expect(server.keys.last, contains(offerTag(secondOffer)));
+      final pending = await queue.pendingEvents();
+      expect(pending.where((e) => e.id.contains(':once-')), isEmpty);
+    });
+
     test("an older offer's pending record is retired by a newer one", () async {
       await queue.enqueue(pendingAcceptFor(firstOffer));
 

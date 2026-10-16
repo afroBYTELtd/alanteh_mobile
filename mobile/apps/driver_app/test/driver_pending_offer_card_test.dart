@@ -390,6 +390,50 @@ void main() {
       await h.dispose(tester);
     });
 
+    testWidgets('Decline twice while the offer is never listed: the second '
+        'goes out under the first one\'s key', (tester) async {
+      await h.pump(tester);
+      h.gateway.declineError = const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.temporarilyUnavailable,
+        message: 'Network is slow.',
+      );
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      h.gateway.declineError = null;
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump(const Duration(seconds: 9));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(2));
+      expect(h.gateway.keys.last, h.gateway.keys.first);
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
+    testWidgets('Decline during "Loading…" asks the server for the offer at '
+        "once, and goes out under the offer's key when it comes", (
+      tester,
+    ) async {
+      await h.pump(tester);
+      final before = h.source.calls;
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pump();
+      expect(h.source.calls, before + 1);
+
+      h.clock.value += const Duration(seconds: 1);
+      h.source.complete(<String, Object?>{
+        'server_time': '2026-10-09T10:00:05+00:00',
+        'offers': [h.offer()],
+      });
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys.single, contains(offerTag));
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
     testWidgets('Decline during "Loading…" and the offer turns out to be '
         'gone: nothing is sent and the card says so', (tester) async {
       await h.pump(tester);

@@ -63,9 +63,10 @@ class DriverPendingOfferCard extends StatefulWidget {
 class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   DriverOfferResponseResilienceController? _controller;
 
-  /// The controller an answer was sent with. The card is one offer, so every
-  /// later answer from it goes out the same way, under the same key.
-  DriverOfferResponseResilienceController? _answeredWith;
+  /// The controller a Decline went out with. The card is one offer, so every
+  /// later Decline from it goes out the same way, under the same key. (Accept
+  /// only goes out once the offer is listed, always with its own controller.)
+  DriverOfferResponseResilienceController? _declinedWith;
   Future<DriverOfferResponseResilienceController?>? _preparing;
   bool _prepareFailed = false;
 
@@ -295,10 +296,6 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   /// The controller for the offer on screen. A card opened by a push tap
   /// can prepare before its offer, and so its `assigned_at`, is listed.
   Future<DriverOfferResponseResilienceController?> _controllerForOffer() async {
-    final answered = _answeredWith;
-    if (answered != null) {
-      return answered;
-    }
     var controller = _controller ?? await _preparing;
     final assignedAt = _offer?.assignedAt;
     if (controller != null &&
@@ -315,13 +312,13 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   /// own, never one left from an earlier offer of the trip.
   Future<DriverOfferResponseResilienceController?>
   _controllerForDecline() async {
-    final answered = _answeredWith;
-    if (answered != null) {
-      return answered;
+    final declined = _declinedWith;
+    if (declined != null) {
+      return declined;
     }
     if (_offer == null) {
       await _waitForOffer();
-      if (!mounted || _locked) {
+      if (!mounted) {
         return null;
       }
     }
@@ -377,7 +374,6 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       });
       return;
     }
-    _answeredWith = controller;
     final result = await controller.accept();
     if (!mounted) {
       return;
@@ -425,7 +421,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       });
       return;
     }
-    _answeredWith = controller;
+    _declinedWith = controller;
     final result = await controller.decline(
       reason: choice.reason,
       reasonNote: choice.reasonNote,
