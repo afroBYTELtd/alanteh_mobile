@@ -132,7 +132,10 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
 
   Future<DriverOfferResponseResilienceController?> _prepare() async {
     try {
-      final controller = await widget.controllerFactory(_reference);
+      final controller = await widget.controllerFactory(
+        _reference,
+        assignedAt: _offer?.assignedAt,
+      );
       await controller.prepareWhenOfferDisplayed();
       if (mounted) {
         setState(() {
@@ -285,15 +288,38 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     await _store.refresh();
   }
 
+  /// The controller for the offer on screen. A card opened by a push tap
+  /// can prepare before its offer, and so its `assigned_at`, is listed.
+  Future<DriverOfferResponseResilienceController?> _controllerForOffer() async {
+    var controller = _controller ?? await _preparing;
+    final assignedAt = _offer?.assignedAt;
+    if (controller != null &&
+        assignedAt != null &&
+        controller.assignedAt != assignedAt) {
+      controller = null;
+    }
+    return controller ?? await (_preparing = _prepare());
+  }
+
   Future<void> _accept() async {
-    final controller = _controller;
-    if (controller == null || !_canAccept) {
+    if (_controller == null || !_canAccept) {
       return;
     }
     setState(() {
       _sending = true;
       _message = null;
     });
+    final controller = await _controllerForOffer();
+    if (!mounted) {
+      return;
+    }
+    if (controller == null) {
+      setState(() {
+        _sending = false;
+        _message = 'Could not send. Check your connection and try again.';
+      });
+      return;
+    }
     final result = await controller.accept();
     if (!mounted) {
       return;
@@ -325,8 +351,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _sending = true;
       _message = null;
     });
-    var controller = _controller ?? await _preparing;
-    controller ??= await (_preparing = _prepare());
+    final controller = await _controllerForOffer();
     if (!mounted) {
       return;
     }

@@ -26,10 +26,12 @@ typedef DriverOfferServerStateVerifier =
 typedef DriverOfferSessionExpiredHandler =
     Future<void> Function(String message);
 
+/// [assignedAt] names the offer: a trip offered again has a new one.
 typedef DriverOfferResponseControllerFactory =
     Future<DriverOfferResponseResilienceController> Function(
-      String tripReference,
-    );
+      String tripReference, {
+      DateTime? assignedAt,
+    });
 
 enum DriverOfferPreparationFailureCode {
   factoryUnavailable,
@@ -115,6 +117,7 @@ final class DriverOfferResponseResilienceController {
     required this.tripReference,
     required this.driverId,
     required this.verifyServerState,
+    this.assignedAt,
     DateTime Function()? utcNow,
   }) : _utcNow = utcNow ?? (() => DateTime.now().toUtc());
 
@@ -122,6 +125,12 @@ final class DriverOfferResponseResilienceController {
   final DriverOfferResponseGateway gateway;
   final String tripReference;
   final String driverId;
+
+  /// The offer's `assigned_at`. A trip can be offered to the same driver
+  /// again, and the server replays the stored answer for a key it has seen,
+  /// so each offer keeps its own record and key. Null when the server did
+  /// not send it: then the trip alone names the offer, as before.
+  final DateTime? assignedAt;
   final DriverOfferServerStateVerifier verifyServerState;
   final DateTime Function() _utcNow;
   DriverOfferSubmissionTelemetrySink? _telemetrySink;
@@ -159,20 +168,70 @@ final class DriverOfferResponseResilienceController {
       '${driverOfferResponsePath(_normalizedTripReference)}'
       '$driverOfferAcceptanceEventIdentity';
 
-  String get _recordId =>
+  String? get _offerTag {
+    final at = assignedAt;
+    return at == null ? null : '${at.toUtc().microsecondsSinceEpoch}';
+  }
+
+  String get _tripRecordId =>
       'driver-offer-accept:${_normalizedTripReference.toLowerCase()}';
 
-  String get _keyPrefix => 'DRIVER-OFFER-$_normalizedTripReference-';
+  String get _recordId => _withOfferTag(_tripRecordId, ':');
+
+  String get _keyPrefix =>
+      '${_withOfferTag('DRIVER-OFFER-$_normalizedTripReference', '-')}-';
 
   String get _declineEventType =>
       '${driverOfferResponsePath(_normalizedTripReference)}'
       '$driverOfferDeclineEventIdentity';
 
-  String get _declineRecordId =>
+  String get _declineTripRecordId =>
       'driver-offer-decline:${_normalizedTripReference.toLowerCase()}';
 
+  String get _declineRecordId => _withOfferTag(_declineTripRecordId, ':');
+
   String get _declineKeyPrefix =>
-      'DRIVER-OFFER-DECLINE-$_normalizedTripReference-';
+      '${_withOfferTag('DRIVER-OFFER-DECLINE-$_normalizedTripReference', '-')}-';
+
+  String _withOfferTag(String base, String separator) {
+    final tag = _offerTag;
+    return tag == null ? base : '$base$separator$tag';
+  }
+
+  /// Another pending record for this trip: from an earlier offer of it (or
+  /// from the build that keyed by trip only) when this controller knows its
+  /// offer. That offer has ended, so its record is retired and never sent.
+  /// Any other record is a conflict, as before.
+  Future<void> _retireEarlierOfferRecords(
+    List<QueuedEvent> others,
+    String tripRecordId,
+  ) async {
+    final earlier = _offerTag == null
+        ? const <QueuedEvent>[]
+        : others
+              .where(
+                (event) =>
+                    event.id == tripRecordId ||
+                    event.id.startsWith('$tripRecordId:'),
+              )
+              .toList(growable: false);
+
+    if (earlier.length != others.length) {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.conflictingOfferRecord,
+      );
+    }
+
+    try {
+      for (final event in earlier) {
+        await queue.markPermanentlyFailed(event.id);
+      }
+    } on Object {
+      throw const DriverOfferPreparationException(
+        DriverOfferPreparationFailureCode.queueEnqueueFailed,
+      );
+    }
+  }
 
   void attachSubmissionTelemetrySink(
     DriverOfferSubmissionTelemetrySink? telemetrySink,
@@ -215,11 +274,7 @@ final class DriverOfferResponseResilienceController {
         )
         .toList(growable: false);
 
-    if (conflictingMatches.isNotEmpty) {
-      throw const DriverOfferPreparationException(
-        DriverOfferPreparationFailureCode.conflictingOfferRecord,
-      );
-    }
+    await _retireEarlierOfferRecords(conflictingMatches, _tripRecordId);
 
     if (persisted != null) {
       _validateExistingEvent(persisted);
@@ -463,11 +518,7 @@ final class DriverOfferResponseResilienceController {
         )
         .toList(growable: false);
 
-    if (conflictingMatches.isNotEmpty) {
-      throw const DriverOfferPreparationException(
-        DriverOfferPreparationFailureCode.conflictingOfferRecord,
-      );
-    }
+    await _retireEarlierOfferRecords(conflictingMatches, _declineTripRecordId);
 
     if (persisted != null) {
       _validateExistingDeclineEvent(persisted);
@@ -717,7 +768,9 @@ final class DriverOfferResponseResilienceController {
     final rawReason = event.payloadJson['reason'];
     final reasonIsValid =
         rawReason is String &&
-        DriverDeclineReason.values.any((candidate) => candidate.code == rawReason);
+        DriverDeclineReason.values.any(
+          (candidate) => candidate.code == rawReason,
+        );
 
     final rawNote = event.payloadJson['reason_note'];
     final noteIsValid = rawNote == null || rawNote is String;

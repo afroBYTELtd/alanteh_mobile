@@ -327,6 +327,65 @@ void main() {
     expect(find.text('1 more offer waiting'), findsOneWidget);
     await h.dispose(tester);
   });
+
+  // A trip can be offered to the same driver again; each offer is answered
+  // under its own `assigned_at`, so the server cannot replay an answer to
+  // an earlier offer.
+  group('answers under its own offer', () {
+    final offerTag = '${DateTime.utc(2026, 10, 9, 10).microsecondsSinceEpoch}';
+
+    testWidgets('opened by a push tap before the offer was listed: Accept '
+        "goes out under the listed offer's assigned_at", (tester) async {
+      await h.pump(tester);
+      expect(h.preparedFor, [null]);
+      await h.deliver(tester, [h.offer()]);
+
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await tester.pump();
+      h.gateway.finishAccept();
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(1));
+      expect(h.gateway.keys.single, contains(offerTag));
+      expect(h.accepted, [_ref]);
+      await h.dispose(tester);
+    });
+
+    testWidgets('Decline likewise', (tester) async {
+      await h.pump(tester);
+      await h.deliver(tester, [h.offer()]);
+
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+      expect(h.gateway.keys, hasLength(1));
+      expect(h.gateway.keys.single, contains(offerTag));
+      expect(h.finished, [_ref]);
+      await h.dispose(tester);
+    });
+
+    testWidgets('opened with its offer listed: prepares for that offer once', (
+      tester,
+    ) async {
+      final refreshing = h.store.refresh();
+      h.source.complete(<String, Object?>{
+        'server_time': '2026-10-09T10:00:05+00:00',
+        'offers': [h.offer()],
+      });
+      await refreshing;
+      await h.pump(tester);
+      await tester.pump();
+
+      expect(h.preparedFor, [DateTime.utc(2026, 10, 9, 10)]);
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await tester.pump();
+      h.gateway.finishAccept();
+      await tester.pumpAndSettle(const Duration(milliseconds: 10));
+      expect(h.preparedFor, hasLength(1));
+      expect(h.gateway.keys.single, contains(offerTag));
+      await h.dispose(tester);
+    });
+  });
 }
 
 final class _Harness {
@@ -335,6 +394,7 @@ final class _Harness {
   final gateway = _FakeGateway();
   final accepted = <String>[];
   final finished = <String>[];
+  final preparedFor = <DateTime?>[];
   late final store = DriverPendingOfferStore(source: source, clock: clock);
 
   Future<void> pump(
@@ -348,18 +408,20 @@ final class _Harness {
             child: DriverPendingOfferCard(
               tripReference: _ref,
               store: store,
-              controllerFactory: (reference) async =>
-                  DriverOfferResponseResilienceController(
-                    queue: _MemoryQueue(),
-                    gateway: gateway,
+              controllerFactory: (reference, {assignedAt}) async {
+                preparedFor.add(assignedAt);
+                return DriverOfferResponseResilienceController(
+                  queue: _MemoryQueue(),
+                  gateway: gateway,
+                  tripReference: reference,
+                  driverId: 'DRV-1',
+                  assignedAt: assignedAt,
+                  verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
                     tripReference: reference,
-                    driverId: 'DRV-1',
-                    verifyServerState: (receipt) async =>
-                        DriverOfferVerifiedTrip(
-                          tripReference: reference,
-                          status: receipt.tripStatus,
-                        ),
+                    status: receipt.tripStatus,
                   ),
+                );
+              },
               pickupTimeLookup: pickupTimeLookup,
               pickDeclineReason: (_) async => const DriverDeclineChoice(
                 reason: DriverDeclineReason.endOfShift,
@@ -452,6 +514,7 @@ final class _ControlledSource implements DriverPendingOffersSource {
 final class _FakeGateway implements DriverOfferResponseGateway {
   var accepts = 0;
   var declines = 0;
+  final keys = <String>[];
   DriverOfferResponseException? acceptError;
   Completer<void>? _accept;
 
@@ -465,6 +528,7 @@ final class _FakeGateway implements DriverOfferResponseGateway {
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     accepts += 1;
+    keys.add(idempotencyKey);
     final error = acceptError;
     if (error != null) {
       throw error;
@@ -487,6 +551,7 @@ final class _FakeGateway implements DriverOfferResponseGateway {
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     declines += 1;
+    keys.add(idempotencyKey);
     return DriverOfferResponseReceipt(
       tripReference: tripReference,
       tripStatus: 'driver_declined',

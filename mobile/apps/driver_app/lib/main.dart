@@ -747,8 +747,8 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return;
     }
     _offers = offers;
-    _offerCardFactory = (tripReference) async {
-      final controller = await factory(tripReference);
+    _offerCardFactory = (tripReference, {assignedAt}) async {
+      final controller = await factory(tripReference, assignedAt: assignedAt);
       controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
       return controller;
     };
@@ -896,8 +896,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     final factory = widget.driverOfferResponseControllerFactory;
     _sessionAwareOfferResponseControllerFactory = factory == null
         ? null
-        : (tripReference) async {
-            final controller = await factory(tripReference);
+        : (tripReference, {assignedAt}) async {
+            final controller = await factory(
+              tripReference,
+              assignedAt: assignedAt,
+            );
             controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
             return controller;
           };
@@ -1719,7 +1722,7 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       );
   final resolvedQueue = persistentQueue ?? PersistentDriverTripActionQueue();
 
-  return (tripReference) async {
+  return (tripReference, {assignedAt}) async {
     DriverDutySummary duty;
 
     try {
@@ -1742,6 +1745,7 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       gateway: resolvedGateway,
       tripReference: tripReference,
       driverId: driverReference,
+      assignedAt: assignedAt,
       verifyServerState: (receipt) async {
         final refreshedTrip = await dutyGateway.fetchTripDetail(
           receipt.tripReference ?? tripReference,

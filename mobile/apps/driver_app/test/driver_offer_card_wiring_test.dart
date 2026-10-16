@@ -461,7 +461,7 @@ final class _App {
     driverDutyGateway: duty,
     pushMessageSource: push,
     offerCoordinator: coordinator,
-    offerCardControllerFactory: (reference) async =>
+    offerCardControllerFactory: (reference, {assignedAt}) async =>
         DriverOfferResponseResilienceController(
           queue: queue,
           gateway: offerGateway,
