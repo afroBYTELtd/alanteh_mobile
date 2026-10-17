@@ -447,6 +447,51 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
+  testWidgets('if the online check fails after a submitted shift check, the '
+      'error shows, not "Going online…" forever', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'online',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _SuccessfulShiftCheckGateway(onSubmit: () {}),
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    dutyGateway.failNext = true;
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('driver-shift-check-confirming')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('driver-offline-screen')), findsOneWidget);
+
+    await controller.stopAutomaticSync();
+  });
+
   testWidgets('queued readiness does not request notification permission', (
     tester,
   ) async {
@@ -1048,6 +1093,9 @@ final class _MutableDutyGateway
 
   /// When set, the next fetchDuty waits for it (a slow network).
   Completer<void>? holdNext;
+
+  /// When true, the next fetchDuty fails (the network drops).
+  bool failNext = false;
   final List<DriverOperationalDutyStatus> transitionStatuses =
       <DriverOperationalDutyStatus>[];
 
@@ -1061,6 +1109,13 @@ final class _MutableDutyGateway
     if (hold != null) {
       holdNext = null;
       await hold.future;
+    }
+    if (failNext) {
+      failNext = false;
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.unavailable,
+        'Cannot reach the server.',
+      );
     }
     return current;
   }
