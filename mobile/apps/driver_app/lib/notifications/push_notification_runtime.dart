@@ -4,6 +4,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
+import '../trip_progress/driver_live_trip_check.dart';
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -35,6 +37,23 @@ DriverPushNavigationIntent? driverPushNavigationIntentFromMessage(
     eventType: eventType,
     tripReference: tripReference,
   );
+}
+
+/// The pushes saying a trip was cancelled. They never open a screen; the
+/// live screen for that trip, if open, reloads it at once.
+const driverTripCancelledPushTypes = <String>{
+  'trip_cancelled_by_passenger',
+  'trip_cancelled_by_operations',
+};
+
+/// The trip a cancel push names, or null for any other push.
+String? driverTripCancelledPushReference(RemoteMessage message) {
+  final eventType = _requiredPushDataString(message.data, 'event_type');
+  final tripReference = _requiredPushDataString(message.data, 'trip_reference');
+  if (!driverTripCancelledPushTypes.contains(eventType)) {
+    return null;
+  }
+  return tripReference;
 }
 
 String? _requiredPushDataString(Map<String, dynamic> data, String key) {
@@ -144,6 +163,12 @@ class _FirebaseForegroundPushListenerState
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (!widget.foregroundEnabled) {
+      return;
+    }
+    // The live screen for a cancelled trip shows the cancel itself.
+    final cancelledTrip = driverTripCancelledPushReference(message);
+    if (cancelledTrip != null &&
+        DriverLiveTripScreens.instance.checkNow(cancelledTrip)) {
       return;
     }
     final intent = driverPushNavigationIntentFromMessage(message);

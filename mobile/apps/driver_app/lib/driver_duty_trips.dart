@@ -16,6 +16,7 @@ import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
 import 'safety/driver_trip_safety.dart';
+import 'trip_progress/driver_live_trip_check.dart';
 import 'trip_progress/driver_trip_visual_sequence.dart';
 
 const driverDutyPath = '/api/driver/me/';
@@ -684,6 +685,17 @@ bool driverTripIsCancelled(String? status) {
     'cancelled_by_passenger',
     'cancelled_by_operations',
   }.contains(status?.trim());
+}
+
+/// What the live screen does with a reloaded trip status.
+DriverLiveTripFinding driverLiveTripFindingFor(String? status) {
+  return switch (status?.trim()) {
+    'cancelled_by_passenger' => DriverLiveTripFinding.cancelledByPassenger,
+    'cancelled_by_operations' => DriverLiveTripFinding.cancelledByOperations,
+    'cancelled' => DriverLiveTripFinding.cancelled,
+    _ when driverCanOpenLiveTripActions(status) => DriverLiveTripFinding.live,
+    _ => DriverLiveTripFinding.notAssigned,
+  };
 }
 
 bool driverCanOpenLiveTripActions(String? status) {
@@ -1713,6 +1725,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
           driverTrustedContactRepository: widget.driverTrustedContactRepository,
           driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
+          checkTrip: () => _checkLiveTrip(trip.reference),
         ),
       ),
     );
@@ -1724,6 +1737,20 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
     setState(() => _openingLiveActions = false);
     _refresh();
     await widget.onRefreshTripList?.call();
+  }
+
+  /// The live screen's reload: a 404 means the trip is no longer this
+  /// driver's; any other failure leaves the screen as it is.
+  Future<DriverLiveTripFinding> _checkLiveTrip(String reference) async {
+    try {
+      final trip = await widget.gateway.fetchTripDetail(reference);
+      return driverLiveTripFindingFor(trip.status);
+    } on DriverDutyApiException catch (error) {
+      if (error.type == DriverDutyApiFailureType.notFound) {
+        return DriverLiveTripFinding.notAssigned;
+      }
+      rethrow;
+    }
   }
 
   Future<void> _handleRejectedAction(

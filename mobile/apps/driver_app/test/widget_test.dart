@@ -2612,9 +2612,15 @@ void main() {
           queue.events.single.idempotencyKey,
         );
         expect(queue.events.single.syncStatus, QueueSyncStatus.pending);
+        // The trip still reads "assigned", but the 404 says this driver no
+        // longer holds it.
+        expect(
+          find.byKey(const Key('driver-live-trip-not-assigned')),
+          findsOneWidget,
+        );
         expect(
           find.byKey(const Key('driver-navigate-to-pickup')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(find.byKey(const Key('driver-arrived-at-pickup')), findsNothing);
       },
