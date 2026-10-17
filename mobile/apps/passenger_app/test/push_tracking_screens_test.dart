@@ -98,8 +98,7 @@ void main() {
     await tester.pump();
   }
 
-  // The push listener acts after the next frame and does not ask for one;
-  // on the phone the moving map keeps drawing frames, so ask here too.
+  // Pumps frames until pushes, navigation and reloads have been handled.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 20; i += 1) {
       tester.binding.scheduleFrame();
