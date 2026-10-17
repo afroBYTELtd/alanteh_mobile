@@ -434,6 +434,109 @@ void main() {
     expect(trackingScreens(), 1);
   });
 
+  // Two reloads can overlap (a poll on its way when a push asks for one);
+  // the newer answer stays on screen whichever arrives last.
+  testWidgets('an older answer arriving after a newer one does not replace '
+      'it: "Trip cancelled" stays', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    final older = Completer<void>();
+    requests.holdTrip = older;
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    requests.cancel('RR-1');
+    push.foreground(_message('trip_cancelled', 'TRIP-1'));
+    await settle(tester);
+    expect(find.text('Trip cancelled'), findsOneWidget);
+
+    older.complete();
+    await settle(tester);
+    expect(find.text('Trip cancelled'), findsOneWidget);
+  });
+
+  testWidgets('an older failure arriving after a newer answer shows no '
+      '"Reconnecting…"', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    final older = Completer<void>();
+    requests
+      ..holdTrip = older
+      ..failTrips = 1;
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    older.complete();
+    await settle(tester);
+    expect(find.byKey(const Key('tracking-reconnecting-banner')), findsNothing);
+  });
+
+  group('before the ride request has a trip', () {
+    Future<void> openRequest(WidgetTester tester) async {
+      requests.setRecord(_request('RR-3', 'requested'));
+      await pumpApp(tester);
+      final nav = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        nav.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => RideTrackingScreen(
+              repository: requests,
+              requestReference: 'RR-3',
+              initialRecord: requests.record('RR-3'),
+              tripRepository: requests,
+              pollInterval: const Duration(hours: 1),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      expect(find.text('Looking for a driver'), findsOneWidget);
+    }
+
+    void refresh(WidgetTester tester) {
+      final context = tester.element(find.byType(Navigator).first);
+      PassengerTrackingScope.maybeOf(context)!.screenFor('RR-3')!.refresh();
+    }
+
+    testWidgets('an older "requested" arriving after "rejected" does not '
+        'bring "Looking for a driver" back', (tester) async {
+      await openRequest(tester);
+      final older = Completer<void>();
+      requests.holdRequest = older;
+      refresh(tester);
+      await settle(tester);
+
+      requests.setRecord(_request('RR-3', 'rejected'));
+      refresh(tester);
+      await settle(tester);
+      expect(find.text('Looking for a driver'), findsNothing);
+
+      older.complete();
+      await settle(tester);
+      expect(find.text('Looking for a driver'), findsNothing);
+    });
+
+    testWidgets('an older "requested" arriving after the trip was found does '
+        'not bring "Looking for a driver" back', (tester) async {
+      await openRequest(tester);
+      final older = Completer<void>();
+      requests.holdRequest = older;
+      refresh(tester);
+      await settle(tester);
+
+      requests.setRecord(_record('RR-3', 'TRIP-3'));
+      refresh(tester);
+      await settle(tester);
+      expect(find.text('Looking for a driver'), findsNothing);
+
+      older.complete();
+      await settle(tester);
+      expect(find.text('Looking for a driver'), findsNothing);
+    });
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);
@@ -580,29 +683,46 @@ final class _Requests
   Future<List<PassengerRideRequestRecord>> fetchRequests() async =>
       _records.values.toList();
 
+  /// When set, the next request reload waits for it.
+  Completer<void>? holdRequest;
+
+  void setRecord(PassengerRideRequestRecord record) =>
+      _records[record.requestReference] = record;
+
   @override
   Future<PassengerRideRequestRecord> fetchRequest(String reference) async {
     detailCalls += 1;
-    return _records[reference]!;
+    // The answer is the server's state when the request was sent.
+    final answer = _records[reference]!;
+    final hold = holdRequest;
+    if (hold != null) {
+      holdRequest = null;
+      await hold.future;
+    }
+    return answer;
   }
 
   @override
   Future<PassengerTripRecord> fetchTrip(String tripReference) async {
     detailCalls += 1;
-    final hold = holdTrip;
-    if (hold != null) {
-      holdTrip = null;
-      await hold.future;
-    }
-    if (failTrips > 0) {
+    // The answer is the server's state when the request was sent.
+    final fail = failTrips > 0;
+    if (fail) {
       failTrips -= 1;
-      throw const PassengerRideRequestHistoryException.unknown();
     }
     final cancelled = _records.values.any(
       (r) =>
           r.normalizedTripReference == tripReference &&
           _cancelled.contains(r.requestReference),
     );
+    final hold = holdTrip;
+    if (hold != null) {
+      holdTrip = null;
+      await hold.future;
+    }
+    if (fail) {
+      throw const PassengerRideRequestHistoryException.unknown();
+    }
     return PassengerTripRecord(
       tripReference: tripReference,
       status: cancelled ? 'cancelled_by_passenger' : 'driver_en_route',
@@ -622,6 +742,19 @@ PassengerRideRequestRecord _record(String reference, String trip) =>
       hasMobileReceipt: true,
       tripCreated: true,
       tripReference: trip,
+    );
+
+PassengerRideRequestRecord _request(String reference, String status) =>
+    PassengerRideRequestRecord(
+      requestReference: reference,
+      status: status,
+      pickupLocation: 'Pinned location',
+      destination: 'Osu Check',
+      passengerCount: 1,
+      createdAt: DateTime.utc(2026, 10, 17, 2),
+      updatedAt: DateTime.utc(2026, 10, 17, 2, 1),
+      hasMobileReceipt: true,
+      tripCreated: false,
     );
 
 final class _Submitter implements PassengerRideRequestSubmitter {

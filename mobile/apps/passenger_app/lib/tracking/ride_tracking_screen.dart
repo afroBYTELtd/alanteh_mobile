@@ -106,6 +106,11 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   double _bottomSheetHeight = 0;
   bool _cancelling = false;
 
+  /// Each load takes the next number; an answer older than the newest one
+  /// shown is dropped, so overlapping loads never step back.
+  int _loadsStarted = 0;
+  int _newestShown = 0;
+
   /// This screen in the app's list of open tracking screens.
   PassengerTrackingScreens? _screens;
   PassengerOpenTrackingScreen? _registration;
@@ -210,6 +215,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   }
 
   Future<void> _load() async {
+    final load = _loadsStarted += 1;
+    bool stale() => load < _newestShown;
     try {
       final activeTripReference = _tripReference;
       if (activeTripReference != null) {
@@ -219,7 +226,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         }
 
         final trip = await tripRepository.fetchTrip(activeTripReference);
-        if (!mounted) return;
+        if (!mounted || stale()) return;
+        _newestShown = load;
 
         final requestRecord = _record;
         if (requestRecord == null) {
@@ -241,7 +249,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       final requestRecord = await widget.repository.fetchRequest(
         widget.requestReference,
       );
-      if (!mounted) return;
+      if (!mounted || stale()) return;
 
       final tripReference =
           requestRecord.status.trim().toLowerCase() == 'converted'
@@ -253,7 +261,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         _record = requestRecord;
         _tripReference = tripReference;
         final trip = await tripRepository.fetchTrip(tripReference);
-        if (!mounted) return;
+        if (!mounted || stale()) return;
+        _newestShown = load;
 
         final record = requestRecord.withTrip(trip);
         setState(() {
@@ -267,6 +276,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         return;
       }
 
+      _newestShown = load;
       setState(() {
         _record = requestRecord;
         _tripReference = null;
@@ -277,7 +287,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       });
       _schedule(requestRecord);
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted || stale()) return;
 
       // The server ended the session (the refresh was refused): that is
       // not a connection problem. Send the passenger to sign in; polling
