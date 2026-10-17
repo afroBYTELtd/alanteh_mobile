@@ -29,6 +29,7 @@ class DriverPendingOfferCard extends StatefulWidget {
     this.pickDeclineReason = showDriverDeclineReasonSheet,
     this.onAccepted,
     this.onFinished,
+    this.onEnded,
     this.tickInterval = const Duration(seconds: 1),
     this.detailsTimeout = DriverOfferCardTiming.detailsTimeout,
     super.key,
@@ -47,6 +48,11 @@ class DriverPendingOfferCard extends StatefulWidget {
 
   /// Declined, expired or ended; the card can go.
   final ValueChanged<String>? onFinished;
+
+  /// Called once when the offer can no longer be answered here (time ran
+  /// out, it ended, or the driver answered). Only a live card should pause
+  /// the offers poll.
+  final VoidCallback? onEnded;
   final Duration tickInterval;
   final Duration detailsTimeout;
 
@@ -56,6 +62,11 @@ class DriverPendingOfferCard extends StatefulWidget {
 
 class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   DriverOfferResponseResilienceController? _controller;
+
+  /// The controller a Decline went out with. The card is one offer, so every
+  /// later Decline from it goes out the same way, under the same key. (Accept
+  /// only goes out once the offer is listed, always with its own controller.)
+  DriverOfferResponseResilienceController? _declinedWith;
   Future<DriverOfferResponseResilienceController?>? _preparing;
   bool _prepareFailed = false;
 
@@ -71,6 +82,17 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   bool _sending = false;
   bool _responded = false;
   bool _expired = false;
+  bool _reportedEnded = false;
+
+  /// True once the card asked for a fresh fetch because an older one came
+  /// back without its offer.
+  bool _askedAgain = false;
+
+  /// When the countdown reached zero (monotonic), for the re-check and the
+  /// local removal after it.
+  Duration? _ranOutAt;
+  bool _rechecked = false;
+  bool _removedLocally = false;
 
   /// Final: the offer ended (expiry race, taken back, gone from the list).
   String? _endedMessage;
@@ -97,12 +119,28 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     _store.removeListener(_onStoreChanged);
     _ticker?.cancel();
     _detailsTimer?.cancel();
+    if (_locked && !_responded) {
+      // Closing an ended card clears it from the home screen too. Not
+      // during dispose itself: the store's listeners rebuild.
+      final forget = _forgetOwnOffer;
+      scheduleMicrotask(forget);
+    }
     super.dispose();
+  }
+
+  void _reportIfEnded() {
+    if (_locked && !_reportedEnded) {
+      _reportedEnded = true;
+      widget.onEnded?.call();
+    }
   }
 
   Future<DriverOfferResponseResilienceController?> _prepare() async {
     try {
-      final controller = await widget.controllerFactory(_reference);
+      final controller = await widget.controllerFactory(
+        _reference,
+        assignedAt: _offer?.assignedAt,
+      );
       await controller.prepareWhenOfferDisplayed();
       if (mounted) {
         setState(() {
@@ -128,17 +166,40 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     });
   }
 
+  /// Drops the offer this card showed, not whatever is listed for the trip
+  /// now: that may already be a re-offer.
+  void _forgetOwnOffer() {
+    final own = _lastOffer;
+    if (own == null) {
+      _store.forget(_reference);
+    } else {
+      _store.forgetOffer(DriverOfferIdentity.of(own));
+    }
+  }
+
   void _onStoreChanged({bool rebuild = true}) {
-    final current = _store.offerFor(_reference);
+    final listed = _store.offerFor(_reference);
+    // An ended card keeps the offer it showed; a re-offer of the trip is
+    // another card's.
+    final current = _locked && _lastOffer != null ? null : listed;
     if (current != null) {
       _lastOffer = current;
       _lookUpPickupTimeIfNeeded(current);
     } else if (!_responded && !_locked) {
       final snapshot = _store.snapshot;
-      if (snapshot != null && snapshot.receivedAt >= _openedAt) {
+      // Only a fetch that left after the card opened can say the offer is
+      // gone: a poll already out when a push tap opened the card may come
+      // back without an offer that is live.
+      if (snapshot != null && snapshot.requestedAt > _openedAt) {
         _endedMessage = driverOfferNoLongerAvailableMessage;
+      } else if (snapshot != null && !_askedAgain) {
+        // That older fetch says nothing about this offer, and the poll is
+        // paused while the card is live: ask once more, after it.
+        _askedAgain = true;
+        unawaited(_store.refreshAfterCurrent());
       }
     }
+    _reportIfEnded();
     if (rebuild && mounted) {
       setState(() {});
     }
@@ -151,8 +212,23 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     final left = _remaining;
     if (left == Duration.zero && !_locked && !_sending) {
       _expired = true;
+      _ranOutAt = _store.clock.now;
       unawaited(_store.refresh());
     }
+    final ranOutAt = _ranOutAt;
+    if (ranOutAt != null) {
+      final since = _store.clock.now - ranOutAt;
+      if (!_rechecked && since >= DriverOfferCardTiming.expiredRecheckDelay) {
+        _rechecked = true;
+        unawaited(_store.refresh());
+      }
+      if (!_removedLocally &&
+          since >= DriverOfferCardTiming.expiredRemovalDelay) {
+        _removedLocally = true;
+        _forgetOwnOffer();
+      }
+    }
+    _reportIfEnded();
     setState(() {});
   }
 
@@ -175,7 +251,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         .whenComplete(() => _lookupRunning = false);
   }
 
-  DriverPendingOffer? get _offer => _store.offerFor(_reference) ?? _lastOffer;
+  DriverPendingOffer? get _offer => _locked && _lastOffer != null
+      ? _lastOffer
+      : _store.offerFor(_reference) ?? _lastOffer;
 
   Duration? get _remaining => _store.remaining(_reference);
 
@@ -215,15 +293,87 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     await _store.refresh();
   }
 
+  /// The controller for the offer on screen. A card opened by a push tap
+  /// can prepare before its offer, and so its `assigned_at`, is listed.
+  Future<DriverOfferResponseResilienceController?> _controllerForOffer() async {
+    var controller = _controller ?? await _preparing;
+    final assignedAt = _offer?.assignedAt;
+    if (controller != null &&
+        assignedAt != null &&
+        controller.assignedAt != assignedAt) {
+      controller = null;
+    }
+    return controller ?? await (_preparing = _prepare());
+  }
+
+  /// Decline is allowed while the card is still loading. It waits for the
+  /// offer, and so its `assigned_at`, for up to [DriverPendingOfferCard.
+  /// detailsTimeout]; without it the decline goes out under a key of its
+  /// own, never one left from an earlier offer of the trip.
+  Future<DriverOfferResponseResilienceController?>
+  _controllerForDecline() async {
+    final declined = _declinedWith;
+    if (declined != null) {
+      return declined;
+    }
+    if (_offer == null) {
+      await _waitForOffer();
+      if (!mounted) {
+        return null;
+      }
+    }
+    if (_offer?.assignedAt != null) {
+      return _controllerForOffer();
+    }
+    try {
+      return await widget.controllerFactory(_reference, unknownOffer: true);
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> _waitForOffer() async {
+    final done = Completer<void>();
+    void check() {
+      if ((_offer != null || _locked) && !done.isCompleted) {
+        done.complete();
+      }
+    }
+
+    final timer = Timer(widget.detailsTimeout, () {
+      if (!done.isCompleted) {
+        done.complete();
+      }
+    });
+    _store.addListener(check);
+    unawaited(_store.refresh());
+    try {
+      await done.future;
+    } finally {
+      timer.cancel();
+      _store.removeListener(check);
+    }
+  }
+
   Future<void> _accept() async {
-    final controller = _controller;
-    if (controller == null || !_canAccept) {
+    if (_controller == null || !_canAccept) {
       return;
     }
     setState(() {
       _sending = true;
       _message = null;
     });
+    final controller = await _controllerForOffer();
+    if (!mounted) {
+      return;
+    }
+    if (controller == null) {
+      setState(() {
+        _sending = false;
+        _message = 'Could not send. Check your connection and try again.';
+      });
+      return;
+    }
     final result = await controller.accept();
     if (!mounted) {
       return;
@@ -236,8 +386,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         _applyFailure(result.error, result.message);
       }
     });
+    _reportIfEnded();
     if (result.accepted) {
-      _store.forget(_reference);
+      _forgetOwnOffer();
       widget.onAccepted?.call(_reference);
     }
   }
@@ -254,9 +405,13 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _sending = true;
       _message = null;
     });
-    var controller = _controller ?? await _preparing;
-    controller ??= await (_preparing = _prepare());
+    final controller = await _controllerForDecline();
     if (!mounted) {
+      return;
+    }
+    if (_locked) {
+      // The offer ended while the card waited for it.
+      setState(() => _sending = false);
       return;
     }
     if (controller == null) {
@@ -266,6 +421,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       });
       return;
     }
+    _declinedWith = controller;
     final result = await controller.decline(
       reason: choice.reason,
       reasonNote: choice.reasonNote,
@@ -281,8 +437,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         _applyFailure(result.error, result.message);
       }
     });
+    _reportIfEnded();
     if (result.succeeded) {
-      _store.forget(_reference);
+      _forgetOwnOffer();
       widget.onFinished?.call(_reference);
     }
   }
@@ -300,6 +457,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   String get _countdownText {
     if (_expired) {
       return 'Offer expired';
+    }
+    if (_endedMessage != null) {
+      return 'Offer ended';
     }
     final expiry = _offer?.expiry;
     if (expiry is DriverOfferNeverExpires) {
@@ -323,6 +483,9 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     final fare = offer?.fareAmount;
     final passengers = offer?.passengerCount;
     final note = _endedMessage ?? _message;
+    // An ended card that never got its details has nothing to load.
+    final pickupLine =
+        offer?.pickupLabel ?? (_locked ? null : 'Loading trip details…');
 
     return Container(
       key: const Key('offer-card'),
@@ -354,12 +517,14 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
               ),
             ],
           ),
-          const SizedBox(height: AsmSpacing.space12),
-          Text(
-            offer?.pickupLabel ?? 'Loading trip details…',
-            key: const Key('offer-card-pickup'),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
+          if (pickupLine != null) ...[
+            const SizedBox(height: AsmSpacing.space12),
+            Text(
+              pickupLine,
+              key: const Key('offer-card-pickup'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ],
           if (offer != null) ...[
             const SizedBox(height: AsmSpacing.space8),
             Row(

@@ -346,6 +346,78 @@ void main() {
       expect(store.offerFor('TRIP-SOON'), isNull);
     });
 
+    group('a forgotten offer is that offer, not the whole trip', () {
+      Future<DriverPendingOfferStore> storeWith(
+        _ControlledSource source,
+        List<Map<String, Object?>> offers,
+      ) async {
+        final store = DriverPendingOfferStore(
+          source: source,
+          clock: _ManualClock(Duration.zero),
+        );
+        await _deliver(store, source, offers);
+        return store;
+      }
+
+      test('the same offer listed again stays forgotten', () async {
+        final source = _ControlledSource();
+        final store = await storeWith(source, [_offer('TRIP-1', null)]);
+        store.forget('TRIP-1');
+
+        await _deliver(store, source, [_offer('TRIP-1', null)]);
+
+        expect(store.offerFor('TRIP-1'), isNull);
+        expect(store.firstOffer, isNull);
+      });
+
+      test('a re-offer of the same trip (a new assigned_at) shows', () async {
+        final source = _ControlledSource();
+        final store = await storeWith(source, [_offer('TRIP-1', null)]);
+        store.forget('TRIP-1');
+
+        await _deliver(store, source, [
+          _offer('TRIP-1', null, assignedAt: '2026-10-09T10:05:00+00:00'),
+        ]);
+
+        expect(store.offerFor('TRIP-1'), isNotNull);
+        expect(store.firstOffer!.tripReference, 'TRIP-1');
+      });
+
+      test('answered before any fetch listed it (a push tap): the offer '
+          'stays hidden when a fetch then lists it', () async {
+        final source = _ControlledSource();
+        final store = DriverPendingOfferStore(
+          source: source,
+          clock: _ManualClock(Duration.zero),
+        );
+        store.forget('TRIP-1');
+
+        await _deliver(store, source, [_offer('TRIP-1', null)]);
+
+        expect(store.offerFor('TRIP-1'), isNull);
+      });
+
+      test('without assigned_at (an older server), the whole trip stays '
+          'forgotten until a fetch leaves it out', () async {
+        final source = _ControlledSource();
+        final store = await storeWith(source, [
+          _offer('TRIP-1', null, assignedAt: null),
+        ]);
+        store.forget('TRIP-1');
+
+        await _deliver(store, source, [
+          _offer('TRIP-1', null, assignedAt: null),
+        ]);
+        expect(store.offerFor('TRIP-1'), isNull);
+
+        await _deliver(store, source, const []);
+        await _deliver(store, source, [
+          _offer('TRIP-1', null, assignedAt: null),
+        ]);
+        expect(store.offerFor('TRIP-1'), isNotNull);
+      });
+    });
+
     test('a failed fetch keeps the last offers and says it failed', () async {
       final source = _ControlledSource();
       final store = DriverPendingOfferStore(
@@ -428,16 +500,32 @@ void main() {
 
 // ---------------------------------------------------------------- helpers
 
-Map<String, Object?> _offer(String reference, Object? expiresAt) =>
-    <String, Object?>{
-      'trip_reference': reference,
-      'pickup_location': 'Accra Mall',
-      'passenger_count': 1,
-      'fare_amount': '35.00',
-      'fare_currency': 'GHS',
-      'assigned_at': '2026-10-09T10:00:00+00:00',
-      'offer_expires_at': expiresAt,
-    };
+Map<String, Object?> _offer(
+  String reference,
+  Object? expiresAt, {
+  Object? assignedAt = '2026-10-09T10:00:00+00:00',
+}) => <String, Object?>{
+  'trip_reference': reference,
+  'pickup_location': 'Accra Mall',
+  'passenger_count': 1,
+  'fare_amount': '35.00',
+  'fare_currency': 'GHS',
+  'assigned_at': assignedAt,
+  'offer_expires_at': expiresAt,
+};
+
+Future<void> _deliver(
+  DriverPendingOfferStore store,
+  _ControlledSource source,
+  List<Map<String, Object?>> offers,
+) async {
+  final refreshing = store.refresh();
+  source.complete(<String, Object?>{
+    'server_time': '2026-10-09T10:00:05+00:00',
+    'offers': offers,
+  });
+  await refreshing;
+}
 
 Map<String, Object?> _offersJson() => <String, Object?>{
   'server_time': '2026-10-09T10:00:05+00:00',

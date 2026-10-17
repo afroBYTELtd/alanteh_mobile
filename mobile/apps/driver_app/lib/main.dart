@@ -747,11 +747,16 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return;
     }
     _offers = offers;
-    _offerCardFactory = (tripReference) async {
-      final controller = await factory(tripReference);
-      controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
-      return controller;
-    };
+    _offerCardFactory =
+        (tripReference, {assignedAt, unknownOffer = false}) async {
+          final controller = await factory(
+            tripReference,
+            assignedAt: assignedAt,
+            unknownOffer: unknownOffer,
+          );
+          controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
+          return controller;
+        };
     _offerPickupTimeLookup = identity == null
         ? null
         : driverOfferPickupTimeLookupFor(identity);
@@ -896,8 +901,12 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     final factory = widget.driverOfferResponseControllerFactory;
     _sessionAwareOfferResponseControllerFactory = factory == null
         ? null
-        : (tripReference) async {
-            final controller = await factory(tripReference);
+        : (tripReference, {assignedAt, unknownOffer = false}) async {
+            final controller = await factory(
+              tripReference,
+              assignedAt: assignedAt,
+              unknownOffer: unknownOffer,
+            );
             controller.attachSessionExpiredHandler(_handleOfferSessionExpired);
             return controller;
           };
@@ -1719,7 +1728,7 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       );
   final resolvedQueue = persistentQueue ?? PersistentDriverTripActionQueue();
 
-  return (tripReference) async {
+  return (tripReference, {assignedAt, unknownOffer = false}) async {
     DriverDutySummary duty;
 
     try {
@@ -1742,6 +1751,8 @@ DriverOfferResponseControllerFactory? driverOfferResponseControllerFactoryFor({
       gateway: resolvedGateway,
       tripReference: tripReference,
       driverId: driverReference,
+      assignedAt: assignedAt,
+      unknownOffer: unknownOffer,
       verifyServerState: (receipt) async {
         final refreshedTrip = await dutyGateway.fetchTripDetail(
           receipt.tripReference ?? tripReference,

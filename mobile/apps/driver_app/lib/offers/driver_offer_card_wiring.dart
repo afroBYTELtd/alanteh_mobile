@@ -68,7 +68,7 @@ DriverOfferResponseControllerFactory driverOfferCardControllerFactoryFor({
   );
   final queue = persistentQueue ?? PersistentDriverTripActionQueue();
 
-  return (tripReference) async {
+  return (tripReference, {assignedAt, unknownOffer = false}) async {
     var driverReference = identity.driverReference;
     if (driverReference == null) {
       try {
@@ -89,6 +89,8 @@ DriverOfferResponseControllerFactory driverOfferCardControllerFactoryFor({
       gateway: gateway,
       tripReference: tripReference,
       driverId: driverReference,
+      assignedAt: assignedAt,
+      unknownOffer: unknownOffer,
       // The receipt carries the trip's status after the answer, so no second
       // request stands between the server's answer and the driver.
       verifyServerState: (receipt) async => DriverOfferVerifiedTrip(

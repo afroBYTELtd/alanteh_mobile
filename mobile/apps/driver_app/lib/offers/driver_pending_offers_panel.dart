@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../network/driver_offer_response_resilience.dart';
 import 'driver_offer_coordinator.dart';
 import 'driver_pending_offer_card.dart';
+import 'driver_pending_offer_store.dart';
+import 'driver_pending_offers.dart';
 
 /// The home screen's offers area: the card for the earliest-expiring
 /// pending offer, or [waitingPanel] when there is none.
@@ -29,7 +31,12 @@ class DriverPendingOffersPanel extends StatefulWidget {
 }
 
 class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
+  /// True while a live card is shown: only then is the poll paused.
   bool _showingCard = false;
+
+  /// The offer whose card said it can no longer be answered. A re-offer of
+  /// the same trip is a different offer, and a live one.
+  DriverOfferIdentity? _ended;
 
   @override
   void initState() {
@@ -67,17 +74,25 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
   @override
   Widget build(BuildContext context) {
     final offer = widget.coordinator.store.firstOffer;
-    _track(offer != null);
+    final identity = offer == null ? null : DriverOfferIdentity.of(offer);
+    if (offer == null) {
+      _ended = null;
+    }
+    _track(identity != null && identity != _ended);
     if (offer == null) {
       return widget.waitingPanel;
     }
     return DriverPendingOfferCard(
-      key: ValueKey<String>('home-offer-${offer.tripReference}'),
+      key: ValueKey<DriverOfferIdentity>(identity!),
       tripReference: offer.tripReference,
       store: widget.coordinator.store,
       controllerFactory: widget.controllerFactory,
       pickupTimeLookup: widget.pickupTimeLookup,
       onAccepted: widget.onAccepted,
+      onEnded: () {
+        _ended = identity;
+        _track(false);
+      },
     );
   }
 }
@@ -111,22 +126,105 @@ class DriverPendingOfferScreen extends StatefulWidget {
 class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
   late String _reference = widget.tripReference;
 
+  /// Bumped when the screen moves to another offer, so the card starts
+  /// fresh even for a re-offer of the same trip.
+  int _cardGeneration = 0;
+
+  /// True while the card here is live: only then is the poll paused.
+  bool _pausing = false;
+
+  /// The offer the card showed when it ended; null while it is live.
+  DriverOfferIdentity? _endedOffer;
+
+  /// The offer the card is showing, kept while it is live.
+  DriverOfferIdentity? _shown;
+
+  DriverPendingOfferStore get _store => widget.coordinator.store;
+
   @override
   void initState() {
     super.initState();
-    widget.coordinator.cardOpened();
+    _setPausing(true);
+    _store.addListener(_onStoreChanged);
+    _noteShown();
   }
 
   @override
   void dispose() {
-    widget.coordinator.cardClosed();
+    _store.removeListener(_onStoreChanged);
+    _setPausing(false);
     super.dispose();
   }
 
+  void _setPausing(bool pausing) {
+    if (pausing == _pausing) {
+      return;
+    }
+    _pausing = pausing;
+    if (pausing) {
+      widget.coordinator.cardOpened();
+    } else {
+      widget.coordinator.cardClosed();
+    }
+  }
+
+  void _noteShown() {
+    final listed = _store.offerFor(_reference);
+    if (_endedOffer == null && listed != null) {
+      _shown = DriverOfferIdentity.of(listed);
+    }
+  }
+
+  void _onStoreChanged() {
+    _noteShown();
+    _moveToNewerLiveOffer();
+  }
+
+  void _ended() {
+    _endedOffer ??= _shown ?? DriverOfferIdentity(_reference);
+    _setPausing(false);
+    // The card reports this from its own updates; move on after the frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _moveToNewerLiveOffer();
+      }
+    });
+  }
+
+  /// An ended card yields to a newer live offer; a live card never does.
+  void _moveToNewerLiveOffer() {
+    final ended = _endedOffer;
+    if (ended == null || !mounted) {
+      return;
+    }
+    for (final offer in _store.offers) {
+      final identity = DriverOfferIdentity.of(offer);
+      final left = _store.remaining(offer.tripReference);
+      final live =
+          offer.expiry is! DriverOfferExpiresAt || left != Duration.zero;
+      if (identity != ended && live) {
+        setState(() {
+          _reference = offer.tripReference;
+          _cardGeneration += 1;
+          _endedOffer = null;
+          _shown = identity;
+        });
+        _setPausing(true);
+        return;
+      }
+    }
+  }
+
   void _finished(String reference) {
-    final next = widget.coordinator.store.firstOffer;
+    final next = _store.firstOffer;
     if (next != null && next.tripReference != reference) {
-      setState(() => _reference = next.tripReference);
+      setState(() {
+        _reference = next.tripReference;
+        _cardGeneration += 1;
+        _endedOffer = null;
+        _shown = DriverOfferIdentity.of(next);
+      });
+      _setPausing(true);
       return;
     }
     Navigator.of(context).maybePop();
@@ -142,14 +240,15 @@ class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AsmSpacing.space20),
           child: DriverPendingOfferCard(
-            key: ValueKey<String>('screen-offer-$_reference'),
+            key: ValueKey<String>('screen-offer-$_reference-$_cardGeneration'),
             tripReference: _reference,
-            store: widget.coordinator.store,
+            store: _store,
             controllerFactory: widget.controllerFactory,
             pickupTimeLookup: widget.pickupTimeLookup,
             onAccepted: (reference) =>
                 widget.onAccepted?.call(context, reference),
             onFinished: _finished,
+            onEnded: _ended,
           ),
         ),
       ),

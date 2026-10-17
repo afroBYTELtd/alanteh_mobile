@@ -32,6 +32,8 @@ void main() {
     expect(find.byKey(const Key('offer-screen')), findsOneWidget);
     expect(find.byKey(const Key('offer-card')), findsOneWidget);
     expect(find.text('Respond quickly'), findsOneWidget);
+    // The fetch from before the tap does not count as the offer being gone.
+    expect(find.text('This offer is no longer available'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     app.source.release([_offer('TRIP-1', pickup: 'Accra Mall')]);
@@ -39,6 +41,192 @@ void main() {
     expect(find.text('Accra Mall'), findsOneWidget);
     await app.dispose(tester);
   });
+
+  testWidgets('repeat 2 on the phone: an ended card is open and a tap for '
+      'a new offer arrives; the new offer shows', (tester) async {
+    final app = _App()..source.offers = [_offer('TRIP-1')];
+    // The server's clock runs with the phone's, so a refetch does not
+    // restart the countdown.
+    app.source.serverNow = () => DateTime.utc(
+      2026,
+      10,
+      9,
+      10,
+      0,
+      5,
+    ).add(app.clock.value - const Duration(seconds: 100));
+    await app.pumpSignedIn(tester);
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    for (var i = 0; i < 41; i += 1) {
+      app.clock.value += const Duration(seconds: 1);
+      await tester.pump(const Duration(seconds: 1));
+    }
+    expect(find.text('Offer expired'), findsOneWidget);
+
+    app.source.offers = [
+      _offer('TRIP-1'),
+      _offer(
+        'TRIP-2',
+        pickup: 'Osu Castle',
+        expiresAt: '2026-10-09T10:01:30+00:00',
+      ),
+    ];
+    app.push.emitOpened(_offerMessage('TRIP-2'));
+    await _settle(tester);
+
+    expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+    expect(find.text('Osu Castle'), findsOneWidget);
+    expect(find.text('Offer expired'), findsNothing);
+    expect(find.textContaining(' left'), findsOneWidget);
+    await app.dispose(tester);
+  });
+
+  testWidgets('a poll already out when the tap opens the card comes back '
+      'without the offer: the card asks again and shows it well before 8 s', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    // A normal poll leaves before the offer exists, and is slow.
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    final callsBefore = app.source.calls;
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+    expect(app.source.calls, callsBefore, reason: 'the tap joined the poll');
+
+    // The old poll returns without the offer; the server now has it.
+    app.source.hold = false;
+    app.source.offers = [_offer('TRIP-1', pickup: 'Accra Mall')];
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(app.source.calls, callsBefore + 1, reason: 'one fresh request');
+    expect(find.text('Accra Mall'), findsOneWidget);
+    expect(find.text("Couldn't load trip details"), findsNothing);
+    await app.dispose(tester);
+  });
+
+  testWidgets('the fresh request fails too: the card does not keep asking', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    final callsBefore = app.source.calls;
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+
+    app.source.failNext = true;
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    for (var i = 0; i < 5; i += 1) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    expect(app.source.calls, callsBefore + 1, reason: 'asked once, not more');
+    await app.dispose(tester);
+  });
+
+  testWidgets('the fresh request also lacks the offer: it has ended', (
+    tester,
+  ) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+    app.source.hold = true;
+    final stalePoll = app.coordinator.store.refresh();
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await tester.pump();
+    await tester.pump();
+
+    app.clock.value += const Duration(seconds: 1);
+    app.source.hold = false;
+    app.source.offers = const [];
+    app.source.releaseOldest(const []);
+    await stalePoll;
+    await _settle(tester);
+
+    expect(find.text('Offer ended'), findsOneWidget);
+    await app.dispose(tester);
+  });
+
+  for (final withPickupTime in [false, true]) {
+    final label = withPickupTime
+        ? 'with requested_pickup_time'
+        : 'without requested_pickup_time (looked up, slowly)';
+    testWidgets('after the switch from an ended card, Accept turns on and '
+        'works ($label)', (tester) async {
+      final app = _App()
+        ..source.offers = [_offer('TRIP-1', includePickupTime: withPickupTime)];
+      app.source.serverNow = () => DateTime.utc(
+        2026,
+        10,
+        9,
+        10,
+        0,
+        5,
+      ).add(app.clock.value - const Duration(seconds: 100));
+      await app.pumpSignedIn(tester);
+      app.push.emitOpened(_offerMessage('TRIP-1'));
+      await _settle(tester);
+      for (var i = 0; i < 41; i += 1) {
+        app.clock.value += const Duration(seconds: 1);
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(find.text('Offer expired'), findsOneWidget);
+
+      app.duty.detailDelay = const Duration(seconds: 4);
+      app.source.offers = [
+        _offer('TRIP-1', includePickupTime: withPickupTime),
+        _offer(
+          'TRIP-2',
+          pickup: 'Osu Castle',
+          expiresAt: '2026-10-09T10:01:30+00:00',
+          includePickupTime: withPickupTime,
+        ),
+      ];
+      app.push.emitOpened(_offerMessage('TRIP-2'));
+      await _settle(tester);
+      expect(find.text('Osu Castle'), findsOneWidget);
+      if (!withPickupTime) {
+        // Not before the lookup answers (it takes 4 s here).
+        expect(app.duty.detailCalls, contains('TRIP-2'));
+        expect(
+          tester
+              .widget<ButtonStyleButton>(
+                find.byKey(const Key('offer-card-accept')),
+              )
+              .onPressed,
+          isNull,
+        );
+      }
+
+      // Within the lookup's time, Accept turns on.
+      for (var i = 0; i < 5; i += 1) {
+        app.clock.value += const Duration(seconds: 1);
+        await tester.pump(const Duration(seconds: 1));
+      }
+      final accept = tester.widget<ButtonStyleButton>(
+        find.byKey(const Key('offer-card-accept')),
+      );
+      expect(accept.onPressed, isNotNull, reason: 'Accept is on');
+
+      app.duty.detailDelay = Duration.zero;
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await _settle(tester);
+      expect(app.offerGateway.accepts, 1);
+      expect(app.offerGateway.acceptedTrips, ['TRIP-2']);
+      expect(find.byType(DriverTripDetailScreen), findsOneWidget);
+      await app.dispose(tester);
+    });
+  }
 
   testWidgets('Accept on the card opens the trip', (tester) async {
     final app = _App()..source.offers = [_offer('TRIP-1')];
@@ -52,6 +240,43 @@ void main() {
     expect(app.offerGateway.accepts, 1);
     expect(find.byType(DriverTripDetailScreen), findsOneWidget);
     expect(find.byKey(const Key('offer-screen')), findsNothing);
+    await app.dispose(tester);
+  });
+
+  testWidgets("the card's answer is for the listed offer's assigned_at", (
+    tester,
+  ) async {
+    final app = _App()..source.offers = [_offer('TRIP-1')];
+    await app.pumpSignedIn(tester);
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await _settle(tester);
+
+    expect(app.offerGateway.accepts, 1);
+    expect(app.preparedFor.last, DateTime.utc(2026, 10, 9, 10));
+    await app.dispose(tester);
+  });
+
+  testWidgets('Decline while the offer never arrives: the shell asks for '
+      'an answer of its own (unknown offer)', (tester) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('offer-card-decline')));
+    await _settle(tester);
+    await tester.tap(
+      find.byKey(const Key('driver-decline-reason-option-end_of_shift')),
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('driver-decline-reason-confirm')));
+    await tester.pump(const Duration(seconds: 9));
+    await _settle(tester);
+
+    expect(app.unknownOffers, contains(true));
     await app.dispose(tester);
   });
 
@@ -226,17 +451,21 @@ RemoteMessage _offerMessage(String reference) => RemoteMessage(
   ),
 );
 
-Map<String, Object?> _offer(String reference, {String pickup = 'Accra Mall'}) =>
-    <String, Object?>{
-      'trip_reference': reference,
-      'pickup_location': pickup,
-      'passenger_count': 1,
-      'fare_amount': '35.00',
-      'fare_currency': 'GHS',
-      'assigned_at': '2026-10-09T10:00:00+00:00',
-      'offer_expires_at': '2026-10-09T10:00:45+00:00',
-      'requested_pickup_time': null,
-    };
+Map<String, Object?> _offer(
+  String reference, {
+  String pickup = 'Accra Mall',
+  String expiresAt = '2026-10-09T10:00:45+00:00',
+  bool includePickupTime = true,
+}) => <String, Object?>{
+  'trip_reference': reference,
+  'pickup_location': pickup,
+  'passenger_count': 1,
+  'fare_amount': '35.00',
+  'fare_currency': 'GHS',
+  'assigned_at': '2026-10-09T10:00:00+00:00',
+  'offer_expires_at': expiresAt,
+  if (includePickupTime) 'requested_pickup_time': null,
+};
 
 final class _App {
   _App({RemoteMessage? initial, bool holdInitial = false})
@@ -248,7 +477,13 @@ final class _App {
   final timers = _Timers();
   final auth = _AuthApi();
   final offerGateway = _OfferGateway();
+
+  /// One queue for every card, as the real card factory shares one.
+  final queue = _Queue();
+  final preparedFor = <DateTime?>[];
+  final unknownOffers = <bool>[];
   final tokenStore = MemoryAuthTokenStore();
+  final duty = _Duty();
   late final coordinator = DriverOfferCoordinator(
     store: DriverPendingOfferStore(source: source, clock: clock),
     periodicTimer: timers.create,
@@ -262,20 +497,26 @@ final class _App {
       appContext: AuthAppContext.driver,
     ),
     authTokenStore: tokenStore,
-    driverDutyGateway: _Duty(),
+    driverDutyGateway: duty,
     pushMessageSource: push,
     offerCoordinator: coordinator,
-    offerCardControllerFactory: (reference) async =>
-        DriverOfferResponseResilienceController(
-          queue: _Queue(),
-          gateway: offerGateway,
-          tripReference: reference,
-          driverId: 'DRV-1',
-          verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
+    offerCardControllerFactory:
+        (reference, {assignedAt, unknownOffer = false}) async {
+          preparedFor.add(assignedAt);
+          unknownOffers.add(unknownOffer);
+          return DriverOfferResponseResilienceController(
+            queue: queue,
+            gateway: offerGateway,
             tripReference: reference,
-            status: receipt.tripStatus,
-          ),
-        ),
+            driverId: 'DRV-1',
+            assignedAt: assignedAt,
+            unknownOffer: unknownOffer,
+            verifyServerState: (receipt) async => DriverOfferVerifiedTrip(
+              tripReference: reference,
+              status: receipt.tripStatus,
+            ),
+          );
+        },
   );
 
   Future<void> pumpSignedOut(WidgetTester tester) async {
@@ -330,35 +571,48 @@ final class _Source implements DriverPendingOffersSource {
 
   var calls = 0;
 
+  /// The server's clock; a fixed 10:00:05 when unset.
+  DateTime Function()? serverNow;
+
+  /// The next request fails as if there were no network.
+  bool failNext = false;
+
   @override
   Future<DriverPendingOffersFetch> fetch() {
     calls += 1;
+    if (failNext) {
+      failNext = false;
+      return Future.value(const DriverPendingOffersUnavailable());
+    }
     if (hold) {
       final pending = Completer<DriverPendingOffersFetch>();
       _held.add(pending);
       return pending.future;
     }
-    return Future.value(_reply(offers));
+    return Future.value(_reply(offers, serverNow));
   }
 
   void release(List<Map<String, Object?>> withOffers) {
     hold = false;
     offers = withOffers;
     for (final pending in _held) {
-      pending.complete(_reply(withOffers));
+      pending.complete(_reply(withOffers, serverNow));
     }
     _held.clear();
   }
 
   /// Answers only the oldest held fetch; later ones stay held.
   void releaseOldest(List<Map<String, Object?>> withOffers) =>
-      _held.removeAt(0).complete(_reply(withOffers));
+      _held.removeAt(0).complete(_reply(withOffers, serverNow));
 
-  static DriverPendingOffersFetch _reply(List<Map<String, Object?>> offers) =>
-      DriverPendingOffersFetched(<String, Object?>{
-        'server_time': '2026-10-09T10:00:05+00:00',
-        'offers': offers,
-      });
+  static DriverPendingOffersFetch _reply(
+    List<Map<String, Object?>> offers,
+    DateTime Function()? serverNow,
+  ) => DriverPendingOffersFetched(<String, Object?>{
+    'server_time':
+        serverNow?.call().toIso8601String() ?? '2026-10-09T10:00:05+00:00',
+    'offers': offers,
+  });
 }
 
 final class _Timers {
@@ -429,18 +683,28 @@ final class _Duty implements DriverDutyGateway {
   @override
   Future<List<DriverAssignedTrip>> fetchTrips() async => const [];
 
+  /// Trip-detail lookups wait this long (a slow network).
+  Duration detailDelay = Duration.zero;
+  final detailCalls = <String>[];
+
   @override
-  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) async =>
-      DriverAssignedTrip(
-        reference: tripReference,
-        status: 'driver_accepted',
-        pickupLocation: 'Accra Mall',
-        destination: 'Independence Square',
-      );
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) async {
+    detailCalls.add(tripReference);
+    if (detailDelay > Duration.zero) {
+      await Future<void>.delayed(detailDelay);
+    }
+    return DriverAssignedTrip(
+      reference: tripReference,
+      status: 'driver_accepted',
+      pickupLocation: 'Accra Mall',
+      destination: 'Independence Square',
+    );
+  }
 }
 
 final class _OfferGateway implements DriverOfferResponseGateway {
   var accepts = 0;
+  final acceptedTrips = <String>[];
 
   @override
   Future<DriverOfferResponseReceipt> accept({
@@ -450,6 +714,7 @@ final class _OfferGateway implements DriverOfferResponseGateway {
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     accepts += 1;
+    acceptedTrips.add(tripReference);
     return DriverOfferResponseReceipt(
       tripReference: tripReference,
       tripStatus: 'driver_accepted',

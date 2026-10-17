@@ -182,6 +182,29 @@ void main() {
     });
   });
 
+  group('when the request left', () {
+    test('arrival minus the request duration', () {
+      final snapshot = parseDriverPendingOffers(
+        const <String, Object?>{'offers': <Object?>[]},
+        receivedAt: const Duration(seconds: 10),
+        requestDuration: const Duration(seconds: 3),
+      );
+      expect(snapshot.requestedAt, const Duration(seconds: 7));
+    });
+
+    test(
+      'a request duration of zero (not measured) gives the arrival time',
+      () {
+        final snapshot = parseDriverPendingOffers(
+          const <String, Object?>{'offers': <Object?>[]},
+          receivedAt: const Duration(seconds: 10),
+          requestDuration: Duration.zero,
+        );
+        expect(snapshot.requestedAt, const Duration(seconds: 10));
+      },
+    );
+  });
+
   group('countdown', () {
     test('time left = expires_at - server_time - request duration, '
         'then counts down on the monotonic clock', () {
