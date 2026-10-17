@@ -255,6 +255,32 @@ void main() {
     expect(trackingScreensFor('RR-2'), 1);
   });
 
+  testWidgets('a pushed page that never registers does not block that trip: '
+      'after it closes, the next push opens it', (tester) async {
+    await pumpApp(tester);
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    const intent = PassengerPushNavigationIntent(
+      eventType: 'driver_accepted',
+      tripReference: 'TRIP-2',
+    );
+    Future<void> open(Widget Function() page) => openPassengerPushTrip(
+      navigator: nav,
+      repository: requests,
+      intent: intent,
+      canNavigate: () => true,
+      buildDestination: (_) => page(),
+    );
+
+    unawaited(open(() => const Scaffold(body: Text('Not a tracking screen'))));
+    await settle(tester);
+    nav.pop();
+    await settle(tester);
+
+    unawaited(open(() => const Scaffold(body: Text('Opened again'))));
+    await settle(tester);
+    expect(find.text('Opened again'), findsOneWidget);
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);

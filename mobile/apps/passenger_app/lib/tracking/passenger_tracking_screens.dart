@@ -16,11 +16,10 @@ final class PassengerTrackingScreens {
   /// True while a booking form (or its sending step) is open.
   bool get bookingFlowOpen => _bookingFlows > 0;
 
-  /// Marks [requestReference] as about to be opened. False if it is open or
-  /// already about to be: the caller must not open it. Done in the same
-  /// step as the push, so two pushes for one trip cannot both open it.
-  bool claim(String requestReference) =>
-      !_open.containsKey(requestReference) && _claimed.add(requestReference);
+  /// Marks [requestReference] as about to be opened; false if it already
+  /// is. Callers check [screenFor] first; done in the same step as the
+  /// push, so two pushes for one trip cannot both open it.
+  bool claim(String requestReference) => _claimed.add(requestReference);
 
   void release(String requestReference) => _claimed.remove(requestReference);
 
