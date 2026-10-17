@@ -4,6 +4,7 @@ import '../network/passenger_cancellation_gateway.dart';
 import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
+import '../tracking/passenger_tracking_screens.dart';
 import '../tracking/ride_tracking_screen.dart';
 import 'push_notification_runtime.dart';
 
@@ -53,6 +54,12 @@ Widget buildPassengerPushTripDestination({
 /// Opens the trip a push names: finds its ride request, then pushes the
 /// screen [buildDestination] makes. [canNavigate] is asked before the
 /// lookup and again after it (the passenger may have signed out meanwhile).
+///
+/// With the app's [PassengerTrackingScope] above [navigator], one screen per
+/// ride request: a push for a trip whose screen is open refreshes it, and a
+/// tap on the notification also brings it back to the top. Nothing
+/// navigates while a booking form is open. The check and the push happen in
+/// one step after the lookup, so two pushes for one trip open one screen.
 Future<void> openPassengerPushTrip({
   required NavigatorState navigator,
   required PassengerRideRequestHistoryRepository repository,
@@ -63,6 +70,7 @@ Future<void> openPassengerPushTrip({
   if (!canNavigate()) {
     return;
   }
+  final screens = PassengerTrackingScope.maybeOf(navigator.context);
 
   PassengerRideRequestRecord? record;
   try {
@@ -79,7 +87,35 @@ Future<void> openPassengerPushTrip({
   }
 
   final found = record;
-  await navigator.push<void>(
-    MaterialPageRoute<void>(builder: (_) => buildDestination(found)),
-  );
+  if (screens == null) {
+    await navigator.push<void>(
+      MaterialPageRoute<void>(builder: (_) => buildDestination(found)),
+    );
+    return;
+  }
+
+  final reference = found.requestReference;
+  final open = screens.screenFor(reference);
+  if (open != null) {
+    open.refresh();
+    final route = open.route;
+    if (intent.fromTap &&
+        !screens.bookingFlowOpen &&
+        route != null &&
+        route.isActive &&
+        !route.isCurrent) {
+      navigator.popUntil((candidate) => candidate == route);
+    }
+    return;
+  }
+  if (screens.bookingFlowOpen || !screens.claim(reference)) {
+    return;
+  }
+  try {
+    await navigator.push<void>(
+      MaterialPageRoute<void>(builder: (_) => buildDestination(found)),
+    );
+  } finally {
+    screens.release(reference);
+  }
 }

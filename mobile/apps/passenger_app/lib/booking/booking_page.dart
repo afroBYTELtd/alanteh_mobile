@@ -18,6 +18,7 @@ import 'scheduled_pickup.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
 
+import '../tracking/passenger_tracking_screens.dart';
 import '../tracking/ride_tracking_screen.dart';
 
 /// A sign-in that ends sooner than this is renewed before booking.
@@ -93,6 +94,8 @@ class BookingPage extends StatefulWidget {
 }
 
 class _BookingPageState extends State<BookingPage> {
+  /// Open booking flows are counted, so a push never navigates over one.
+  PassengerTrackingScreens? _screens;
   static const _internalServiceContext =
       RideServiceContextCode.otherApprovedRequest;
 
@@ -140,7 +143,19 @@ class _BookingPageState extends State<BookingPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final screens = PassengerTrackingScope.maybeOf(context);
+    if (!identical(screens, _screens)) {
+      _screens?.bookingFlowClosed();
+      screens?.bookingFlowOpened();
+      _screens = screens;
+    }
+  }
+
+  @override
   void dispose() {
+    _screens?.bookingFlowClosed();
     _pickupController.dispose();
     _destinationController.dispose();
     _assistanceController.dispose();

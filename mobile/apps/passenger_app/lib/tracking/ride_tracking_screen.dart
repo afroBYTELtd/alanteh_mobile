@@ -15,6 +15,7 @@ import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
 import '../support/new_message_form.dart';
+import 'passenger_tracking_screens.dart';
 
 /// Mirrors the backend's eligible-status sets exactly
 /// (RIDE_REQUEST_CANCEL_ELIGIBLE_STATUSES / TRIP_PASSENGER_CANCEL_ELIGIBLE_STATUSES
@@ -105,11 +106,58 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   double _bottomSheetHeight = 0;
   bool _cancelling = false;
 
+  /// This screen in the app's list of open tracking screens.
+  PassengerTrackingScreens? _screens;
+  PassengerOpenTrackingScreen? _registration;
+  String? _registeredReference;
+
   @override
   void initState() {
     super.initState();
     _record = widget.initialRecord;
     _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _register();
+  }
+
+  void _register() {
+    final screens = PassengerTrackingScope.maybeOf(context);
+    final reference = widget.requestReference;
+    if (identical(screens, _screens) && reference == _registeredReference) {
+      return;
+    }
+    _unregister();
+    if (screens == null) {
+      return;
+    }
+    final registration = PassengerOpenTrackingScreen(
+      route: ModalRoute.of(context),
+      refresh: () {
+        if (mounted) {
+          _manualRetry();
+        }
+      },
+    );
+    screens.register(reference, registration);
+    _screens = screens;
+    _registration = registration;
+    _registeredReference = reference;
+  }
+
+  void _unregister() {
+    final screens = _screens;
+    final registration = _registration;
+    final reference = _registeredReference;
+    if (screens != null && registration != null && reference != null) {
+      screens.unregister(reference, registration);
+    }
+    _screens = null;
+    _registration = null;
+    _registeredReference = null;
   }
 
   @override
@@ -121,6 +169,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         oldWidget.requestReference != widget.requestReference;
 
     if (requestChanged) {
+      _register();
       _timer?.cancel();
       _record = widget.initialRecord;
       _tripReference = null;
@@ -143,6 +192,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
   @override
   void dispose() {
+    _unregister();
     _timer?.cancel();
     super.dispose();
   }

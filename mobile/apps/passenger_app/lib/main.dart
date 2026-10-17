@@ -29,6 +29,7 @@ import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
 import 'safety/passenger_trip_safety.dart';
+import 'tracking/passenger_tracking_screens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -200,7 +201,7 @@ class PassengerApp extends StatelessWidget {
 
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: AsmSystemChrome.passenger,
-          child: content,
+          child: PassengerTrackingScope(child: content),
         );
       },
       home: showSplash ? PassengerSplashGate(child: home) : home,

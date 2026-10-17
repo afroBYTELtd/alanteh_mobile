@@ -13,15 +13,21 @@ final class PassengerPushNavigationIntent {
   const PassengerPushNavigationIntent({
     required this.eventType,
     required this.tripReference,
+    this.fromTap = true,
   });
 
   final String eventType;
   final String tripReference;
+
+  /// The passenger tapped the notification (from the background or a cold
+  /// start), rather than it arriving while the app was open.
+  final bool fromTap;
 }
 
 PassengerPushNavigationIntent? passengerPushNavigationIntentFromMessage(
-  RemoteMessage message,
-) {
+  RemoteMessage message, {
+  bool fromTap = true,
+}) {
   final eventType = _requiredPushDataString(message.data, 'event_type');
   final tripReference = _requiredPushDataString(message.data, 'trip_reference');
 
@@ -32,6 +38,7 @@ PassengerPushNavigationIntent? passengerPushNavigationIntentFromMessage(
   return PassengerPushNavigationIntent(
     eventType: eventType,
     tripReference: tripReference,
+    fromTap: fromTap,
   );
 }
 
@@ -118,7 +125,7 @@ class _FirebaseForegroundPushListenerState
   }
 
   void _handleForegroundMessage(RemoteMessage message) {
-    _handleNavigationMessage(message);
+    _handleNavigationMessage(message, fromTap: false);
 
     final notification = message.notification;
     final title = notification?.title?.trim();
@@ -149,8 +156,11 @@ class _FirebaseForegroundPushListenerState
     });
   }
 
-  void _handleNavigationMessage(RemoteMessage message) {
-    final intent = passengerPushNavigationIntentFromMessage(message);
+  void _handleNavigationMessage(RemoteMessage message, {bool fromTap = true}) {
+    final intent = passengerPushNavigationIntentFromMessage(
+      message,
+      fromTap: fromTap,
+    );
     final handler = widget.onNavigationIntent;
 
     if (intent == null || handler == null || !mounted) {
