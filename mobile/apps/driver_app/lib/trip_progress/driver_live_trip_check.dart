@@ -7,11 +7,15 @@ enum DriverLiveTripFinding {
   cancelledByPassenger,
   cancelledByOperations,
 
-  /// Cancelled, without saying by whom.
-  cancelled,
-
   /// The trip is no longer this driver's to act on.
   notAssigned,
+
+  /// The trip is over (completed, under review, no-show): reloads stop and
+  /// the screen stays as it is.
+  ended,
+
+  /// A status this app does not know: nothing changes.
+  unknown,
 }
 
 /// The live trip screens that are open, by trip reference, so a cancel

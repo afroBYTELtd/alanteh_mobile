@@ -203,6 +203,45 @@ void main() {
       expect(find.text('Trip cancelled'), findsNothing);
     });
 
+    testWidgets('a finished trip stops the reloads quietly: no card, the '
+        'screen stays', (tester) async {
+      final check = _Check([DriverLiveTripFinding.ended]);
+      await _pumpLive(tester, check: check, status: 'in_progress');
+      await tester.pump(interval);
+      await tester.pump();
+      expect(check.calls, 1);
+
+      await tester.pump(interval * 8);
+      expect(check.calls, 1);
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+      expect(
+        find.byKey(const Key('driver-live-trip-not-assigned')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('driver-mark-arrived-destination')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unknown status changes nothing and the reloads go on', (
+      tester,
+    ) async {
+      final check = _Check([DriverLiveTripFinding.unknown]);
+      await _pumpLive(tester, check: check);
+      await tester.pump(interval);
+      await tester.pump();
+      await tester.pump(interval);
+      await tester.pump();
+
+      expect(check.calls, 2);
+      expect(find.text("I've arrived"), findsOneWidget);
+      expect(
+        find.byKey(const Key('driver-live-trip-not-assigned')),
+        findsNothing,
+      );
+    });
+
     testWidgets('a reload that fails changes nothing', (tester) async {
       final check = _Check([_fails]);
       await _pumpLive(tester, check: check);
@@ -564,34 +603,65 @@ void main() {
   });
 
   group('the trip detail screen reloads through the gateway', () {
-    test('statuses', () {
-      for (final status in [
-        'assigned',
-        'driver_accepted',
-        'driver_en_route',
-        'dispatched',
-        'arrived_at_pickup',
-        'passenger_onboard',
-        'in_progress',
-      ]) {
-        expect(driverLiveTripFindingFor(status), DriverLiveTripFinding.live);
+    // Every Trip.TripStatus on the server (backend 07e86be, models.py).
+    const serverStatuses = <String, DriverLiveTripFinding>{
+      'requested': DriverLiveTripFinding.notAssigned,
+      'under_review': DriverLiveTripFinding.notAssigned,
+      'fare_confirmed': DriverLiveTripFinding.notAssigned,
+      'awaiting_payment': DriverLiveTripFinding.notAssigned,
+      'payment_confirmed': DriverLiveTripFinding.notAssigned,
+      'driver_offer_sent': DriverLiveTripFinding.notAssigned,
+      'driver_accepted': DriverLiveTripFinding.live,
+      'driver_declined': DriverLiveTripFinding.notAssigned,
+      'assigned': DriverLiveTripFinding.live,
+      'dispatched': DriverLiveTripFinding.live,
+      'driver_en_route': DriverLiveTripFinding.live,
+      'arrived_at_pickup': DriverLiveTripFinding.live,
+      'passenger_onboard': DriverLiveTripFinding.live,
+      'in_progress': DriverLiveTripFinding.live,
+      'arrived_at_destination': DriverLiveTripFinding.live,
+      'completed_pending_review': DriverLiveTripFinding.ended,
+      'completed_confirmed': DriverLiveTripFinding.ended,
+      'review_overdue': DriverLiveTripFinding.ended,
+      'cancelled_by_passenger': DriverLiveTripFinding.cancelledByPassenger,
+      'cancelled_by_operations': DriverLiveTripFinding.cancelledByOperations,
+      'no_show': DriverLiveTripFinding.ended,
+      'disputed': DriverLiveTripFinding.ended,
+    };
+
+    test('every server status is mapped explicitly', () {
+      expect(serverStatuses, hasLength(22));
+      for (final entry in serverStatuses.entries) {
+        expect(
+          driverLiveTripFindingFor(entry.key),
+          entry.value,
+          reason: entry.key,
+        );
+        expect(
+          driverLiveTripFindingFor(' ${entry.key} '),
+          entry.value,
+          reason: 'padded ${entry.key}',
+        );
       }
-      expect(
-        driverLiveTripFindingFor('cancelled_by_passenger'),
-        DriverLiveTripFinding.cancelledByPassenger,
-      );
-      expect(
-        driverLiveTripFindingFor(' cancelled_by_operations '),
-        DriverLiveTripFinding.cancelledByOperations,
-      );
-      expect(
-        driverLiveTripFindingFor('cancelled'),
-        DriverLiveTripFinding.cancelled,
-      );
-      for (final status in ['completed_pending_review', 'requested', null]) {
+    });
+
+    test('every status the driver can be in on the live screen reads live, '
+        'and matches the statuses that open live actions', () {
+      for (final entry in serverStatuses.entries) {
+        expect(
+          driverLiveTripFindingFor(entry.key) == DriverLiveTripFinding.live,
+          driverCanOpenLiveTripActions(entry.key),
+          reason: entry.key,
+        );
+      }
+    });
+
+    test('a status the app does not know changes nothing', () {
+      for (final status in [null, '', 'cancelled', 'accepted_for_trip']) {
         expect(
           driverLiveTripFindingFor(status),
-          DriverLiveTripFinding.notAssigned,
+          DriverLiveTripFinding.unknown,
+          reason: '$status',
         );
       }
     });

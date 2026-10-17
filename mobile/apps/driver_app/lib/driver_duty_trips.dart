@@ -687,14 +687,35 @@ bool driverTripIsCancelled(String? status) {
   }.contains(status?.trim());
 }
 
-/// What the live screen does with a reloaded trip status.
+/// What the live screen does with a reloaded trip status: every
+/// Trip.TripStatus on the server, by name. A status not listed changes
+/// nothing.
 DriverLiveTripFinding driverLiveTripFindingFor(String? status) {
   return switch (status?.trim()) {
+    'assigned' ||
+    'driver_accepted' ||
+    'dispatched' ||
+    'driver_en_route' ||
+    'arrived_at_pickup' ||
+    'passenger_onboard' ||
+    'in_progress' ||
+    'arrived_at_destination' => DriverLiveTripFinding.live,
     'cancelled_by_passenger' => DriverLiveTripFinding.cancelledByPassenger,
     'cancelled_by_operations' => DriverLiveTripFinding.cancelledByOperations,
-    'cancelled' => DriverLiveTripFinding.cancelled,
-    _ when driverCanOpenLiveTripActions(status) => DriverLiveTripFinding.live,
-    _ => DriverLiveTripFinding.notAssigned,
+    'completed_pending_review' ||
+    'completed_confirmed' ||
+    'review_overdue' ||
+    'disputed' ||
+    'no_show' => DriverLiveTripFinding.ended,
+    // Back with dispatch: no driver holds the trip as a live one.
+    'requested' ||
+    'under_review' ||
+    'fare_confirmed' ||
+    'awaiting_payment' ||
+    'payment_confirmed' ||
+    'driver_offer_sent' ||
+    'driver_declined' => DriverLiveTripFinding.notAssigned,
+    _ => DriverLiveTripFinding.unknown,
   };
 }
 

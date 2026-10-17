@@ -100,6 +100,9 @@ class _DriverTripVisualSequencePageState
   /// driver's; the card then replaces the stage, and reloads stop.
   DriverLiveTripFinding? _ended;
   DriverTripVisualStage? _endedAtStage;
+
+  /// The server says the trip is over: reloads stop, nothing else changes.
+  bool _finished = false;
   Timer? _checkTimer;
   bool _checking = false;
   bool _checkAgain = false;
@@ -166,6 +169,7 @@ class _DriverTripVisualSequencePageState
   bool get _reloading =>
       widget.checkTrip != null &&
       _ended == null &&
+      !_finished &&
       _state.stage != DriverTripVisualStage.completed;
 
   void _scheduleCheck() {
@@ -231,9 +235,17 @@ class _DriverTripVisualSequencePageState
   }
 
   void _apply(DriverLiveTripFinding finding, {required bool afterNotFound}) {
-    final ended = finding == DriverLiveTripFinding.live
-        ? (afterNotFound ? DriverLiveTripFinding.notAssigned : null)
-        : finding;
+    if (finding == DriverLiveTripFinding.ended) {
+      _finished = true;
+      _checkTimer?.cancel();
+      return;
+    }
+    final ended = switch (finding) {
+      DriverLiveTripFinding.live when afterNotFound =>
+        DriverLiveTripFinding.notAssigned,
+      DriverLiveTripFinding.live || DriverLiveTripFinding.unknown => null,
+      _ => finding,
+    };
     if (ended == null) {
       return;
     }
