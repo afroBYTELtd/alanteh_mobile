@@ -174,6 +174,7 @@ class _FirebaseForegroundPushListenerState
 
       unawaited(handler(intent));
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
