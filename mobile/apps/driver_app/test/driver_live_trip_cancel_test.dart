@@ -625,6 +625,74 @@ void main() {
     });
   });
 
+  group('a reload answer that comes too late is dropped (more)', () {
+    testWidgets('a reload that starts while the driver\'s action is on its '
+        'way: its answer is dropped', (tester) async {
+      final check = _Check([
+        DriverLiveTripFinding.cancelledByPassenger,
+        DriverLiveTripFinding.live,
+      ]);
+      final gateway = _OkGateway()..hold = Completer<void>();
+      await _pumpLive(
+        tester,
+        check: check,
+        actionRecorder: _okRecorder(gateway),
+      );
+
+      final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+      await tester.ensureVisible(arrived);
+      await tester.tap(arrived);
+      await tester.pump();
+      expect(find.text('Confirming...'), findsOneWidget);
+
+      expect(DriverLiveTripScreens.instance.checkNow(reference), isTrue);
+      await tester.pump();
+      await tester.pump();
+      expect(check.calls, 1);
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+
+      gateway.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+    });
+
+    testWidgets('the pickup-code start counts as the driver\'s own action', (
+      tester,
+    ) async {
+      final check = _Check([
+        DriverLiveTripFinding.cancelledByPassenger,
+        DriverLiveTripFinding.live,
+      ]);
+      final answer = Completer<void>();
+      check.holds[0] = answer;
+      await _pumpLive(
+        tester,
+        check: check,
+        status: 'passenger_onboard',
+        actionRecorder: _okRecorder(_OkGateway()),
+        pickupVerificationRequired: true,
+      );
+
+      await tester.pump(interval);
+      expect(check.calls, 1);
+      await tester.enterText(
+        find.byKey(const Key('driver-pickup-verification-code-field')),
+        '1234',
+      );
+      await tester.tap(find.byKey(const Key('driver-confirm-onboard')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-active-trip')), findsOneWidget);
+
+      answer.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+      await tester.pump(asmFakeMapAnimationDuration);
+    });
+  });
+
   group('cancel pushes', () {
     RemoteMessage message(String type, String trip) => RemoteMessage(
       data: <String, dynamic>{'event_type': type, 'trip_reference': trip},
@@ -826,6 +894,7 @@ Future<void> _pumpLive(
   _Launcher? launcher,
   DriverTripActionResilienceController? actionRecorder,
   _Push? push,
+  bool pickupVerificationRequired = false,
 }) async {
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
@@ -844,6 +913,7 @@ Future<void> _pumpLive(
     driverSafetyAlertRepository: _Alerts(),
     actionRecorder: actionRecorder,
     checkTrip: check.call,
+    pickupVerificationRequired: pickupVerificationRequired,
   );
   Widget work = Builder(
     builder: (context) => Scaffold(
