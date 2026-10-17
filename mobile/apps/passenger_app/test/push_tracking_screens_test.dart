@@ -203,6 +203,58 @@ void main() {
     expect(find.byType(RideTrackingScreen), findsOneWidget);
   });
 
+  testWidgets('a foreground push for the open trip with another page on top '
+      'refreshes it and leaves the page where it is', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      nav.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('On top')),
+        ),
+      ),
+    );
+    await settle(tester);
+    final before = requests.detailCalls;
+
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    expect(find.text('On top'), findsOneWidget);
+    expect(trackingScreens(), 1);
+    expect(requests.detailCalls, greaterThan(before));
+  });
+
+  testWidgets('a trip screen that was closed opens again on the next push', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    await tester.tap(find.byIcon(Icons.arrow_back).last);
+    await settle(tester);
+    expect(trackingScreens(), 0);
+
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    expect(trackingScreens(), 1);
+  });
+
+  testWidgets('once the booking is sent, a push for another trip opens it '
+      'again', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.byKey(const Key('home-book')));
+    await settle(tester);
+    await _book(tester);
+    expect(find.byType(BookingPage, skipOffstage: false), findsNothing);
+
+    push.foreground(_message('driver_accepted', 'TRIP-2'));
+    await settle(tester);
+
+    expect(trackingScreensFor('RR-2'), 1);
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);
