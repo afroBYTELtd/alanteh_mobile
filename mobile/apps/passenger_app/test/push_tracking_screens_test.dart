@@ -281,6 +281,25 @@ void main() {
     expect(find.text('Opened again'), findsOneWidget);
   });
 
+  testWidgets('a notification tap for a lower trip never closes another '
+      "trip's screen above it: that one stays, the lower one refreshes", (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    push.foreground(_message('driver_accepted', 'TRIP-2'));
+    await settle(tester);
+    expect(trackingScreensFor('RR-2'), 1);
+    final before = requests.detailCalls;
+
+    push.opened(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    expect(trackingScreensFor('RR-1'), 1);
+    expect(trackingScreensFor('RR-2'), 1);
+    expect(requests.detailCalls, greaterThan(before));
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);

@@ -57,8 +57,9 @@ Widget buildPassengerPushTripDestination({
 ///
 /// With the app's [PassengerTrackingScope] above [navigator], one screen per
 /// ride request: a push for a trip whose screen is open refreshes it, and a
-/// tap on the notification also brings it back to the top. Nothing
-/// navigates while a booking form is open. The check and the push happen in
+/// tap on the notification also brings it back to the top, unless that
+/// would close another trip's screen. Nothing navigates while a booking
+/// form is open. The check and the push happen in
 /// one step after the lookup, so two pushes for one trip open one screen.
 Future<void> openPassengerPushTrip({
   required NavigatorState navigator,
@@ -101,6 +102,7 @@ Future<void> openPassengerPushTrip({
     final route = open.route;
     if (intent.fromTap &&
         !screens.bookingFlowOpen &&
+        !screens.hasScreenAbove(reference) &&
         route != null &&
         route.isActive &&
         !route.isCurrent) {

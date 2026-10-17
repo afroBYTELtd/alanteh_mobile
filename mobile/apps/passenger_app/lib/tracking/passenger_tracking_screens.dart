@@ -6,8 +6,10 @@ import 'package:flutter/widgets.dart';
 /// remember to.
 final class PassengerTrackingScreens {
   final _open = <String, PassengerOpenTrackingScreen>{};
+  final _openedAt = <String, int>{};
   final _claimed = <String>{};
   var _bookingFlows = 0;
+  var _sequence = 0;
 
   /// The open screen for [requestReference], if any.
   PassengerOpenTrackingScreen? screenFor(String requestReference) =>
@@ -26,12 +28,27 @@ final class PassengerTrackingScreens {
   void register(String requestReference, PassengerOpenTrackingScreen screen) {
     _claimed.remove(requestReference);
     _open[requestReference] = screen;
+    _openedAt[requestReference] = _sequence += 1;
   }
 
   void unregister(String requestReference, PassengerOpenTrackingScreen screen) {
     if (identical(_open[requestReference], screen)) {
       _open.remove(requestReference);
+      _openedAt.remove(requestReference);
     }
+  }
+
+  /// True if another trip's screen opened after [requestReference]'s and is
+  /// still open: it sits above it, and bringing this one to the top would
+  /// close it.
+  bool hasScreenAbove(String requestReference) {
+    final mine = _openedAt[requestReference];
+    if (mine == null) {
+      return false;
+    }
+    return _openedAt.entries.any(
+      (entry) => entry.key != requestReference && entry.value > mine,
+    );
   }
 
   void bookingFlowOpened() => _bookingFlows += 1;
