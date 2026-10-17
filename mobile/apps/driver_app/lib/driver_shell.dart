@@ -122,6 +122,10 @@ class _DriverShellState extends State<DriverShell> {
   bool _dutyLoading = false;
   bool _dutyActionInFlight = false;
   bool _showOnlineTransition = false;
+
+  /// A shift check was submitted and the app is confirming the driver is
+  /// online; Work must not show the old "offline" screen meanwhile.
+  bool _confirmingShiftCheck = false;
   bool _startupShiftCheckConsidered = false;
   bool _startupShiftCheckNavigationPending = false;
   DriverDutySummary? _dutySummary;
@@ -727,6 +731,7 @@ class _DriverShellState extends State<DriverShell> {
         reason: 'confirm_online_after_shift_check_start',
       );
       _dutyError = null;
+      _confirmingShiftCheck = true;
       _selectedIndex = 0;
       _startupGateDiagIndexTransition(
         oldValue: oldSelectedIndex,
@@ -756,6 +761,7 @@ class _DriverShellState extends State<DriverShell> {
             DriverDutyApiFailureType.badResponse,
             'Driver online status could not be confirmed.',
           );
+          _confirmingShiftCheck = false;
         });
         return;
       }
@@ -776,6 +782,7 @@ class _DriverShellState extends State<DriverShell> {
         );
         _dutyError = null;
         _showOnlineTransition = true;
+        _confirmingShiftCheck = false;
       });
 
       await Future<void>.delayed(widget.onlineTransitionDuration);
@@ -802,6 +809,7 @@ class _DriverShellState extends State<DriverShell> {
           reason: 'confirm_online_failure',
         );
         _dutyError = error;
+        _confirmingShiftCheck = false;
       });
     }
   }
@@ -926,6 +934,10 @@ class _DriverShellState extends State<DriverShell> {
       return const _DriverOnlineTransitionState();
     }
 
+    if (_confirmingShiftCheck) {
+      return const _DriverShiftCheckConfirmingState();
+    }
+
     if (_dutyError != null && widget.driverDutyGateway != null) {
       return DriverOfflineState(onRetry: _loadDuty);
     }
@@ -1031,6 +1043,41 @@ class _DriverShellState extends State<DriverShell> {
             label: 'Account',
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DriverShiftCheckConfirmingState extends StatelessWidget {
+  const _DriverShiftCheckConfirmingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AsmScreenSurface(
+      key: Key('driver-shift-check-confirming'),
+      expandToViewport: true,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Shift check submitted.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: AsmSpacing.space8),
+            Text(
+              'Going online…',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AsmColors.driverTextSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: AsmSpacing.space16),
+            CircularProgressIndicator(),
+          ],
+        ),
       ),
     );
   }

@@ -307,6 +307,146 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
+  // Seen on the test phone (16 and 17 Oct): after "I am ready" the Work
+  // screen showed the old "You're offline · START SHIFT CHECK" for about a
+  // second while the app confirmed the driver was online.
+  testWidgets('after a submitted shift check the old offline screen never '
+      'shows while online is being confirmed', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        // As on the phone on 17 Oct: online from yesterday, no shift check
+        // for today, so Work shows START SHIFT CHECK and the driver taps it.
+        dutyStatus: 'online',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final shiftGateway = _SuccessfulShiftCheckGateway(
+      onSubmit: () {
+        dutyGateway.current = DriverDutySummary(
+          driverReference: 'DRV-001',
+          dutyStatus: 'online',
+          dutySince: now,
+          shiftCheckToday: true,
+          shiftCheckTodayReference: 'SC-QA-DRV-001-20260807',
+        );
+      },
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: shiftGateway,
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('START SHIFT CHECK'), findsOneWidget);
+    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    final slowConfirm = Completer<void>();
+    dutyGateway.holdNext = slowConfirm;
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    for (var i = 0; i < 20; i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('START SHIFT CHECK'), findsNothing);
+      expect(find.text("You're offline"), findsNothing);
+      expect(find.text("Today's shift · not yet started"), findsNothing);
+    }
+    expect(
+      find.byKey(const Key('driver-shift-check-confirming')),
+      findsOneWidget,
+    );
+    expect(find.text('Shift check submitted.'), findsOneWidget);
+
+    slowConfirm.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('driver-online-transition')), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text("Today's shift · online now"), findsOneWidget);
+
+    await controller.stopAutomaticSync();
+  });
+
+  testWidgets('if online cannot be confirmed after a submitted shift check, '
+      'the error shows, not the old offline screen', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        // As on the phone on 17 Oct: online from yesterday, no shift check
+        // for today, so Work shows START SHIFT CHECK and the driver taps it.
+        dutyStatus: 'online',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _SuccessfulShiftCheckGateway(
+        onSubmit: () {
+          dutyGateway.current = DriverDutySummary(
+            driverReference: 'DRV-001',
+            dutyStatus: 'offline',
+            dutySince: now,
+            shiftCheckToday: true,
+          );
+        },
+      ),
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('START SHIFT CHECK'), findsOneWidget);
+    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    final slowConfirm = Completer<void>();
+    dutyGateway.holdNext = slowConfirm;
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    for (var i = 0; i < 20; i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('START SHIFT CHECK'), findsNothing);
+    }
+    slowConfirm.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('driver-shift-check-confirming')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('driver-online-transition')), findsNothing);
+    expect(find.text('START SHIFT CHECK'), findsNothing);
+    expect(find.byKey(const Key('driver-offline-screen')), findsOneWidget);
+
+    await controller.stopAutomaticSync();
+  });
+
   testWidgets('queued readiness does not request notification permission', (
     tester,
   ) async {
@@ -905,6 +1045,9 @@ final class _MutableDutyGateway
   final Completer<DriverDutySummary>? _firstDutyCompleter;
 
   int dutyCalls = 0;
+
+  /// When set, the next fetchDuty waits for it (a slow network).
+  Completer<void>? holdNext;
   final List<DriverOperationalDutyStatus> transitionStatuses =
       <DriverOperationalDutyStatus>[];
 
@@ -913,6 +1056,11 @@ final class _MutableDutyGateway
     dutyCalls += 1;
     if (dutyCalls == 1 && _firstDutyCompleter != null) {
       return _firstDutyCompleter.future;
+    }
+    final hold = holdNext;
+    if (hold != null) {
+      holdNext = null;
+      await hold.future;
     }
     return current;
   }
