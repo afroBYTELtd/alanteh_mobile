@@ -300,6 +300,32 @@ void main() {
     expect(requests.detailCalls, greaterThan(before));
   });
 
+  testWidgets('once the trip above has closed, a tap brings the lower trip '
+      'to the top again', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    push.foreground(_message('driver_accepted', 'TRIP-2'));
+    await settle(tester);
+    final nav = tester.state<NavigatorState>(find.byType(Navigator));
+    nav.pop();
+    await settle(tester);
+    expect(trackingScreensFor('RR-2'), 0);
+    unawaited(
+      nav.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('On top')),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    push.opened(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    expect(find.text('On top'), findsNothing);
+    expect(trackingScreensFor('RR-1'), 1);
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);
