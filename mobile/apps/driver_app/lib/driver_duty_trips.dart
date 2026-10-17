@@ -707,6 +707,7 @@ bool driverCanOpenLiveTripActions(String? status) {
     'arrived_at_pickup',
     'passenger_onboard',
     'in_progress',
+    'arrived_at_destination',
   }.contains(status?.trim());
 }
 

@@ -27,6 +27,7 @@ final class DriverTripVisualState {
       'arrived_at_pickup' => DriverTripVisualStage.arrivedAtPickup,
       'passenger_onboard' => DriverTripVisualStage.confirmingPassengerOnboard,
       'in_progress' => DriverTripVisualStage.activeTrip,
+      'arrived_at_destination' => DriverTripVisualStage.arrivedAtDestination,
       'completed_pending_review' => DriverTripVisualStage.completed,
       'completed_confirmed' => DriverTripVisualStage.completed,
       'review_overdue' => DriverTripVisualStage.completed,

@@ -10,6 +10,7 @@ import 'package:driver_app/notifications/push_notification_runtime.dart';
 import 'package:driver_app/safety/driver_trip_safety.dart';
 import 'package:driver_app/trip_progress/driver_live_trip_check.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
+import 'package:driver_app/trip_progress/driver_trip_visual_state.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -548,6 +549,17 @@ void main() {
       expect(check.calls, 0);
       expect(find.text("I've arrived"), findsOneWidget);
       expect(find.byType(SnackBar), findsOneWidget);
+    });
+  });
+
+  group('arrived_at_destination', () {
+    test('is a live status, and the live screen opens at the destination '
+        'stage', () {
+      expect(driverCanOpenLiveTripActions('arrived_at_destination'), isTrue);
+      expect(
+        DriverTripVisualState.fromBackendStatus('arrived_at_destination').stage,
+        DriverTripVisualStage.arrivedAtDestination,
+      );
     });
   });
 
