@@ -615,36 +615,23 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   Future<void> _handlePushNavigationIntent(
     PassengerPushNavigationIntent intent,
-  ) async {
-    if (!_signedIn || _localQaOpened || !mounted) {
-      return;
+  ) {
+    if (!mounted) {
+      return Future<void>.value();
     }
-
-    PassengerRideRequestRecord? record;
-    try {
-      record = await resolvePassengerPushTripRequest(
+    return openPassengerPushTrip(
+      navigator: Navigator.of(context),
+      repository: widget.rideRequestHistoryRepository,
+      intent: intent,
+      canNavigate: () => mounted && _signedIn && !_localQaOpened,
+      buildDestination: (record) => buildPassengerPushTripDestination(
         repository: widget.rideRequestHistoryRepository,
-        tripReference: intent.tripReference,
-      );
-    } on Object {
-      return;
-    }
-
-    if (!mounted || !_signedIn || _localQaOpened || record == null) {
-      return;
-    }
-
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => buildPassengerPushTripDestination(
-          repository: widget.rideRequestHistoryRepository,
-          record: record!,
-          paymentRatingRepository: widget.paymentRatingRepository,
-          trustedContactRepository: widget.trustedContactRepository,
-          cancellationGateway: widget.cancellationGateway,
-          phoneNumber: _passengerPhoneNumber,
-          onSignInRequired: _returnToSignIn,
-        ),
+        record: record,
+        paymentRatingRepository: widget.paymentRatingRepository,
+        trustedContactRepository: widget.trustedContactRepository,
+        cancellationGateway: widget.cancellationGateway,
+        phoneNumber: _passengerPhoneNumber,
+        onSignInRequired: _returnToSignIn,
       ),
     );
   }

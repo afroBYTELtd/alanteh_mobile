@@ -5,6 +5,7 @@ import '../payment_rating/passenger_payment_rating_contract.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
 import '../tracking/ride_tracking_screen.dart';
+import 'push_notification_runtime.dart';
 
 Future<PassengerRideRequestRecord?> resolvePassengerPushTripRequest({
   required PassengerRideRequestHistoryRepository repository,
@@ -46,5 +47,39 @@ Widget buildPassengerPushTripDestination({
     cancellationGateway: cancellationGateway,
     phoneNumber: phoneNumber,
     onSignInRequired: onSignInRequired,
+  );
+}
+
+/// Opens the trip a push names: finds its ride request, then pushes the
+/// screen [buildDestination] makes. [canNavigate] is asked before the
+/// lookup and again after it (the passenger may have signed out meanwhile).
+Future<void> openPassengerPushTrip({
+  required NavigatorState navigator,
+  required PassengerRideRequestHistoryRepository repository,
+  required PassengerPushNavigationIntent intent,
+  required bool Function() canNavigate,
+  required Widget Function(PassengerRideRequestRecord record) buildDestination,
+}) async {
+  if (!canNavigate()) {
+    return;
+  }
+
+  PassengerRideRequestRecord? record;
+  try {
+    record = await resolvePassengerPushTripRequest(
+      repository: repository,
+      tripReference: intent.tripReference,
+    );
+  } on Object {
+    return;
+  }
+
+  if (!canNavigate() || record == null) {
+    return;
+  }
+
+  final found = record;
+  await navigator.push<void>(
+    MaterialPageRoute<void>(builder: (_) => buildDestination(found)),
   );
 }
