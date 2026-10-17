@@ -326,6 +326,40 @@ void main() {
     expect(trackingScreensFor('RR-1'), 1);
   });
 
+  testWidgets('a push naming the open trip in another case or with spaces '
+      'still finds that screen: one screen, refreshed', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    final before = requests.detailCalls;
+
+    push.foreground(_message('driver_accepted', ' trip-1 '));
+    await settle(tester);
+
+    expect(trackingScreens(), 1);
+    expect(requests.detailCalls, greaterThan(before));
+  });
+
+  test('the registry compares ride request references in one format', () {
+    final screens = PassengerTrackingScreens();
+    final screen = PassengerOpenTrackingScreen(route: null, refresh: () {});
+    screens.register(' rr-app-new ', screen);
+
+    expect(screens.screenFor('RR-APP-NEW'), same(screen));
+    expect(screens.screenFor('rr-app-new'), same(screen));
+    expect(screens.claim('RR-APP-NEW'), isTrue);
+    expect(screens.claim(' rr-app-new'), isFalse);
+    screens.release('rr-app-new');
+    expect(screens.claim(' RR-APP-NEW'), isTrue);
+
+    final above = PassengerOpenTrackingScreen(route: null, refresh: () {});
+    screens.register('RR-APP-ABOVE', above);
+    expect(screens.hasScreenAbove('rr-app-new '), isTrue);
+    expect(screens.hasScreenAbove('rr-app-above'), isFalse);
+
+    screens.unregister('RR-APP-NEW ', screen);
+    expect(screens.screenFor('rr-app-new'), isNull);
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);

@@ -12,14 +12,15 @@ Future<PassengerRideRequestRecord?> resolvePassengerPushTripRequest({
   required PassengerRideRequestHistoryRepository repository,
   required String tripReference,
 }) async {
-  final normalizedTripReference = tripReference.trim();
-  if (normalizedTripReference.isEmpty) {
+  final wanted = passengerReferenceKey(tripReference);
+  if (wanted.isEmpty) {
     return null;
   }
 
   final records = await repository.fetchRequests();
   for (final record in records) {
-    if (record.normalizedTripReference == normalizedTripReference) {
+    final candidate = record.normalizedTripReference;
+    if (candidate != null && passengerReferenceKey(candidate) == wanted) {
       return record;
     }
   }
