@@ -11,6 +11,7 @@ import 'package:passenger_app/booking/booking_page.dart';
 import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/notifications/passenger_push_navigation.dart';
 import 'package:passenger_app/notifications/push_notification_runtime.dart';
+import 'package:passenger_app/passenger_shell.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
 import 'package:passenger_app/tracking/passenger_tracking_screens.dart';
 import 'package:passenger_app/tracking/ride_tracking_screen.dart';
@@ -358,6 +359,54 @@ void main() {
 
     screens.unregister('RR-APP-NEW ', screen);
     expect(screens.screenFor('rr-app-new'), isNull);
+  });
+
+  // The passenger home is the real shell, as in the app: no booking form
+  // is open there, so a push for a trip that is not open opens it.
+  testWidgets('on the real passenger home, a foreground push for a trip that '
+      'is not open opens its tracking screen', (tester) async {
+    tester.view.physicalSize = const Size(430, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AsmThemes.passenger,
+        builder: (context, child) => PassengerTrackingScope(child: child!),
+        home: Builder(
+          builder: (context) => FirebaseForegroundPushListener(
+            messageSource: push,
+            onNavigationIntent: (intent) => openPassengerPushTrip(
+              navigator: Navigator.of(context),
+              repository: requests,
+              intent: intent,
+              canNavigate: () => true,
+              buildDestination: (record) => buildPassengerPushTripDestination(
+                repository: requests,
+                record: record,
+              ),
+            ),
+            child: PassengerShell(
+              rideRequestHistoryRepository: requests,
+              rideRequestSubmitter: submitter,
+              signInTimeLeft: () async => const Duration(minutes: 90),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    final navigatorContext = tester.element(find.byType(Navigator).first);
+    expect(
+      PassengerTrackingScope.maybeOf(navigatorContext)!.bookingFlowOpen,
+      isFalse,
+    );
+    expect(trackingScreens(), 0);
+
+    push.foreground(_message('driver_accepted', 'TRIP-2'));
+    await settle(tester);
+
+    expect(trackingScreens(), 1);
+    expect(trackingScreensFor('RR-2'), 1);
   });
 
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
