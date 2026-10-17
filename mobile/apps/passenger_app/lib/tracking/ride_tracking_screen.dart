@@ -138,7 +138,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       route: ModalRoute.of(context),
       refresh: () {
         if (mounted) {
-          _manualRetry();
+          _refreshNow();
         }
       },
     );
@@ -307,6 +307,13 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         _reconnecting = false;
       });
     }
+  }
+
+  /// A push for this trip: the next poll, now. The screen stays as it is
+  /// until the answer comes.
+  void _refreshNow() {
+    _timer?.cancel();
+    _load();
   }
 
   void _manualRetry() {

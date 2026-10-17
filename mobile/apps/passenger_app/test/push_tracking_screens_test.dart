@@ -409,6 +409,32 @@ void main() {
     expect(trackingScreensFor('RR-2'), 1);
   });
 
+  // A push only asks for the next poll now: while it is on its way the
+  // screen stays as it was, "Reconnecting…" included.
+  testWidgets('a push refresh leaves the screen as it is until the answer '
+      'comes: "Reconnecting…" stays', (tester) async {
+    await pumpApp(tester);
+    await openTrip1(tester);
+    requests.failTrips = 1;
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+    final banner = find.byKey(const Key('tracking-reconnecting-banner'));
+    expect(banner, findsOneWidget);
+
+    final answer = Completer<void>();
+    requests.holdTrip = answer;
+    push.foreground(_message('driver_accepted', 'TRIP-1'));
+    await settle(tester);
+
+    expect(banner, findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    answer.complete();
+    await settle(tester);
+    expect(banner, findsNothing);
+    expect(trackingScreens(), 1);
+  });
+
   testWidgets('a cold-start tap opens one screen, as today', (tester) async {
     push.initial = _message('driver_accepted', 'TRIP-1');
     await pumpApp(tester);
@@ -541,6 +567,12 @@ final class _Requests
   /// Reloads of a trip or request: a tracking screen refreshing.
   var detailCalls = 0;
 
+  /// The next [failTrips] trip reloads fail (no connection).
+  var failTrips = 0;
+
+  /// When set, the next trip reload waits for it.
+  Completer<void>? holdTrip;
+
   PassengerRideRequestRecord record(String reference) => _records[reference]!;
 
   void cancel(String reference) => _cancelled.add(reference);
@@ -558,6 +590,15 @@ final class _Requests
   @override
   Future<PassengerTripRecord> fetchTrip(String tripReference) async {
     detailCalls += 1;
+    final hold = holdTrip;
+    if (hold != null) {
+      holdTrip = null;
+      await hold.future;
+    }
+    if (failTrips > 0) {
+      failTrips -= 1;
+      throw const PassengerRideRequestHistoryException.unknown();
+    }
     final cancelled = _records.values.any(
       (r) =>
           r.normalizedTripReference == tripReference &&
