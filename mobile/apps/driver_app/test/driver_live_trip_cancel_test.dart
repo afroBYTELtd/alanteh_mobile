@@ -517,6 +517,114 @@ void main() {
     });
   });
 
+  group('a reload answer that comes too late is dropped', () {
+    testWidgets('a reload is running, the driver completes, the answer '
+        'arrives: no card', (tester) async {
+      final check = _Check([DriverLiveTripFinding.cancelledByOperations]);
+      final answer = Completer<void>();
+      check.holds[0] = answer;
+      await _pumpLive(
+        tester,
+        check: check,
+        status: 'in_progress',
+        actionRecorder: _okRecorder(_OkGateway()),
+      );
+
+      await tester.pump(interval);
+      expect(check.calls, 1);
+      final arrived = find.byKey(const Key('driver-mark-arrived-destination'));
+      await tester.ensureVisible(arrived);
+      await tester.tap(arrived);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('driver-complete-trip')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-trip-completed')), findsOneWidget);
+
+      answer.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+      expect(find.byKey(const Key('driver-trip-completed')), findsOneWidget);
+      await tester.pump(interval * 8);
+      expect(check.calls, 1);
+    });
+
+    testWidgets("an answer that arrives while the driver's own action is on "
+        'its way is dropped; the next reload decides', (tester) async {
+      final check = _Check([
+        DriverLiveTripFinding.cancelledByPassenger,
+        DriverLiveTripFinding.live,
+      ]);
+      final answer = Completer<void>();
+      check.holds[0] = answer;
+      final gateway = _OkGateway()..hold = Completer<void>();
+      await _pumpLive(
+        tester,
+        check: check,
+        actionRecorder: _okRecorder(gateway),
+      );
+
+      await tester.pump(interval);
+      expect(check.calls, 1);
+      final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+      await tester.ensureVisible(arrived);
+      await tester.tap(arrived);
+      await tester.pump();
+      expect(find.text('Confirming...'), findsOneWidget);
+
+      answer.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+
+      gateway.hold!.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+        findsOneWidget,
+      );
+
+      await tester.pump(interval);
+      await tester.pump();
+      expect(check.calls, 2);
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+    });
+
+    testWidgets('an answer for a reload that began before an action that has '
+        'since finished is dropped too', (tester) async {
+      final check = _Check([
+        DriverLiveTripFinding.cancelledByPassenger,
+        DriverLiveTripFinding.live,
+      ]);
+      final answer = Completer<void>();
+      check.holds[0] = answer;
+      await _pumpLive(
+        tester,
+        check: check,
+        actionRecorder: _okRecorder(_OkGateway()),
+      );
+
+      await tester.pump(interval);
+      final arrived = find.byKey(const Key('driver-mark-arrived-pickup'));
+      await tester.ensureVisible(arrived);
+      await tester.tap(arrived);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+        findsOneWidget,
+      );
+
+      answer.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('driver-live-trip-cancelled')), findsNothing);
+    });
+  });
+
   group('cancel pushes', () {
     RemoteMessage message(String type, String trip) => RemoteMessage(
       data: <String, dynamic>{'event_type': type, 'trip_reference': trip},
@@ -876,6 +984,39 @@ final class _ActionGateway implements DriverTripActionGateway {
       message: type == DriverTripActionFailureType.notFound
           ? 'This assigned trip could not be found.'
           : 'Refused.',
+    );
+  }
+}
+
+DriverTripActionResilienceController _okRecorder(_OkGateway gateway) =>
+    DriverTripActionResilienceController(
+      queue: _Queue(),
+      gateway: gateway,
+      tripReference: 'TRIP-Q3-1',
+      driverId: 'DRV-Q3',
+    );
+
+/// Accepts every action, after [hold] when set.
+final class _OkGateway implements DriverTripActionGateway {
+  Completer<void>? hold;
+
+  @override
+  Future<DriverTripActionReceipt> submit({
+    required DriverTripAction action,
+    required String tripReference,
+    required String idempotencyKey,
+    Map<String, Object?> body = const <String, Object?>{},
+    String? pickupVerificationCode,
+  }) async {
+    final wait = hold;
+    if (wait != null) {
+      await wait.future;
+    }
+    return DriverTripActionReceipt(
+      tripReference: tripReference,
+      status: 'ok',
+      message: 'Recorded.',
+      duplicate: false,
     );
   }
 }

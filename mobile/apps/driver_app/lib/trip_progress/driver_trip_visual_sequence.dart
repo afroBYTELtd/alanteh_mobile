@@ -103,6 +103,10 @@ class _DriverTripVisualSequencePageState
 
   /// The server says the trip is over: reloads stop, nothing else changes.
   bool _finished = false;
+
+  /// Counts the driver's own actions sent to the server; a reload that
+  /// began before one of them answers about an older trip.
+  int _actionsSent = 0;
   Timer? _checkTimer;
   bool _checking = false;
   bool _checkAgain = false;
@@ -213,6 +217,7 @@ class _DriverTripVisualSequencePageState
       _checkAgain = false;
       final afterNotFound = _checkAfterNotFound;
       _checkAfterNotFound = false;
+      final actionsBefore = _actionsSent;
       DriverLiveTripFinding? finding;
       try {
         finding = await check();
@@ -223,7 +228,13 @@ class _DriverTripVisualSequencePageState
       if (!mounted) {
         break;
       }
-      if (finding != null) {
+      // Too late: the driver's own action is on its way or has answered
+      // since, or the trip is completed on this screen.
+      final late =
+          _isSubmitting ||
+          _actionsSent != actionsBefore ||
+          _state.stage == DriverTripVisualStage.completed;
+      if (finding != null && !late) {
         _apply(finding, afterNotFound: afterNotFound);
       }
     } while (_checkAgain && mounted && _reloading);
@@ -279,6 +290,7 @@ class _DriverTripVisualSequencePageState
     }
 
     setState(() => _isSubmitting = true);
+    _actionsSent += 1;
 
     DriverTripActionRecordResult result;
     try {
@@ -420,6 +432,7 @@ class _DriverTripVisualSequencePageState
       _isSubmitting = true;
       _pickupCodeErrorText = null;
     });
+    _actionsSent += 1;
 
     final result = await recorder.submitPickupVerificationCode(code);
 
