@@ -492,6 +492,70 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
+  // In the app a sign-out replaces the shell with the sign-in form, so a
+  // new shell starts clean; this keeps one shell across the sign-out so the
+  // flag itself is checked.
+  testWidgets('a sign-out while online is being confirmed after a shift '
+      'check leaves no "Going online…" behind', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'online',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _SuccessfulShiftCheckGateway(onSubmit: () {}),
+      isOnline: () async => true,
+    );
+    var signOuts = 0;
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+          onSignOut: () async => signOuts += 1,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    final slowConfirm = Completer<void>();
+    dutyGateway.holdNext = slowConfirm;
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Going online…'), findsOneWidget);
+
+    await tester.tap(find.text('Account'));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('driver-account-sign-out')));
+    await tester.pump();
+    expect(signOuts, 1);
+    await tester.tap(find.text('Work'));
+    await tester.pump();
+
+    expect(find.text('Going online…'), findsNothing);
+    expect(
+      find.byKey(const Key('driver-shift-check-confirming')),
+      findsNothing,
+    );
+
+    slowConfirm.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    await controller.stopAutomaticSync();
+  });
+
   testWidgets('queued readiness does not request notification permission', (
     tester,
   ) async {

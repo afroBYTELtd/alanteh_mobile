@@ -731,6 +731,7 @@ class _DriverShellState extends State<DriverShell> {
         reason: 'confirm_online_after_shift_check_start',
       );
       _dutyError = null;
+      // Runs once per submission (one readiness pop): transition untouched.
       _confirmingShiftCheck = true;
       _selectedIndex = 0;
       _startupGateDiagIndexTransition(
@@ -912,6 +913,7 @@ class _DriverShellState extends State<DriverShell> {
       );
       _dutyActionInFlight = false;
       _showOnlineTransition = false;
+      _confirmingShiftCheck = false;
       _startupShiftCheckConsidered = false;
       _startupGateDiagBoolTransition(
         field: 'startup_shift_check_considered',
