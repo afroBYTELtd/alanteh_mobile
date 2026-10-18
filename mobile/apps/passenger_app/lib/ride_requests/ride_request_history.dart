@@ -158,6 +158,37 @@ class PassengerRideRequestRecord {
     );
   }
 
+  /// This request with the status the server gave in a direct answer (a
+  /// cancel). The old message described the old status, so it is dropped,
+  /// as in [withTrip].
+  PassengerRideRequestRecord withStatus(String status) {
+    return PassengerRideRequestRecord(
+      requestReference: requestReference,
+      status: status,
+      pickupLocation: pickupLocation,
+      destination: destination,
+      passengerCount: passengerCount,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      hasMobileReceipt: hasMobileReceipt,
+      tripCreated: tripCreated,
+      requestedPickupTime: requestedPickupTime,
+      latestStaffState: latestStaffState,
+      tripReference: tripReference,
+      specialRequest: specialRequest,
+      fareDisplay: fareDisplay,
+      fareAmount: fareAmount,
+      plateNumber: plateNumber,
+      pickupVerificationCode: pickupVerificationCode,
+      vehicleLatitude: vehicleLatitude,
+      vehicleLongitude: vehicleLongitude,
+      driverName: driverName,
+      vehicleType: vehicleType,
+      vehicleColour: vehicleColour,
+      driverDistanceKm: driverDistanceKm,
+    );
+  }
+
   bool get isTerminal =>
       passengerState == PassengerRideState.arrived ||
       passengerState == PassengerRideState.cancelledByOperations ||

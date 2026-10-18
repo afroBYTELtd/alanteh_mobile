@@ -44,6 +44,9 @@ bool passengerCanCancelTrip({required bool tripCreated, required String rawStatu
   }.contains(normalized);
 }
 
+/// How long "Cancelling…" waits before saying the connection is slow.
+const passengerCancelSlowAfter = Duration(seconds: 10);
+
 class RideTrackingScreen extends StatefulWidget {
   const RideTrackingScreen({
     required this.repository,
@@ -105,6 +108,15 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   bool _reconnecting = false;
   double _bottomSheetHeight = 0;
   bool _cancelling = false;
+
+  /// "Still cancelling — the connection is slow."
+  bool _cancelSlow = false;
+  Timer? _cancelSlowTimer;
+
+  /// A cancel whose answer never came. "Try cancelling again" sends it
+  /// again with the same key and reason, so one that did land answers as
+  /// a duplicate.
+  _PendingCancellation? _unconfirmedCancel;
 
   /// Each load takes the next number; an answer older than the newest one
   /// shown is dropped, so overlapping loads never step back.
@@ -199,6 +211,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   void dispose() {
     _unregister();
     _timer?.cancel();
+    _cancelSlowTimer?.cancel();
     super.dispose();
   }
 
@@ -511,57 +524,213 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       return;
     }
 
-    await _submitCancellation(gateway: gateway, record: record, selection: selection);
+    String? tripReference;
+    if (record.tripCreated) {
+      tripReference = _tripReference ?? record.normalizedTripReference;
+      if (tripReference == null) {
+        _showCancellationError(const PassengerCancellationException.unknown());
+        return;
+      }
+    }
+
+    await _submitCancellation(
+      gateway: gateway,
+      attempt: _PendingCancellation(
+        selection: selection,
+        idempotencyKey: PassengerRideRequestIdempotencyKey.generate(),
+        tripReference: tripReference,
+      ),
+    );
+  }
+
+  void _retryCancellation() {
+    final gateway = widget.cancellationGateway;
+    final attempt = _unconfirmedCancel;
+    if (gateway == null || attempt == null || _cancelling) {
+      return;
+    }
+    unawaited(_submitCancellation(gateway: gateway, attempt: attempt));
   }
 
   Future<void> _submitCancellation({
     required PassengerCancellationGateway gateway,
-    required PassengerRideRequestRecord record,
-    required _PassengerCancellationSelection selection,
+    required _PendingCancellation attempt,
   }) async {
+    // No polls while the cancel is out, and the answer of a reload already
+    // running is dropped: it was read before the cancel.
+    _timer?.cancel();
+    _dropLoadsInFlight();
+    _cancelSlowTimer?.cancel();
+    _cancelSlowTimer = Timer(passengerCancelSlowAfter, () {
+      if (mounted && _cancelling) {
+        setState(() => _cancelSlow = true);
+      }
+    });
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     setState(() {
       _cancelling = true;
+      _cancelSlow = false;
     });
 
-    final idempotencyKey = PassengerRideRequestIdempotencyKey.generate();
-
+    final PassengerCancellationResult result;
     try {
-      if (record.tripCreated) {
-        final tripReference = _tripReference ?? record.normalizedTripReference;
-        if (tripReference == null) {
-          throw const PassengerCancellationException.unknown();
-        }
-        await gateway.cancelTripBooking(
-          tripReference: tripReference,
-          reason: selection.reason,
-          reasonNote: selection.reasonNote,
-          idempotencyKey: idempotencyKey,
-        );
-      } else {
-        await gateway.cancelRideRequest(
-          requestReference: widget.requestReference,
-          reason: selection.reason,
-          reasonNote: selection.reasonNote,
-          idempotencyKey: idempotencyKey,
-        );
-      }
-
+      final tripReference = attempt.tripReference;
+      result = tripReference != null
+          ? await gateway.cancelTripBooking(
+              tripReference: tripReference,
+              reason: attempt.selection.reason,
+              reasonNote: attempt.selection.reasonNote,
+              idempotencyKey: attempt.idempotencyKey,
+            )
+          : await gateway.cancelRideRequest(
+              requestReference: widget.requestReference,
+              reason: attempt.selection.reason,
+              reasonNote: attempt.selection.reasonNote,
+              idempotencyKey: attempt.idempotencyKey,
+            );
+    } on Object catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _cancelling = false;
-      });
-      _manualRetry();
-    } on PassengerCancellationException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _cancelling = false;
-      });
-      _showCancellationError(error);
+      await _cancellationFailed(
+        attempt,
+        error is PassengerCancellationException
+            ? error
+            : const PassengerCancellationException.unknown(),
+      );
+      return;
     }
+
+    if (!mounted) {
+      return;
+    }
+    _cancellationAnswered(attempt, result);
+  }
+
+  /// The cancel's own answer shows the card at once, without waiting for a
+  /// reload. Any other status: reload, and show what the server says.
+  void _cancellationAnswered(
+    _PendingCancellation attempt,
+    PassengerCancellationResult result,
+  ) {
+    final tripReference = attempt.tripReference;
+    final cancelledStatus = tripReference != null
+        ? 'cancelled_by_passenger'
+        : 'cancelled';
+    final record = _record;
+    if (record == null ||
+        result.status.trim().toLowerCase() != cancelledStatus) {
+      unawaited(_reloadThenStopCancelling());
+      return;
+    }
+
+    // Anything still loading was read before this answer.
+    _dropLoadsInFlight();
+    final cancelled = tripReference != null
+        ? record.withTrip(
+            PassengerTripRecord(
+              tripReference: tripReference,
+              status: result.status,
+            ),
+          )
+        : record.withStatus(result.status);
+    _cancelSlowTimer?.cancel();
+    setState(() {
+      _record = cancelled;
+      if (tripReference != null) {
+        _tripReference = tripReference;
+        _tripTerminal = true;
+      }
+      _cancelling = false;
+      _cancelSlow = false;
+      _unconfirmedCancel = null;
+      _loading = false;
+      _offline = false;
+      _reconnecting = false;
+    });
+    // One load to confirm it, with the server's own wording.
+    unawaited(_load());
+  }
+
+  Future<void> _cancellationFailed(
+    _PendingCancellation attempt,
+    PassengerCancellationException error,
+  ) async {
+    switch (error.type) {
+      case PassengerCancellationFailureType.temporarilyUnavailable:
+      case PassengerCancellationFailureType.badResponse:
+        // The cancel may have landed: the reload decides.
+        await _reloadThenStopCancelling();
+        if (!mounted) {
+          return;
+        }
+        if (_record?.passengerState ==
+            PassengerRideState.cancelledByPassenger) {
+          setState(() => _unconfirmedCancel = null);
+          return;
+        }
+        setState(() => _unconfirmedCancel = attempt);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              key: Key('cancel-unconfirmed-snackbar'),
+              content: Text(
+                "We couldn't confirm the cancel. Check your connection and "
+                'try again.',
+              ),
+            ),
+          );
+      case PassengerCancellationFailureType.notEligible:
+      case PassengerCancellationFailureType.conflict:
+        // The trip has moved on: show where it is first, then the reason,
+        // unless it has already ended (a dispatch cancel says it all).
+        await _reloadThenStopCancelling();
+        if (!mounted) {
+          return;
+        }
+        setState(() => _unconfirmedCancel = null);
+        if (!_showsEnded) {
+          _showCancellationError(error);
+        }
+      case PassengerCancellationFailureType.signInRequired:
+      case PassengerCancellationFailureType.passengerRequired:
+      case PassengerCancellationFailureType.clientFailure:
+        _cancelSlowTimer?.cancel();
+        setState(() {
+          _cancelling = false;
+          _cancelSlow = false;
+          _unconfirmedCancel = null;
+        });
+        final record = _record;
+        if (record != null) {
+          _schedule(record);
+        }
+        _showCancellationError(error);
+    }
+  }
+
+  /// Every load started so far is now older than what is shown.
+  void _dropLoadsInFlight() => _newestShown = _loadsStarted + 1;
+
+  Future<void> _reloadThenStopCancelling() async {
+    await _load();
+    if (!mounted) {
+      return;
+    }
+    _cancelSlowTimer?.cancel();
+    setState(() {
+      _cancelling = false;
+      _cancelSlow = false;
+    });
+  }
+
+  bool get _showsEnded {
+    final record = _record;
+    if (record == null) {
+      return false;
+    }
+    return _tripReference == null ? record.isTerminal : _tripTerminal;
   }
 
   void _showCancellationError(PassengerCancellationException error) {
@@ -578,7 +747,6 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           ),
         ),
       );
-      _manualRetry();
       return;
     }
 
@@ -1033,6 +1201,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                         key: const Key('open-cancel-confirmation'),
                         onPressed: _cancelling
                             ? null
+                            : _unconfirmedCancel != null
+                            ? _retryCancellation
                             : () => _openCancelFlow(
                                 vehicleEnRoute: view.vehicleEnRoute,
                               ),
@@ -1043,9 +1213,21 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                               )
                             : const Icon(Icons.close),
                         label: Text(
-                          _cancelling ? 'Cancelling...' : 'Cancel request',
+                          _cancelling
+                              ? 'Cancelling…'
+                              : _unconfirmedCancel != null
+                              ? 'Try cancelling again'
+                              : 'Cancel request',
                         ),
                       ),
+                      if (_cancelSlow) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Still cancelling — the connection is slow.',
+                          key: Key('cancel-slow-note'),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -1366,6 +1548,20 @@ class _TrackingView {
         );
     }
   }
+}
+
+final class _PendingCancellation {
+  const _PendingCancellation({
+    required this.selection,
+    required this.idempotencyKey,
+    required this.tripReference,
+  });
+
+  final _PassengerCancellationSelection selection;
+  final String idempotencyKey;
+
+  /// Null for a request with no trip yet.
+  final String? tripReference;
 }
 
 final class _PassengerCancellationSelection {

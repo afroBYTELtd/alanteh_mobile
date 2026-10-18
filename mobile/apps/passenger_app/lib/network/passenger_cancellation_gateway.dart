@@ -46,6 +46,10 @@ extension PassengerCancellationReasonDetails on PassengerCancellationReason {
 
 const passengerCancellationReasonNoteLimit = 500;
 
+/// The cancel request is tried twice at most (about 32 s with 15 s
+/// timeouts), not four times: the passenger is watching "Cancelling…".
+const passengerCancelRetryBackoffs = <Duration>[Duration(seconds: 2)];
+
 final class PassengerCancellationResult {
   const PassengerCancellationResult({
     required this.reference,
@@ -309,6 +313,9 @@ final class ApiPassengerCancellationGateway
       GhanaResilientApiClient(
         baseUrl: resolvedBaseUrl,
         tokenProvider: _AuthTokenProvider(store),
+        retryPolicy: const GhanaRetryPolicy(
+          backoffs: passengerCancelRetryBackoffs,
+        ),
       ),
       tokenStore: store,
       authService: connectionConfigured
