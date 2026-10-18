@@ -10,8 +10,11 @@ enum DriverLiveTripFinding {
   /// The trip is no longer this driver's to act on.
   notAssigned,
 
-  /// The trip is over (completed, under review, no-show): reloads stop and
-  /// the screen stays as it is.
+  /// Dispatch recorded the trip as a no-show.
+  noShow,
+
+  /// The trip is over (completed or under review): reloads stop and the
+  /// screen stays as it is.
   ended,
 
   /// A status this app does not know: nothing changes.

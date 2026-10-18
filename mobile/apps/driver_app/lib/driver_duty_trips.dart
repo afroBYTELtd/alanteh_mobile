@@ -706,8 +706,8 @@ DriverLiveTripFinding driverLiveTripFindingFor(String? status) {
     'completed_pending_review' ||
     'completed_confirmed' ||
     'review_overdue' ||
-    'disputed' ||
-    'no_show' => DriverLiveTripFinding.ended,
+    'disputed' => DriverLiveTripFinding.ended,
+    'no_show' => DriverLiveTripFinding.noShow,
     // Back with dispatch: no driver holds the trip as a live one.
     'requested' ||
     'under_review' ||

@@ -271,6 +271,40 @@ void main() {
       await tester.pump(asmFakeMapAnimationDuration);
     }
 
+    testWidgets('a no-show: "Trip ended", no Navigate or stage button, the '
+        'safety controls stay, and the reloads stop', (tester) async {
+      final check = _Check([DriverLiveTripFinding.noShow]);
+      await _pumpLive(tester, check: check, status: 'arrived_at_pickup');
+      await tester.pump(interval);
+      await tester.pump();
+      await tester.pump(asmFakeMapAnimationDuration);
+
+      expect(find.byKey(const Key('driver-live-trip-no-show')), findsOne);
+      expect(find.text('Trip ended'), findsWidgets);
+      expect(
+        find.text(
+          'Dispatch recorded this trip as a no-show. You can leave the pickup.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('driver-trip-navigate')), findsNothing);
+      expect(
+        find.byKey(const Key('driver-open-onboard-confirmation')),
+        findsNothing,
+      );
+      for (final key in [
+        'driver-trip-safety-emergency',
+        'driver-trip-safety-message-contact',
+        'driver-trip-safety-alert-dispatch',
+      ]) {
+        expect(find.byKey(Key(key)), findsOneWidget, reason: key);
+      }
+      expect(find.byKey(const Key('driver-live-trip-ended-back')), findsOne);
+
+      await tester.pump(interval * 8);
+      expect(check.calls, 1);
+    });
+
     testWidgets('heading to pickup, dispatch cancelled', (tester) async {
       await cancelAt(
         tester,
@@ -801,7 +835,7 @@ void main() {
       'review_overdue': DriverLiveTripFinding.ended,
       'cancelled_by_passenger': DriverLiveTripFinding.cancelledByPassenger,
       'cancelled_by_operations': DriverLiveTripFinding.cancelledByOperations,
-      'no_show': DriverLiveTripFinding.ended,
+      'no_show': DriverLiveTripFinding.noShow,
       'disputed': DriverLiveTripFinding.ended,
     };
 

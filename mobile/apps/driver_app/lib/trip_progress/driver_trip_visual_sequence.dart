@@ -820,6 +820,16 @@ final class _DriverTripEndedNotice {
         ? 'You can leave the pickup.'
         : 'No need to go to the pickup.';
 
+    if (finding == DriverLiveTripFinding.noShow) {
+      return const _DriverTripEndedNotice(
+        key: Key('driver-live-trip-no-show'),
+        title: 'Trip ended',
+        message:
+            'Dispatch recorded this trip as a no-show. You can leave the '
+            'pickup.',
+        onTrip: false,
+      );
+    }
     if (finding == DriverLiveTripFinding.notAssigned) {
       return _DriverTripEndedNotice(
         key: const Key('driver-live-trip-not-assigned'),
