@@ -4,13 +4,19 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../driver_back_to_work.dart';
 import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
 import '../safety/driver_trip_safety.dart';
+import 'driver_live_trip_check.dart';
 import 'driver_trip_map.dart';
 import 'driver_trip_visual_state.dart';
 
 const driverTripDisplayUnavailable = 'Not available';
+
+/// The live screen reloads its trip this often while in front; after a
+/// failed reload it waits twice as long each time, up to four times this.
+const driverLiveTripCheckInterval = Duration(seconds: 15);
 
 String _driverTripDisplayText(String? value) {
   final normalized = value?.trim();
@@ -45,6 +51,8 @@ class DriverTripVisualSequencePage extends StatefulWidget {
     this.driverSafetyAlertRepository,
     this.locationResolver = const GeolocatorDriverCurrentLocationResolver(),
     this.safetyUriLauncher = const PlatformDriverSafetyUriLauncher(),
+    this.checkTrip,
+    this.checkInterval = driverLiveTripCheckInterval,
     super.key,
   });
 
@@ -72,15 +80,41 @@ class DriverTripVisualSequencePage extends StatefulWidget {
   final DriverCurrentLocationResolver locationResolver;
   final DriverSafetyUriLauncher safetyUriLauncher;
 
+  /// Reloads the trip; without it the screen never reloads.
+  final Future<DriverLiveTripFinding> Function()? checkTrip;
+
+  /// How often the trip is reloaded while the screen is in front.
+  final Duration checkInterval;
+
   @override
   State<DriverTripVisualSequencePage> createState() =>
       _DriverTripVisualSequencePageState();
 }
 
 class _DriverTripVisualSequencePageState
-    extends State<DriverTripVisualSequencePage> {
+    extends State<DriverTripVisualSequencePage>
+    with WidgetsBindingObserver {
   late DriverTripVisualState _state;
   bool _isSubmitting = false;
+
+  /// Set once a reload finds the trip cancelled or no longer this
+  /// driver's; the card then replaces the stage, and reloads stop.
+  DriverLiveTripFinding? _ended;
+  DriverTripVisualStage? _endedAtStage;
+
+  /// The server says the trip is over: reloads stop, nothing else changes.
+  bool _finished = false;
+
+  /// Counts the driver's own actions sent to the server; a reload that
+  /// began before one of them answers about an older trip.
+  int _actionsSent = 0;
+  Timer? _checkTimer;
+  bool _checking = false;
+  bool _checkAgain = false;
+  bool _checkAfterNotFound = false;
+  Completer<void>? _checkDone;
+  int _failedChecks = 0;
+  bool _inFront = true;
   bool _sendingAlert = false;
   final List<DriverTripActionTelemetryEvent> _telemetryEvents = [];
   final _pickupCodeController = TextEditingController();
@@ -96,15 +130,142 @@ class _DriverTripVisualSequencePageState
         _recordTripActionTelemetry,
       );
     }
+    final reference = widget.tripReference;
+    if (widget.checkTrip != null && reference != null) {
+      DriverLiveTripScreens.instance.register(reference, _onCancelPush);
+    }
+    WidgetsBinding.instance.addObserver(this);
+    _scheduleCheck();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _checkTimer?.cancel();
+    final reference = widget.tripReference;
+    if (reference != null) {
+      DriverLiveTripScreens.instance.unregister(reference, _onCancelPush);
+    }
     if (widget.tripActionTelemetryQaEnabled) {
       widget.actionRecorder?.attachSubmissionTelemetrySink(null);
     }
     _pickupCodeController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _inFront = true;
+        unawaited(_checkTrip());
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _inFront = false;
+        _checkTimer?.cancel();
+      case AppLifecycleState.inactive:
+        break;
+    }
+  }
+
+  /// Reloads run while the trip is live on this screen and the app is in
+  /// front.
+  bool get _reloading =>
+      widget.checkTrip != null &&
+      _ended == null &&
+      !_finished &&
+      _state.stage != DriverTripVisualStage.completed;
+
+  void _scheduleCheck() {
+    _checkTimer?.cancel();
+    if (!_reloading || !_inFront || _checking) {
+      return;
+    }
+    final wait = widget.checkInterval * (1 << _failedChecks.clamp(0, 2));
+    _checkTimer = Timer(wait, () => unawaited(_checkTrip()));
+  }
+
+  /// A cancel push for this trip.
+  void _onCancelPush() => unawaited(_checkTrip());
+
+  /// Reloads the trip, one request at a time: a reload asked for while one
+  /// runs follows it. [afterNotFound]: an action was just refused with
+  /// 404, so a trip that still reads live is no longer this driver's.
+  Future<void> _checkTrip({bool afterNotFound = false}) {
+    final check = widget.checkTrip;
+    if (check == null || !_reloading) {
+      return Future<void>.value();
+    }
+    _checkAfterNotFound = _checkAfterNotFound || afterNotFound;
+    final running = _checkDone;
+    if (_checking && running != null) {
+      _checkAgain = true;
+      return running.future;
+    }
+    _checking = true;
+    _checkTimer?.cancel();
+    final done = _checkDone = Completer<void>();
+    unawaited(_runChecks(check, done));
+    return done.future;
+  }
+
+  Future<void> _runChecks(
+    Future<DriverLiveTripFinding> Function() check,
+    Completer<void> done,
+  ) async {
+    do {
+      _checkAgain = false;
+      final afterNotFound = _checkAfterNotFound;
+      _checkAfterNotFound = false;
+      final actionsBefore = _actionsSent;
+      DriverLiveTripFinding? finding;
+      try {
+        finding = await check();
+        _failedChecks = 0;
+      } on Object {
+        _failedChecks += 1;
+      }
+      if (!mounted) {
+        break;
+      }
+      // Too late: the driver's own action is on its way or has answered
+      // since, or the trip is completed on this screen.
+      final late =
+          _isSubmitting ||
+          _actionsSent != actionsBefore ||
+          _state.stage == DriverTripVisualStage.completed;
+      if (finding != null && !late) {
+        _apply(finding, afterNotFound: afterNotFound);
+      }
+    } while (_checkAgain && mounted && _reloading);
+    _checking = false;
+    done.complete();
+    if (mounted) {
+      _scheduleCheck();
+    }
+  }
+
+  void _apply(DriverLiveTripFinding finding, {required bool afterNotFound}) {
+    if (finding == DriverLiveTripFinding.ended) {
+      _finished = true;
+      _checkTimer?.cancel();
+      return;
+    }
+    final ended = switch (finding) {
+      DriverLiveTripFinding.live when afterNotFound =>
+        DriverLiveTripFinding.notAssigned,
+      DriverLiveTripFinding.live || DriverLiveTripFinding.unknown => null,
+      _ => finding,
+    };
+    if (ended == null) {
+      return;
+    }
+    _checkTimer?.cancel();
+    setState(() {
+      _ended = ended;
+      _endedAtStage = _state.stage;
+    });
   }
 
   void _recordTripActionTelemetry(DriverTripActionTelemetryEvent event) {
@@ -130,6 +291,7 @@ class _DriverTripVisualSequencePageState
     }
 
     setState(() => _isSubmitting = true);
+    _actionsSent += 1;
 
     DriverTripActionRecordResult result;
     try {
@@ -164,6 +326,19 @@ class _DriverTripVisualSequencePageState
           // The action remains unconfirmed even if refresh recovery fails.
         }
         if (!mounted) {
+          return;
+        }
+      }
+
+      // The trip may have been cancelled or taken away: reload it before
+      // saying anything; the card then says what happened.
+      final type = result.error?.type;
+      if (type == DriverTripActionFailureType.notFound ||
+          type == DriverTripActionFailureType.invalidTransition) {
+        await _checkTrip(
+          afterNotFound: type == DriverTripActionFailureType.notFound,
+        );
+        if (!mounted || _ended != null) {
           return;
         }
       }
@@ -258,6 +433,7 @@ class _DriverTripVisualSequencePageState
       _isSubmitting = true;
       _pickupCodeErrorText = null;
     });
+    _actionsSent += 1;
 
     final result = await recorder.submitPickupVerificationCode(code);
 
@@ -442,11 +618,15 @@ class _DriverTripVisualSequencePageState
     final pickupLocation = _driverTripDisplayText(widget.pickupLocation);
     final destination = _driverTripDisplayText(widget.destination);
     final passengerCount = _driverTripPassengerDisplay(widget.passengerCount);
+    final ended = _ended;
+    final endedNotice = ended == null
+        ? null
+        : _DriverTripEndedNotice.of(ended, _endedAtStage ?? stage);
 
     return Scaffold(
       key: const Key('driver-trip-sequence-page'),
       appBar: AppBar(
-        title: Text(switch (stage) {
+        title: Text(endedNotice?.title ?? switch (stage) {
           DriverTripVisualStage.navigatingToPickup => 'Navigate to pickup',
           DriverTripVisualStage.arrivedAtPickup => 'Pickup',
           DriverTripVisualStage.confirmingPassengerOnboard =>
@@ -459,7 +639,24 @@ class _DriverTripVisualSequencePageState
       ),
       body: Column(
         children: [
-          Expanded(child: switch (stage) {
+          Expanded(child: endedNotice != null
+              ? _DriverTripEndedStage(
+                  notice: endedNotice,
+                  tripReference: widget.tripReference,
+                  pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
+                  destination: _pin(
+                    widget.destinationLatitude,
+                    widget.destinationLongitude,
+                  ),
+                  devicePositionSource: _positionSource,
+                  onNavigate: endedNotice.onTrip
+                      ? _navigateCallback(
+                          widget.destinationLatitude,
+                          widget.destinationLongitude,
+                        )
+                      : null,
+                )
+              : switch (stage) {
         DriverTripVisualStage.navigatingToPickup => _DriverMapStage(
           key: const Key('driver-navigate-to-pickup'),
           pickup: _pin(widget.pickupLatitude, widget.pickupLongitude),
@@ -593,6 +790,196 @@ class _DriverTripVisualSequencePageState
               ),
             )
           : null,
+    );
+  }
+}
+
+/// What the card says when the trip ended under the driver: by whom, and
+/// for the stage the screen was showing then.
+final class _DriverTripEndedNotice {
+  const _DriverTripEndedNotice({
+    required this.key,
+    required this.title,
+    required this.message,
+    required this.onTrip,
+  });
+
+  factory _DriverTripEndedNotice.of(
+    DriverLiveTripFinding finding,
+    DriverTripVisualStage stage,
+  ) {
+    final onTrip =
+        stage == DriverTripVisualStage.activeTrip ||
+        stage == DriverTripVisualStage.arrivedAtDestination;
+    final atPickup =
+        stage == DriverTripVisualStage.arrivedAtPickup ||
+        stage == DriverTripVisualStage.confirmingPassengerOnboard;
+    final next = onTrip
+        ? 'Stop where it is safe and contact dispatch about the passenger.'
+        : atPickup
+        ? 'You can leave the pickup.'
+        : 'No need to go to the pickup.';
+
+    if (finding == DriverLiveTripFinding.noShow) {
+      return const _DriverTripEndedNotice(
+        key: Key('driver-live-trip-no-show'),
+        title: 'Trip ended',
+        message:
+            'Dispatch recorded this trip as a no-show. You can leave the '
+            'pickup.',
+        onTrip: false,
+      );
+    }
+    if (finding == DriverLiveTripFinding.notAssigned) {
+      return _DriverTripEndedNotice(
+        key: const Key('driver-live-trip-not-assigned'),
+        title: 'No longer assigned to you',
+        message:
+            'This trip was given to another driver or taken back by '
+            'dispatch.${onTrip ? ' $next' : ''}',
+        onTrip: onTrip,
+      );
+    }
+    final byDispatch = finding == DriverLiveTripFinding.cancelledByOperations;
+    return _DriverTripEndedNotice(
+      key: const Key('driver-live-trip-cancelled'),
+      title: byDispatch && onTrip
+          ? 'Trip cancelled by dispatch'
+          : 'Trip cancelled',
+      message: byDispatch && onTrip
+          ? next
+          : '${switch (finding) {
+              DriverLiveTripFinding.cancelledByPassenger => 'The passenger cancelled.',
+              DriverLiveTripFinding.cancelledByOperations => 'Dispatch cancelled this trip.',
+              _ => 'This trip was cancelled.',
+            }} $next',
+      onTrip: onTrip,
+    );
+  }
+
+  final Key key;
+  final String title;
+  final String message;
+
+  /// The passenger was on board: Navigate to the drop-off stays.
+  final bool onTrip;
+}
+
+/// The map with the pins, and the card in place of the stage sheet: no
+/// stage button, and Navigate only to the drop-off once on the trip. The
+/// card never closes the screen; Back to Work does.
+class _DriverTripEndedStage extends StatelessWidget {
+  const _DriverTripEndedStage({
+    required this.notice,
+    required this.tripReference,
+    required this.pickup,
+    required this.destination,
+    required this.devicePositionSource,
+    required this.onNavigate,
+  });
+
+  final _DriverTripEndedNotice notice;
+  final String? tripReference;
+  final LatLng? pickup;
+  final LatLng? destination;
+  final DriverDevicePositionSource devicePositionSource;
+  final VoidCallback? onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    final reference = tripReference?.trim();
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            flex: 6,
+            child: DriverTripMap(
+              pickup: pickup,
+              destination: destination,
+              legTarget: notice.onTrip ? destination : null,
+              devicePositionSource: devicePositionSource,
+            ),
+          ),
+          Flexible(
+            flex: 5,
+            child: Container(
+              key: notice.key,
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: AsmColors.driverCardElevated,
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(AsmRadii.radius24),
+                ),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(
+                  AsmSpacing.space20,
+                  AsmSpacing.space16,
+                  AsmSpacing.space20,
+                  AsmSpacing.space24,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.cancel_outlined,
+                      color: AsmColors.driverMintAction,
+                      size: 32,
+                    ),
+                    const SizedBox(height: AsmSpacing.space12),
+                    Text(
+                      notice.title,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (reference != null && reference.isNotEmpty) ...[
+                      const SizedBox(height: AsmSpacing.space4),
+                      Text(
+                        reference,
+                        style: const TextStyle(
+                          color: AsmColors.driverTextSecondary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AsmSpacing.space8),
+                    Text(
+                      notice.message,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (onNavigate != null) ...[
+                      const SizedBox(height: AsmSpacing.space16),
+                      OutlinedButton.icon(
+                        key: const Key('driver-trip-navigate'),
+                        onPressed: onNavigate,
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Navigate'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AsmSpacing.space16),
+                    FilledButton(
+                      key: const Key('driver-live-trip-ended-back'),
+                      onPressed: () => DriverBackToWork.go(context),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                      ),
+                      child: const Text('Back to Work'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

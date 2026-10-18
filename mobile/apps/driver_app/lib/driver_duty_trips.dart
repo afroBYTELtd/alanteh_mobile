@@ -6,6 +6,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'driver_back_to_work.dart';
 import 'rating/driver_rating_page.dart';
 import 'network/driver_rating_gateway.dart';
 
@@ -16,6 +17,7 @@ import 'network/driver_trip_action_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
 import 'network/ghana_network_resilience.dart';
 import 'safety/driver_trip_safety.dart';
+import 'trip_progress/driver_live_trip_check.dart';
 import 'trip_progress/driver_trip_visual_sequence.dart';
 
 const driverDutyPath = '/api/driver/me/';
@@ -686,6 +688,38 @@ bool driverTripIsCancelled(String? status) {
   }.contains(status?.trim());
 }
 
+/// What the live screen does with a reloaded trip status: every
+/// Trip.TripStatus on the server, by name. A status not listed changes
+/// nothing.
+DriverLiveTripFinding driverLiveTripFindingFor(String? status) {
+  return switch (status?.trim()) {
+    'assigned' ||
+    'driver_accepted' ||
+    'dispatched' ||
+    'driver_en_route' ||
+    'arrived_at_pickup' ||
+    'passenger_onboard' ||
+    'in_progress' ||
+    'arrived_at_destination' => DriverLiveTripFinding.live,
+    'cancelled_by_passenger' => DriverLiveTripFinding.cancelledByPassenger,
+    'cancelled_by_operations' => DriverLiveTripFinding.cancelledByOperations,
+    'completed_pending_review' ||
+    'completed_confirmed' ||
+    'review_overdue' ||
+    'disputed' => DriverLiveTripFinding.ended,
+    'no_show' => DriverLiveTripFinding.noShow,
+    // Back with dispatch: no driver holds the trip as a live one.
+    'requested' ||
+    'under_review' ||
+    'fare_confirmed' ||
+    'awaiting_payment' ||
+    'payment_confirmed' ||
+    'driver_offer_sent' ||
+    'driver_declined' => DriverLiveTripFinding.notAssigned,
+    _ => DriverLiveTripFinding.unknown,
+  };
+}
+
 bool driverCanOpenLiveTripActions(String? status) {
   return const <String>{
     'assigned',
@@ -695,6 +729,7 @@ bool driverCanOpenLiveTripActions(String? status) {
     'arrived_at_pickup',
     'passenger_onboard',
     'in_progress',
+    'arrived_at_destination',
   }.contains(status?.trim());
 }
 
@@ -1713,6 +1748,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
           tripActionTelemetryQaEnabled: widget.tripActionTelemetryQaEnabled,
           driverTrustedContactRepository: widget.driverTrustedContactRepository,
           driverSafetyAlertRepository: widget.driverSafetyAlertRepository,
+          checkTrip: () => _checkLiveTrip(trip.reference),
         ),
       ),
     );
@@ -1724,6 +1760,20 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
     setState(() => _openingLiveActions = false);
     _refresh();
     await widget.onRefreshTripList?.call();
+  }
+
+  /// The live screen's reload: a 404 means the trip is no longer this
+  /// driver's; any other failure leaves the screen as it is.
+  Future<DriverLiveTripFinding> _checkLiveTrip(String reference) async {
+    try {
+      final trip = await widget.gateway.fetchTripDetail(reference);
+      return driverLiveTripFindingFor(trip.status);
+    } on DriverDutyApiException catch (error) {
+      if (error.type == DriverDutyApiFailureType.notFound) {
+        return DriverLiveTripFinding.notAssigned;
+      }
+      rethrow;
+    }
   }
 
   Future<void> _handleRejectedAction(
@@ -2395,8 +2445,7 @@ class _DriverTripCancelledCard extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space16),
           FilledButton(
             key: const Key('driver-trip-cancelled-back'),
-            onPressed: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () => DriverBackToWork.go(context),
             child: const Text('Back to Work'),
           ),
         ],
