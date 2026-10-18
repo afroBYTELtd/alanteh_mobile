@@ -76,6 +76,35 @@ void main() {
     expect(received?.tripReference, 'TRIP-PUSH-001');
   });
 
+  // An idle screen draws no frames; the listener acts after the next frame,
+  // so it must ask for one. This test asks for none itself.
+  testWidgets('a foreground message on an idle screen is handled without '
+      'anything else redrawing', (tester) async {
+    final source = _FakePushMessageSource();
+    addTearDown(source.dispose);
+    PassengerPushNavigationIntent? received;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FirebaseForegroundPushListener(
+          messageSource: source,
+          onNavigationIntent: (intent) async {
+            received = intent;
+          },
+          child: const Scaffold(body: Text('Passenger')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    source.foreground.add(message());
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(received?.tripReference, 'TRIP-PUSH-001');
+  });
+
   testWidgets('background notification tap dispatches navigation intent', (
     tester,
   ) async {

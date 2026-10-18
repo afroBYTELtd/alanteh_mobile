@@ -15,6 +15,7 @@ import '../payment_rating/passenger_payment_rating_page.dart';
 import '../ride_requests/ride_request_history.dart';
 import '../safety/passenger_trip_safety.dart';
 import '../support/new_message_form.dart';
+import 'passenger_tracking_screens.dart';
 
 /// Mirrors the backend's eligible-status sets exactly
 /// (RIDE_REQUEST_CANCEL_ELIGIBLE_STATUSES / TRIP_PASSENGER_CANCEL_ELIGIBLE_STATUSES
@@ -105,11 +106,63 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   double _bottomSheetHeight = 0;
   bool _cancelling = false;
 
+  /// Each load takes the next number; an answer older than the newest one
+  /// shown is dropped, so overlapping loads never step back.
+  int _loadsStarted = 0;
+  int _newestShown = 0;
+
+  /// This screen in the app's list of open tracking screens.
+  PassengerTrackingScreens? _screens;
+  PassengerOpenTrackingScreen? _registration;
+  String? _registeredReference;
+
   @override
   void initState() {
     super.initState();
     _record = widget.initialRecord;
     _load();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _register();
+  }
+
+  void _register() {
+    final screens = PassengerTrackingScope.maybeOf(context);
+    final reference = widget.requestReference;
+    if (identical(screens, _screens) && reference == _registeredReference) {
+      return;
+    }
+    _unregister();
+    if (screens == null) {
+      return;
+    }
+    final registration = PassengerOpenTrackingScreen(
+      route: ModalRoute.of(context),
+      refresh: () {
+        if (mounted) {
+          _refreshNow();
+        }
+      },
+    );
+    screens.register(reference, registration);
+    _screens = screens;
+    _registration = registration;
+    _registeredReference = reference;
+  }
+
+  void _unregister() {
+    final screens = _screens;
+    final registration = _registration;
+    final reference = _registeredReference;
+    if (screens != null && registration != null && reference != null) {
+      screens.unregister(reference, registration);
+    }
+    _screens = null;
+    _registration = null;
+    _registeredReference = null;
   }
 
   @override
@@ -121,6 +174,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         oldWidget.requestReference != widget.requestReference;
 
     if (requestChanged) {
+      _register();
       _timer?.cancel();
       _record = widget.initialRecord;
       _tripReference = null;
@@ -143,6 +197,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
   @override
   void dispose() {
+    _unregister();
     _timer?.cancel();
     super.dispose();
   }
@@ -160,6 +215,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   }
 
   Future<void> _load() async {
+    final load = _loadsStarted += 1;
+    bool stale() => load < _newestShown;
     try {
       final activeTripReference = _tripReference;
       if (activeTripReference != null) {
@@ -169,7 +226,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         }
 
         final trip = await tripRepository.fetchTrip(activeTripReference);
-        if (!mounted) return;
+        if (!mounted || stale()) return;
+        _newestShown = load;
 
         final requestRecord = _record;
         if (requestRecord == null) {
@@ -191,7 +249,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       final requestRecord = await widget.repository.fetchRequest(
         widget.requestReference,
       );
-      if (!mounted) return;
+      if (!mounted || stale()) return;
 
       final tripReference =
           requestRecord.status.trim().toLowerCase() == 'converted'
@@ -203,7 +261,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         _record = requestRecord;
         _tripReference = tripReference;
         final trip = await tripRepository.fetchTrip(tripReference);
-        if (!mounted) return;
+        if (!mounted || stale()) return;
+        _newestShown = load;
 
         final record = requestRecord.withTrip(trip);
         setState(() {
@@ -217,6 +276,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         return;
       }
 
+      _newestShown = load;
       setState(() {
         _record = requestRecord;
         _tripReference = null;
@@ -227,7 +287,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
       });
       _schedule(requestRecord);
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted || stale()) return;
 
       // The server ended the session (the refresh was refused): that is
       // not a connection problem. Send the passenger to sign in; polling
@@ -257,6 +317,13 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         _reconnecting = false;
       });
     }
+  }
+
+  /// A push for this trip: the next poll, now. The screen stays as it is
+  /// until the answer comes.
+  void _refreshNow() {
+    _timer?.cancel();
+    _load();
   }
 
   void _manualRetry() {

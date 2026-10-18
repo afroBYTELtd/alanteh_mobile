@@ -44,6 +44,32 @@ void main() {
     expect(resolved, same(matchingRecord));
   });
 
+  test('a trip reference stored in another case or with spaces still '
+      'resolves', () async {
+    final stored = PassengerRideRequestRecord(
+      requestReference: 'RR-APP-PUSH002',
+      status: 'converted',
+      pickupLocation: 'Pickup',
+      destination: 'Destination',
+      passengerCount: 1,
+      createdAt: DateTime.utc(2026, 9, 13),
+      updatedAt: DateTime.utc(2026, 9, 13),
+      hasMobileReceipt: true,
+      tripCreated: true,
+      tripReference: ' trip-push-002 ',
+    );
+    final repository = _FakeRepository(
+      records: <PassengerRideRequestRecord>[matchingRecord, stored],
+    );
+
+    final resolved = await resolvePassengerPushTripRequest(
+      repository: repository,
+      tripReference: 'TRIP-PUSH-002',
+    );
+
+    expect(resolved, same(stored));
+  });
+
   test('unknown trip reference does not fabricate a destination', () async {
     final repository = _FakeRepository(
       records: <PassengerRideRequestRecord>[matchingRecord],

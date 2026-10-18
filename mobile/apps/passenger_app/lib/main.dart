@@ -29,6 +29,7 @@ import 'passenger_shell.dart';
 import 'payment_rating/passenger_payment_rating_contract.dart';
 import 'ride_requests/ride_request_history.dart';
 import 'safety/passenger_trip_safety.dart';
+import 'tracking/passenger_tracking_screens.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -200,7 +201,7 @@ class PassengerApp extends StatelessWidget {
 
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: AsmSystemChrome.passenger,
-          child: content,
+          child: PassengerTrackingScope(child: content),
         );
       },
       home: showSplash ? PassengerSplashGate(child: home) : home,
@@ -615,36 +616,23 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
   Future<void> _handlePushNavigationIntent(
     PassengerPushNavigationIntent intent,
-  ) async {
-    if (!_signedIn || _localQaOpened || !mounted) {
-      return;
+  ) {
+    if (!mounted) {
+      return Future<void>.value();
     }
-
-    PassengerRideRequestRecord? record;
-    try {
-      record = await resolvePassengerPushTripRequest(
+    return openPassengerPushTrip(
+      navigator: Navigator.of(context),
+      repository: widget.rideRequestHistoryRepository,
+      intent: intent,
+      canNavigate: () => mounted && _signedIn && !_localQaOpened,
+      buildDestination: (record) => buildPassengerPushTripDestination(
         repository: widget.rideRequestHistoryRepository,
-        tripReference: intent.tripReference,
-      );
-    } on Object {
-      return;
-    }
-
-    if (!mounted || !_signedIn || _localQaOpened || record == null) {
-      return;
-    }
-
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => buildPassengerPushTripDestination(
-          repository: widget.rideRequestHistoryRepository,
-          record: record!,
-          paymentRatingRepository: widget.paymentRatingRepository,
-          trustedContactRepository: widget.trustedContactRepository,
-          cancellationGateway: widget.cancellationGateway,
-          phoneNumber: _passengerPhoneNumber,
-          onSignInRequired: _returnToSignIn,
-        ),
+        record: record,
+        paymentRatingRepository: widget.paymentRatingRepository,
+        trustedContactRepository: widget.trustedContactRepository,
+        cancellationGateway: widget.cancellationGateway,
+        phoneNumber: _passengerPhoneNumber,
+        onSignInRequired: _returnToSignIn,
       ),
     );
   }
