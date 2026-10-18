@@ -6,6 +6,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'driver_back_to_work.dart';
 import 'rating/driver_rating_page.dart';
 import 'network/driver_rating_gateway.dart';
 
@@ -2444,8 +2445,7 @@ class _DriverTripCancelledCard extends StatelessWidget {
           const SizedBox(height: AsmSpacing.space16),
           FilledButton(
             key: const Key('driver-trip-cancelled-back'),
-            onPressed: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
+            onPressed: () => DriverBackToWork.go(context),
             child: const Text('Back to Work'),
           ),
         ],

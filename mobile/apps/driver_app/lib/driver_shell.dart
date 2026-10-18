@@ -6,6 +6,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
 import 'concern/driver_concern_page.dart';
+import 'driver_back_to_work.dart';
 import 'driver_duty_trips.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_home.dart';
@@ -145,6 +146,7 @@ class _DriverShellState extends State<DriverShell> {
   @override
   void initState() {
     super.initState();
+    DriverBackToWork.selectWorkTab = _selectWorkTab;
 
     _startupGateDiag(
       'shell_init '
@@ -242,6 +244,9 @@ class _DriverShellState extends State<DriverShell> {
 
   @override
   void dispose() {
+    if (DriverBackToWork.selectWorkTab == _selectWorkTab) {
+      DriverBackToWork.selectWorkTab = null;
+    }
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
       unawaited(controller.stopAutomaticSync());
@@ -495,6 +500,21 @@ class _DriverShellState extends State<DriverShell> {
         'open_startup schedule_readiness=NO skip_reason=$skipReason',
       );
     }
+  }
+
+  void _selectWorkTab() {
+    if (!mounted || _selectedIndex == 0) {
+      return;
+    }
+    final oldSelectedIndex = _selectedIndex;
+    setState(() {
+      _selectedIndex = 0;
+      _startupGateDiagIndexTransition(
+        oldValue: oldSelectedIndex,
+        newValue: _selectedIndex,
+        reason: 'back_to_work',
+      );
+    });
   }
 
   void _openAssignedTrips() {

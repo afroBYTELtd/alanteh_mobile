@@ -4,6 +4,7 @@ import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../driver_back_to_work.dart';
 import '../network/driver_trip_action_gateway.dart';
 import '../network/driver_trip_action_resilience.dart';
 import '../safety/driver_trip_safety.dart';
@@ -956,9 +957,7 @@ class _DriverTripEndedStage extends StatelessWidget {
                     const SizedBox(height: AsmSpacing.space16),
                     FilledButton(
                       key: const Key('driver-live-trip-ended-back'),
-                      onPressed: () => Navigator.of(
-                        context,
-                      ).popUntil((route) => route.isFirst),
+                      onPressed: () => DriverBackToWork.go(context),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(54),
                       ),
