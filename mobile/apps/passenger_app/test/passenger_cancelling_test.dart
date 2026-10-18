@@ -224,6 +224,47 @@ void main() {
     await dispose(tester);
   });
 
+  testWidgets('a cancel answer with any other status whose reload fails: '
+      'Cancelling… clears and the button is back', (tester) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+
+    await confirmCancel(tester);
+    trips.error = const PassengerRideRequestHistoryException.network();
+    cancels.answer(0, 'in_progress', duplicate: true);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Cancelling…'), findsNothing);
+    expect(find.text('Cancel request'), findsOneWidget);
+    expect(cancelButtonEnabled(tester), isTrue);
+    expect(cancelledCard, findsNothing);
+    await dispose(tester);
+  });
+
+  testWidgets('a timeout whose reload also fails: "Try cancelling again"', (
+    tester,
+  ) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+
+    await confirmCancel(tester);
+    trips.error = const PassengerRideRequestHistoryException.network();
+    cancels.fail(0, const PassengerCancellationException.network());
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Cancelling…'), findsNothing);
+    expect(find.text('Try cancelling again'), findsOneWidget);
+    expect(
+      find.byKey(const Key('cancel-unconfirmed-snackbar')),
+      findsOneWidget,
+    );
+    await dispose(tester);
+  });
+
   testWidgets('not eligible because the trip moved on: the real state and '
       "the server's reason, never Trip cancelled", (tester) async {
     final trips = _Trips('driver_accepted');
@@ -506,9 +547,16 @@ final class _Trips implements PassengerTripLifecycleRepository {
   int calls = 0;
   final held = <Completer<PassengerTripRecord>>[];
 
+  /// Set to make every reload fail (no connection).
+  Object? error;
+
   @override
   Future<PassengerTripRecord> fetchTrip(String tripReference) {
     calls += 1;
+    final failure = error;
+    if (failure != null) {
+      return Future.error(failure);
+    }
     if (!hold) {
       return Future.value(_trip(status));
     }
