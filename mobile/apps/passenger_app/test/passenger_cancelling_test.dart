@@ -128,6 +128,80 @@ void main() {
     await dispose(tester);
   });
 
+  testWidgets('no polls while the cancel is out, even when a poll was '
+      'already running at the tap', (tester) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+
+    trips.hold = true;
+    await tester.pump(pollInterval);
+    expect(trips.held, hasLength(1));
+
+    await confirmCancel(tester);
+    trips.held.first.complete(_trip('driver_accepted'));
+    await tester.pump();
+    final callsWhileCancelling = trips.calls;
+
+    await tester.pump(pollInterval * 3);
+    expect(trips.calls, callsWhileCancelling);
+    expect(find.text('Cancelling…'), findsOneWidget);
+
+    trips.releaseAll('cancelled_by_passenger');
+    cancels.answer(0, 'cancelled_by_passenger');
+    await tester.pump();
+    await dispose(tester);
+  });
+
+  testWidgets('a poll that falls due during Cancelling… does not run', (
+    tester,
+  ) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+    final callsBefore = trips.calls;
+
+    // The next poll is due 10 s after the first load; the cancel is out
+    // well before that and is still out after it.
+    await confirmCancel(tester);
+    await tester.pump(pollInterval * 2);
+    expect(trips.calls, callsBefore);
+    expect(find.text('Cancelling…'), findsOneWidget);
+
+    trips.status = 'cancelled_by_passenger';
+    cancels.answer(0, 'cancelled_by_passenger');
+    await tester.pump();
+    await dispose(tester);
+  });
+
+  testWidgets('a push reload that began during Cancelling… and answers after '
+      'the cancel answer is dropped', (tester) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+
+    await confirmCancel(tester);
+    trips.hold = true;
+    PassengerTrackingScope.maybeOf(
+      tester.element(find.byType(RideTrackingScreen)),
+    )!.screenFor(_requestReference)!.refresh();
+    await tester.pump();
+    expect(trips.held, hasLength(1));
+
+    cancels.answer(0, 'cancelled_by_passenger');
+    await tester.pump();
+    expect(cancelledCard, findsOneWidget);
+
+    // The push reload read the trip before the cancel landed.
+    trips.held.first.complete(_trip('driver_accepted'));
+    await tester.pump();
+    expect(cancelledCard, findsOneWidget);
+
+    trips.releaseAll('cancelled_by_passenger');
+    await tester.pump();
+    await dispose(tester);
+  });
+
   testWidgets('a cancel answer with any other status reloads and shows no '
       'card', (tester) async {
     final trips = _Trips('driver_accepted');
@@ -429,10 +503,12 @@ final class _Trips implements PassengerTripLifecycleRepository {
 
   String status;
   bool hold = false;
+  int calls = 0;
   final held = <Completer<PassengerTripRecord>>[];
 
   @override
   Future<PassengerTripRecord> fetchTrip(String tripReference) {
+    calls += 1;
     if (!hold) {
       return Future.value(_trip(status));
     }
