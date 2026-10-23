@@ -14,6 +14,11 @@ const driverPendingOffersPath = '/api/driver/trips/pending/';
 /// none of these may use up the window the way the general 15 s / four
 /// attempt policy does.
 abstract final class DriverOfferCardTiming {
+  /// How long a fetched list of pending offers counts as current: one poll
+  /// ([pollInterval]) plus a slow answer. An older list may still show, but
+  /// nothing new is prepared or opened from it.
+  static const listingFreshFor = Duration(seconds: 20);
+
   /// Offer fetch: one try of at most 5 s, and one more after 1 s.
   static const fetchConnectTimeout = Duration(seconds: 4);
   static const fetchRequestTimeout = Duration(seconds: 5);
@@ -186,7 +191,34 @@ final class DriverPendingOfferStore extends ChangeNotifier {
     required this.source,
     DriverMonotonicClock? clock,
     this.onSessionExpired,
-  }) : clock = clock ?? StopwatchDriverMonotonicClock();
+    DateTime Function()? wallClock,
+  }) : clock = clock ?? StopwatchDriverMonotonicClock(),
+       _wallClock = wallClock ?? DateTime.now;
+
+  final DateTime Function() _wallClock;
+
+  /// When the current list arrived, by the wall clock too: the monotonic
+  /// clock stops while the phone sleeps, so after a long sleep it alone
+  /// would call a half-hour-old list current.
+  DateTime? _receivedAtWall;
+
+  /// True while the list of pending offers came from the last fetch, and
+  /// that fetch is at most [DriverOfferCardTiming.listingFreshFor] old.
+  bool get isFresh {
+    final current = _snapshot;
+    final receivedAtWall = _receivedAtWall;
+    if (current == null || receivedAtWall == null || _lastFetchFailed) {
+      return false;
+    }
+    const limit = DriverOfferCardTiming.listingFreshFor;
+    return clock.now - current.receivedAt <= limit &&
+        _wallClock().difference(receivedAtWall) <= limit;
+  }
+
+  /// The offer is listed, and the list is current: safe to prepare an
+  /// answer for it or to open it from a push.
+  bool listedFresh(String tripReference) =>
+      isFresh && offerFor(tripReference) != null;
 
   final DriverPendingOffersSource source;
   final DriverMonotonicClock clock;
@@ -245,6 +277,7 @@ final class DriverPendingOfferStore extends ChangeNotifier {
             receivedAt: arrived,
             requestDuration: arrived - started,
           );
+          _receivedAtWall = _wallClock();
           _forgotten.retainWhere((forgotten) {
             final listed = _snapshot!.offerFor(forgotten.tripReference);
             return listed != null &&
@@ -323,6 +356,7 @@ final class DriverPendingOfferStore extends ChangeNotifier {
   void clear() {
     _generation += 1;
     _snapshot = null;
+    _receivedAtWall = null;
     _lastFetchFailed = false;
     _forgotten.clear();
     _inFlight = null;

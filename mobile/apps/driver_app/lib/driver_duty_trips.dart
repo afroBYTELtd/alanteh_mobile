@@ -1375,6 +1375,17 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
   }
 }
 
+/// How often an open "Assigned trip detail" screen re-checks a trip that is
+/// still in play, so a cancel whose push was missed still shows.
+const driverTripDetailRecheckInterval = Duration(seconds: 12);
+
+/// A trip the detail screen keeps re-checking: live, or an offer waiting for
+/// an answer. Anything else has ended or left this driver.
+bool driverTripDetailStillInPlay(String? status) {
+  return driverIsOfferPending(status) ||
+      driverLiveTripFindingFor(status) == DriverLiveTripFinding.live;
+}
+
 class DriverTripDetailScreen extends StatefulWidget {
   const DriverTripDetailScreen({
     required this.gateway,
@@ -1433,26 +1444,56 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
     }
     _future = _loadTrip();
     WidgetsBinding.instance.addObserver(this);
+    // A cancel push for this trip reloads it here too, and a missed push is
+    // caught by the re-check (seen 24 Oct: the screen stayed on "Driver
+    // accepted" after a dispatch cancel).
+    DriverLiveTripScreens.instance.register(
+      widget.tripReference,
+      _onCancelPush,
+    );
+    _recheck = Timer.periodic(driverTripDetailRecheckInterval, (_) {
+      if (_inFront && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        unawaited(_reloadQuietly());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _recheck?.cancel();
+    DriverLiveTripScreens.instance.unregister(
+      widget.tripReference,
+      _onCancelPush,
+    );
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  Timer? _recheck;
+  bool _inFront = true;
+
+  void _onCancelPush() => unawaited(_reloadQuietly());
+
+  /// Stops the re-check once the trip has ended or left this driver.
+  void _noteStatus(String? status) {
+    if (!driverTripDetailStillInPlay(status)) {
+      _recheck?.cancel();
+    }
   }
 
   /// Back in front: the trip may have changed meanwhile (seen on the test
   /// phone: cancelled while the app was away).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _inFront = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
-      unawaited(_reloadOnResume());
+      unawaited(_reloadQuietly());
     }
   }
 
   /// Reloads without the loading card; a failed reload keeps what is on
   /// screen (Refresh still works).
-  Future<void> _reloadOnResume() async {
+  Future<void> _reloadQuietly() async {
     if (_openingLiveActions ||
         _submittingOfferResponse ||
         _submittingDeclineResponse) {
@@ -1467,6 +1508,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
     if (!mounted) {
       return;
     }
+    _noteStatus(trip.status);
     setState(() {
       _future = SynchronousFuture<DriverAssignedTrip>(trip);
     });
@@ -1477,6 +1519,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen>
 
   Future<DriverAssignedTrip> _loadTrip() async {
     final trip = await widget.gateway.fetchTripDetail(widget.tripReference);
+    _noteStatus(trip.status);
     if (driverIsOfferPending(trip.status)) {
       await _prepareOfferResponse(trip);
     }

@@ -21,36 +21,47 @@ enum DriverLiveTripFinding {
   unknown,
 }
 
-/// The live trip screens that are open, by trip reference, so a cancel
-/// push reaches the screen for that trip.
+/// The trip screens that are open, by trip reference, so a cancel push
+/// reaches every screen showing that trip: the live trip sequence and the
+/// "Assigned trip detail" screen under it can both be open.
 final class DriverLiveTripScreens {
   DriverLiveTripScreens._();
 
   static final instance = DriverLiveTripScreens._();
 
-  final _open = <String, VoidCallback>{};
+  final _open = <String, List<VoidCallback>>{};
 
   void register(String tripReference, VoidCallback checkNow) {
-    _open[_key(tripReference)] = checkNow;
+    final screens = _open.putIfAbsent(_key(tripReference), () => []);
+    if (!screens.contains(checkNow)) {
+      screens.add(checkNow);
+    }
   }
 
-  /// Removes [checkNow] if it is still the one registered (a method
-  /// tear-off is equal, not identical, to the one registered).
+  /// Removes [checkNow] for [tripReference] (a method tear-off is equal,
+  /// not identical, to the one registered); other screens stay.
   void unregister(String tripReference, VoidCallback checkNow) {
     final key = _key(tripReference);
-    if (_open[key] == checkNow) {
+    final screens = _open[key];
+    if (screens == null) {
+      return;
+    }
+    screens.remove(checkNow);
+    if (screens.isEmpty) {
       _open.remove(key);
     }
   }
 
-  /// Asks the open screen for [tripReference] to reload its trip now;
-  /// false when no such screen is open.
+  /// Asks every open screen for [tripReference] to reload its trip now;
+  /// false when none is open.
   bool checkNow(String tripReference) {
-    final check = _open[_key(tripReference)];
-    if (check == null) {
+    final screens = _open[_key(tripReference)];
+    if (screens == null || screens.isEmpty) {
       return false;
     }
-    check();
+    for (final check in List<VoidCallback>.of(screens)) {
+      check();
+    }
     return true;
   }
 

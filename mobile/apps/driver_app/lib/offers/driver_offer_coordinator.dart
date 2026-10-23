@@ -78,6 +78,11 @@ final class DriverOfferCoordinator {
     _reschedule(fetchNow: false);
   }
 
+  /// Whether a pushed or tapped offer may open its card: only from a
+  /// current list (an old one, from before a failed fetch or a long sleep,
+  /// can still hold an offer that ended).
+  bool canOpen(String tripReference) => store.listedFresh(tripReference);
+
   /// An offer push arrived.
   Future<void> offerPushed() => store.refresh();
 

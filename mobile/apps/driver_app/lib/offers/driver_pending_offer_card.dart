@@ -136,6 +136,22 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   }
 
   Future<DriverOfferResponseResilienceController?> _prepare() async {
+    // Preparing writes the Accept's queue record. A card shown from an old
+    // list (fetches failing, or the phone asleep) first asks for a current
+    // one, and prepares only if the offer is still on it (seen 23 Oct: an
+    // Accept was prepared for TRIP-4F5837A6421D half an hour after it ended).
+    if (_store.snapshot != null && !_store.isFresh) {
+      await _store.refreshAfterCurrent();
+      if (!mounted) {
+        return null;
+      }
+      if (!_store.listedFresh(_reference)) {
+        if (!_store.isFresh) {
+          setState(() => _prepareFailed = true);
+        }
+        return null;
+      }
+    }
     try {
       final controller = await widget.controllerFactory(
         _reference,

@@ -840,7 +840,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (!mounted || !_signedIn) {
       return;
     }
-    if (offers.store.offerFor(tap.tripReference) != null) {
+    if (offers.canOpen(tap.tripReference)) {
       await _openOfferScreen(tap.tripReference);
     }
   }
@@ -881,7 +881,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (_offerScreenOpen) {
       return true;
     }
-    if (offers.store.offerFor(intent.tripReference) == null) {
+    if (!offers.canOpen(intent.tripReference)) {
       return false;
     }
     unawaited(_openOfferScreen(intent.tripReference));
