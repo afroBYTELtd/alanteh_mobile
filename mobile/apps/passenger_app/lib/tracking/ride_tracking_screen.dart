@@ -659,13 +659,14 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     switch (error.type) {
       case PassengerCancellationFailureType.temporarilyUnavailable:
       case PassengerCancellationFailureType.badResponse:
-        // The cancel may have landed: the reload decides.
+        // The cancel may have landed: the reload decides. A trip that has
+        // ended any way (cancelled, dispatch cancelled, completed) shows its
+        // own card, with nothing to try again.
         await _reloadThenStopCancelling();
         if (!mounted) {
           return;
         }
-        if (_record?.passengerState ==
-            PassengerRideState.cancelledByPassenger) {
+        if (_showsEnded) {
           setState(() => _unconfirmedCancel = null);
           return;
         }

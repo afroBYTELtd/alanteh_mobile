@@ -243,6 +243,48 @@ void main() {
     await dispose(tester);
   });
 
+  for (final ended in [
+    ('dispatch cancelled', 'cancelled_by_operations', 'trip-cancelled-state'),
+    ('completed', 'completed_pending_review', 'arrived-at-destination-state'),
+  ]) {
+    testWidgets('a timeout whose reload shows the trip ended another way '
+        '(${ended.$1}): that card, no "couldn\'t confirm", no "Try cancelling '
+        'again"', (tester) async {
+      final trips = _Trips('driver_accepted');
+      final cancels = _Cancels();
+      await pump(tester, trips: trips, cancels: cancels);
+
+      await confirmCancel(tester);
+      trips.status = ended.$2;
+      cancels.fail(0, const PassengerCancellationException.network());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(Key(ended.$3)), findsOneWidget);
+      expect(
+        find.byKey(const Key('cancel-unconfirmed-snackbar')),
+        findsNothing,
+      );
+      expect(find.text('Try cancelling again'), findsNothing);
+      expect(cancelledCard, findsNothing);
+      await dispose(tester);
+    });
+  }
+
+  testWidgets('closing the screen while Cancelling… leaves no timer running', (
+    tester,
+  ) async {
+    final trips = _Trips('driver_accepted');
+    final cancels = _Cancels();
+    await pump(tester, trips: trips, cancels: cancels);
+
+    await confirmCancel(tester);
+    expect(find.text('Cancelling…'), findsOneWidget);
+    // The 10 s slow-line timer is pending. The test ends right after the
+    // screen closes: the framework fails it if any timer is still pending.
+    await dispose(tester);
+  });
+
   testWidgets('a timeout whose reload also fails: "Try cancelling again"', (
     tester,
   ) async {
