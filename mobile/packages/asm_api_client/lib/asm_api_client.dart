@@ -361,7 +361,13 @@ class AsmApiClient {
     Duration sendTimeout = const Duration(seconds: 10),
     Duration receiveTimeout = const Duration(seconds: 20),
     Duration requestTimeout = const Duration(seconds: 15),
-  }) : _dio = dio ?? (Dio()..httpClientAdapter = AsmConnectionRouter()),
+    this.retriesFailedRequests = false,
+  }) : _dio =
+           dio ??
+           (Dio()
+             ..httpClientAdapter = AsmConnectionRouter(
+               pooled: retriesFailedRequests,
+             )),
        _tokenProvider = tokenProvider,
        _requestTimeout = requestTimeout {
     final cleanedBaseUrl = AsmApiBaseUrl.normalize(baseUrl);
@@ -399,6 +405,12 @@ class AsmApiClient {
   final Dio _dio;
   final TokenProvider? _tokenProvider;
   final Duration _requestTimeout;
+
+  /// Whether a failed request from this client is retried (as
+  /// GhanaResilientApiClient and the driver offer card do). Only such a
+  /// client uses pooled connections: a pooled connection can be dead, and a
+  /// request sent on one fails only after its full timeout.
+  final bool retriesFailedRequests;
 
   String get baseUrl => _dio.options.baseUrl;
   Duration get requestTimeout => _requestTimeout;
@@ -596,7 +608,8 @@ class AsmApiClient {
 }
 
 /// One pool of connections for every [AsmApiClient] in this isolate, used
-/// only by requests that can be retried.
+/// only by requests that can be retried, from clients that retry them
+/// ([AsmApiClient.retriesFailedRequests]).
 ///
 /// A pooled connection can be dead: a mobile network may drop an idle
 /// connection without telling either end, and a request sent on it waits
@@ -642,9 +655,16 @@ final class AsmConnectionPool {
 }
 
 /// The adapter every [AsmApiClient] gets unless it is given its own [Dio]:
-/// retryable requests go through [AsmConnectionPool]; any other request gets
-/// a new connection that is closed after its response, as before.
+/// retryable requests from a client that retries go through
+/// [AsmConnectionPool]; any other request gets a new connection that is
+/// closed after its response, as before.
 final class AsmConnectionRouter implements HttpClientAdapter {
+  AsmConnectionRouter({required this.pooled});
+
+  /// False for a client that does not retry failed requests: then every
+  /// request gets a connection of its own.
+  final bool pooled;
+
   final IOHttpClientAdapter _ownConnections = IOHttpClientAdapter();
 
   @override
@@ -653,7 +673,7 @@ final class AsmConnectionRouter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) {
-    if (AsmConnectionPool.isRetryable(options)) {
+    if (pooled && AsmConnectionPool.isRetryable(options)) {
       return AsmConnectionPool._shared.fetch(
         options,
         requestStream,

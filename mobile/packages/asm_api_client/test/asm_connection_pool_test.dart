@@ -7,10 +7,10 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Retryable requests (GET, HEAD, or carrying an Idempotency-Key) share one
-/// pool of connections across every AsmApiClient, kept for
-/// [AsmConnectionPool.idleTimeout]. Every other request gets a connection of
-/// its own that is closed after the response. A real loopback server counts
+/// Retryable requests (GET, HEAD, or carrying an Idempotency-Key) from
+/// clients that retry failed requests share one pool of connections across
+/// every AsmApiClient, kept for [AsmConnectionPool.idleTimeout]. Every other
+/// request gets a connection of its own that is closed after the response. A real loopback server counts
 /// the client ports it sees: the same port means the same connection.
 void main() {
   late _CountingServer server;
@@ -25,11 +25,16 @@ void main() {
     await server.close();
   });
 
-  AsmApiClient client({Duration receiveTimeout = const Duration(seconds: 10)}) {
+  /// A client that retries failed requests, like GhanaResilientApiClient.
+  AsmApiClient client({
+    Duration receiveTimeout = const Duration(seconds: 10),
+    bool retriesFailedRequests = true,
+  }) {
     return AsmApiClient(
       baseUrl: server.baseUrl,
       receiveTimeout: receiveTimeout,
       requestTimeout: const Duration(seconds: 15),
+      retriesFailedRequests: retriesFailedRequests,
     );
   }
 
@@ -53,7 +58,7 @@ void main() {
 
   test('closing one client does not close the pool for the others', () async {
     final dio = Dio(BaseOptions(baseUrl: server.baseUrl))
-      ..httpClientAdapter = AsmConnectionRouter();
+      ..httpClientAdapter = AsmConnectionRouter(pooled: true);
     await dio.get<Object?>('/ok');
     dio.close(force: true);
 
@@ -181,6 +186,53 @@ void main() {
       );
       expect(
         AsmConnectionPool.isRetryable(options('PATCH', {'Accept': 'x'})),
+        isFalse,
+      );
+    });
+  });
+
+  group('clients that do not retry', () {
+    test('a retrying client\'s GET uses the pool', () async {
+      await client().get<Object?>('/ok');
+      await client().get<Object?>('/ok');
+
+      expect(server.ports.toSet(), hasLength(1));
+    });
+
+    test(
+      'a GET from a client that does not retry gets a fresh connection',
+      () async {
+        await client().get<Object?>('/ok');
+        await client(retriesFailedRequests: false).get<Object?>('/ok');
+        await client().get<Object?>('/ok');
+
+        // The no-retry GET had a connection of its own; the pooled one was
+        // still there for the third request.
+        expect(server.ports, hasLength(3));
+        expect(server.ports[0], server.ports[2]);
+        expect(server.ports[1], isNot(server.ports[0]));
+      },
+    );
+
+    test('a keyed POST from a client that does not retry gets a fresh '
+        'connection', () async {
+      await client().get<Object?>('/ok');
+      await client(retriesFailedRequests: false).post<Object?>(
+        '/ok',
+        data: const <String, Object?>{},
+        headers: const <String, String>{'Idempotency-Key': 'key-2'},
+      );
+      await client().get<Object?>('/ok');
+
+      expect(server.ports, hasLength(3));
+      expect(server.ports[0], server.ports[2]);
+      expect(server.ports[1], isNot(server.ports[0]));
+    });
+
+    test('the client says whether it retries', () {
+      expect(client().retriesFailedRequests, isTrue);
+      expect(
+        AsmApiClient(baseUrl: server.baseUrl).retriesFailedRequests,
         isFalse,
       );
     });

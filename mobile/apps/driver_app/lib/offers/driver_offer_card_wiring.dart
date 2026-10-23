@@ -31,6 +31,8 @@ DriverOfferCoordinator? driverOfferCoordinatorFor({
           sendTimeout: DriverOfferCardTiming.fetchConnectTimeout,
           receiveTimeout: DriverOfferCardTiming.fetchRequestTimeout,
           requestTimeout: DriverOfferCardTiming.fetchRequestTimeout,
+          // ApiDriverPendingOffersSource retries a failed fetch once.
+          retriesFailedRequests: true,
         ),
         refreshAccessToken: refreshAccessToken,
       ),
@@ -52,13 +54,7 @@ DriverOfferResponseControllerFactory driverOfferCardControllerFactoryFor({
 }) {
   final gateway = ApiDriverOfferResponseGateway(
     apiGateway: AsmDriverOfferResponseApiGateway(
-      AsmApiClient(
-        baseUrl: baseUrl,
-        connectTimeout: DriverOfferCardTiming.responseConnectTimeout,
-        sendTimeout: DriverOfferCardTiming.responseConnectTimeout,
-        receiveTimeout: DriverOfferCardTiming.responseRequestTimeout,
-        requestTimeout: DriverOfferCardTiming.responseRequestTimeout,
-      ),
+      driverOfferResponseClientFor(baseUrl),
     ),
     tokenStore: tokenStore,
     refreshAccessToken: refreshAccessToken,
@@ -119,3 +115,16 @@ DriverOfferPickupTimeLookupFn driverOfferPickupTimeLookupFor(
 
 typedef DriverOfferPickupTimeLookupFn =
     Future<DriverOfferPickupTime> Function(String tripReference);
+
+/// The card's Accept and Decline client. The gateway retries a failed
+/// response (DriverOfferCardTiming.responseRetryBackoffs).
+AsmApiClient driverOfferResponseClientFor(String baseUrl) {
+  return AsmApiClient(
+    baseUrl: baseUrl,
+    connectTimeout: DriverOfferCardTiming.responseConnectTimeout,
+    sendTimeout: DriverOfferCardTiming.responseConnectTimeout,
+    receiveTimeout: DriverOfferCardTiming.responseRequestTimeout,
+    requestTimeout: DriverOfferCardTiming.responseRequestTimeout,
+    retriesFailedRequests: true,
+  );
+}
