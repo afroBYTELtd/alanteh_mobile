@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 /// Converts decoded JSON response data into the caller's expected type.
 typedef JsonDecoder<T> = T Function(Object? json);
@@ -358,7 +361,13 @@ class AsmApiClient {
     Duration sendTimeout = const Duration(seconds: 10),
     Duration receiveTimeout = const Duration(seconds: 20),
     Duration requestTimeout = const Duration(seconds: 15),
-  }) : _dio = dio ?? Dio(),
+    this.retriesFailedRequests = false,
+  }) : _dio =
+           dio ??
+           (Dio()
+             ..httpClientAdapter = AsmConnectionRouter(
+               pooled: retriesFailedRequests,
+             )),
        _tokenProvider = tokenProvider,
        _requestTimeout = requestTimeout {
     final cleanedBaseUrl = AsmApiBaseUrl.normalize(baseUrl);
@@ -396,6 +405,12 @@ class AsmApiClient {
   final Dio _dio;
   final TokenProvider? _tokenProvider;
   final Duration _requestTimeout;
+
+  /// Whether a failed request from this client is retried (as
+  /// GhanaResilientApiClient and the driver offer card do). Only such a
+  /// client uses pooled connections: a pooled connection can be dead, and a
+  /// request sent on one fails only after its full timeout.
+  final bool retriesFailedRequests;
 
   String get baseUrl => _dio.options.baseUrl;
   Duration get requestTimeout => _requestTimeout;
@@ -590,4 +605,87 @@ class AsmApiClient {
       cause: error,
     );
   }
+}
+
+/// One pool of connections for every [AsmApiClient] in this isolate, used
+/// only by requests that can be retried, from clients that retry them
+/// ([AsmApiClient.retriesFailedRequests]).
+///
+/// A pooled connection can be dead: a mobile network may drop an idle
+/// connection without telling either end, and a request sent on it waits
+/// for its full timeout. So only GET, HEAD and requests carrying an
+/// Idempotency-Key use the pool; a retry of those is safe. Everything else
+/// gets a connection of its own (see [AsmConnectionRouter]).
+final class AsmConnectionPool {
+  AsmConnectionPool._();
+
+  /// How long an unused pooled connection is kept. Kept short because of
+  /// silent drops; dio's own default is 3 s, dart:io's 15 s.
+  static const idleTimeout = Duration(seconds: 20);
+
+  static Duration _idleTimeout = idleTimeout;
+  static IOHttpClientAdapter? _adapter;
+
+  /// The idle limit the pool is using now.
+  static Duration get effectiveIdleTimeout => _idleTimeout;
+
+  static HttpClientAdapter get _shared => _adapter ??= IOHttpClientAdapter(
+    createHttpClient: () => HttpClient()..idleTimeout = _idleTimeout,
+  );
+
+  static bool isRetryable(RequestOptions options) {
+    final method = options.method.trim().toUpperCase();
+    if (method == 'GET' || method == 'HEAD') {
+      return true;
+    }
+    return options.headers.entries.any(
+      (header) =>
+          header.key.toLowerCase() == 'idempotency-key' &&
+          '${header.value ?? ''}'.trim().isNotEmpty,
+    );
+  }
+
+  /// Tests only: closes the pool, so the next request starts a new one
+  /// with [idleTimeout].
+  static void resetForTesting({Duration idleTimeout = idleTimeout}) {
+    _adapter?.close(force: true);
+    _adapter = null;
+    _idleTimeout = idleTimeout;
+  }
+}
+
+/// The adapter every [AsmApiClient] gets unless it is given its own [Dio]:
+/// retryable requests from a client that retries go through
+/// [AsmConnectionPool]; any other request gets a new connection that is
+/// closed after its response, as before.
+final class AsmConnectionRouter implements HttpClientAdapter {
+  AsmConnectionRouter({required this.pooled});
+
+  /// False for a client that does not retry failed requests: then every
+  /// request gets a connection of its own.
+  final bool pooled;
+
+  final IOHttpClientAdapter _ownConnections = IOHttpClientAdapter();
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    if (pooled && AsmConnectionPool.isRetryable(options)) {
+      return AsmConnectionPool._shared.fetch(
+        options,
+        requestStream,
+        cancelFuture,
+      );
+    }
+    options.persistentConnection = false;
+    return _ownConnections.fetch(options, requestStream, cancelFuture);
+  }
+
+  /// Closes this client's own connections only; the pool is shared, so no
+  /// one client may close it.
+  @override
+  void close({bool force = false}) => _ownConnections.close(force: force);
 }

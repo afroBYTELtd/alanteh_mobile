@@ -518,6 +518,7 @@ class GhanaResilientApiClient extends AsmApiClient {
          sendTimeout: GhanaRequestPolicy.sendTimeout,
          receiveTimeout: GhanaRequestPolicy.receiveTimeout,
          requestTimeout: GhanaRequestPolicy.requestTimeout,
+         retriesFailedRequests: true,
        );
 
   final GhanaRetryPolicy _retryPolicy;
