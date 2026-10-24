@@ -813,7 +813,9 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
           SafeArea(
             bottom: false,
             child: _SignInEndsSoonBanner(
-              onSignIn: widget.onSignInRequired,
+              onSignIn: widget.onSignInRequired == null
+                  ? null
+                  : _confirmSignInAgain,
               onClose: () => setState(() => _signInEndsSoonShown = false),
             ),
           ),
@@ -827,6 +829,32 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
         ],
       ),
     );
+  }
+
+  /// Signing in again first clears this phone's sign-in, with the ride
+  /// booked, so it asks once.
+  Future<void> _confirmSignInAgain() async {
+    final signIn = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: const Text(passengerSignInAgainDuringRideMessage),
+        actions: [
+          TextButton(
+            key: const Key('tracking-sign-in-again-stay'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Stay signed in'),
+          ),
+          FilledButton(
+            key: const Key('tracking-sign-in-again-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign in again'),
+          ),
+        ],
+      ),
+    );
+    if (signIn == true && mounted) {
+      widget.onSignInRequired?.call();
+    }
   }
 
   Widget _buildScreen(BuildContext context) {
@@ -1765,6 +1793,13 @@ class _PassengerCancellationReasonSheetState
     );
   }
 }
+
+/// Shown before "Sign in again" on the trip screen. The phone can still
+/// show notifications for the ride, but the app shows nothing of it until
+/// the passenger signs in again.
+const passengerSignInAgainDuringRideMessage =
+    "You won't see updates about this ride in the app until you sign in "
+    'again. Your ride stays booked.';
 
 class _SignInEndsSoonBanner extends StatelessWidget {
   const _SignInEndsSoonBanner({required this.onSignIn, required this.onClose});

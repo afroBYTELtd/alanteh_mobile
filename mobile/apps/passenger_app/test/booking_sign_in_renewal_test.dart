@@ -104,8 +104,13 @@ void main() {
       expect(find.byKey(banner), findsOneWidget);
     });
 
-    testWidgets('Sign in again on the banner goes to sign in; the ride stays '
-        'booked', (tester) async {
+    // Signing out clears this phone's sign-in while the ride is booked, so
+    // it asks once first.
+    const signOutWarning =
+        "You won't see updates about this ride in the app until you sign in "
+        'again. Your ride stays booked.';
+
+    Future<int Function()> openSignInQuestion(WidgetTester tester) async {
       var signIns = 0;
       final submitter = await pump(
         tester,
@@ -116,9 +121,36 @@ void main() {
       await _settle(tester);
 
       await tester.tap(find.byKey(const Key('tracking-sign-in-again')));
-      await tester.pump();
-      expect(signIns, 1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text(signOutWarning), findsOneWidget);
+      expect(signIns, 0, reason: 'nothing happens before the answer');
       expect(submitter.submissions, 1);
+      return () => signIns;
+    }
+
+    testWidgets('Sign in again on the banner asks once; Sign in again goes '
+        'to sign in', (tester) async {
+      final signIns = await openSignInQuestion(tester);
+
+      await tester.tap(find.byKey(const Key('tracking-sign-in-again-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(signIns(), 1);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('Stay signed in keeps the sign-in and the banner', (
+      tester,
+    ) async {
+      final signIns = await openSignInQuestion(tester);
+
+      await tester.tap(find.byKey(const Key('tracking-sign-in-again-stay')));
+      await tester.pumpAndSettle();
+
+      expect(signIns(), 0);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byKey(banner), findsOneWidget);
     });
 
     testWidgets('the banner can be closed', (tester) async {
