@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:asm_api_client/asm_api_client.dart';
@@ -15,8 +16,10 @@ import 'package:passenger_app/passenger_home.dart';
 import 'package:passenger_app/passenger_shell.dart';
 import 'package:passenger_app/ride_requests/ride_request_history.dart';
 
-// Before booking, a sign-in that ends within 2 hours is renewed first, so
-// it does not end in the middle of the ride.
+// A sign-in that ends within 2 hours is flagged after the booking, as a
+// banner on the trip screen with "Sign in again", so it does not end in the
+// middle of the ride. It used to be a dialog between Confirm and the
+// booking, which held the booking until answered (phone session 23 Oct).
 void main() {
   const warning =
       "Your sign-in ends soon. Sign in again now so it doesn't stop you "
@@ -34,44 +37,75 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  const banner = Key('tracking-sign-in-ends-soon');
+
   group('on the booking page', () {
     Future<_Submitter> pump(
       WidgetTester tester,
       Duration? left, {
       VoidCallback? onSignInRequired,
+      _Submitter? submitter,
     }) async {
       _useSurface(tester);
+      final sending = submitter ?? _Submitter();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AsmThemes.passenger,
+          home: BookingPage(
+            market: MarketConfig.ghanaAccra,
+            rideRequestSubmitter: sending,
+            rideRequestHistoryRepository: _History(_requested()),
+            onSignInRequired: onSignInRequired,
+            signInTimeLeft: () async => left,
+          ),
+        ),
+      );
+      return sending;
+    }
+
+    testWidgets('90 minutes left: Confirm books at once, then the trip '
+        'screen shows the banner', (tester) async {
+      final submitter = await pump(tester, const Duration(minutes: 90));
+      await reviewAndConfirm(tester);
+
+      expect(submitter.submissions, 1);
+      expect(find.byType(AlertDialog), findsNothing);
+      await _settle(tester);
+      expect(find.byKey(banner), findsOneWidget);
+      expect(find.text(warning), findsOneWidget);
+      expect(find.byKey(const Key('tracking-bottom-sheet')), findsOneWidget);
+    });
+
+    testWidgets('nothing waits for the sign-in check: a slow one does not '
+        'hold the booking', (tester) async {
+      _useSurface(tester);
       final submitter = _Submitter();
+      final check = Completer<Duration?>();
       await tester.pumpWidget(
         MaterialApp(
           theme: AsmThemes.passenger,
           home: BookingPage(
             market: MarketConfig.ghanaAccra,
             rideRequestSubmitter: submitter,
-            onSignInRequired: onSignInRequired,
-            signInTimeLeft: () async => left,
+            rideRequestHistoryRepository: _History(_requested()),
+            signInTimeLeft: () => check.future,
           ),
         ),
       );
-      return submitter;
-    }
-
-    testWidgets('90 minutes left: asked first; Continue books', (tester) async {
-      final submitter = await pump(tester, const Duration(minutes: 90));
       await reviewAndConfirm(tester);
 
-      expect(find.text(warning), findsOneWidget);
-      expect(submitter.submissions, 0);
-
-      await tester.tap(find.byKey(const Key('booking-renew-sign-in-later')));
-      await tester.pumpAndSettle();
-      expect(find.text(warning), findsNothing);
       expect(submitter.submissions, 1);
+      await _settle(tester);
+      expect(find.byKey(const Key('tracking-bottom-sheet')), findsOneWidget);
+      expect(find.byKey(banner), findsNothing);
+
+      check.complete(const Duration(minutes: 90));
+      await _settle(tester);
+      expect(find.byKey(banner), findsOneWidget);
     });
 
-    testWidgets('90 minutes left: Sign in again goes to sign in, no booking', (
-      tester,
-    ) async {
+    testWidgets('Sign in again on the banner goes to sign in; the ride stays '
+        'booked', (tester) async {
       var signIns = 0;
       final submitter = await pump(
         tester,
@@ -79,31 +113,66 @@ void main() {
         onSignInRequired: () => signIns += 1,
       );
       await reviewAndConfirm(tester);
+      await _settle(tester);
 
-      await tester.tap(find.byKey(const Key('booking-renew-sign-in-now')));
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tracking-sign-in-again')));
+      await tester.pump();
       expect(signIns, 1);
-      expect(submitter.submissions, 0);
+      expect(submitter.submissions, 1);
     });
 
-    testWidgets('exactly 2 hours left: asked', (tester) async {
+    testWidgets('the banner can be closed', (tester) async {
+      var signIns = 0;
+      await pump(
+        tester,
+        const Duration(minutes: 90),
+        onSignInRequired: () => signIns += 1,
+      );
+      await reviewAndConfirm(tester);
+      await _settle(tester);
+
+      await tester.tap(
+        find.byKey(const Key('tracking-sign-in-ends-soon-close')),
+      );
+      await tester.pump();
+      expect(find.byKey(banner), findsNothing);
+      expect(signIns, 0);
+    });
+
+    testWidgets('exactly 2 hours left: the banner shows', (tester) async {
       final submitter = await pump(tester, const Duration(hours: 2));
       await reviewAndConfirm(tester);
+      await _settle(tester);
 
-      expect(find.text(warning), findsOneWidget);
-      expect(submitter.submissions, 0);
+      expect(submitter.submissions, 1);
+      expect(find.byKey(banner), findsOneWidget);
     });
 
     for (final left in <Duration?>[const Duration(minutes: 121), null]) {
-      testWidgets('${left?.inMinutes ?? 'unreadable'} minutes left: books '
-          'without asking', (tester) async {
+      testWidgets('${left?.inMinutes ?? 'unreadable'} minutes left: books, '
+          'no banner', (tester) async {
         final submitter = await pump(tester, left);
         await reviewAndConfirm(tester);
+        await _settle(tester);
 
-        expect(find.text(warning), findsNothing);
         expect(submitter.submissions, 1);
+        expect(find.byKey(banner), findsNothing);
       });
     }
+
+    testWidgets('a booking that fails shows no banner', (tester) async {
+      final submitter = await pump(
+        tester,
+        const Duration(minutes: 90),
+        submitter: _Submitter(fail: true),
+      );
+      await reviewAndConfirm(tester);
+      await _settle(tester);
+
+      expect(submitter.submissions, 1);
+      expect(find.byKey(banner), findsNothing);
+      expect(find.text(warning), findsNothing);
+    });
   });
 
   group('every way into booking passes it on', () {
@@ -140,10 +209,10 @@ void main() {
         await _tapVisible(tester, const Key('request-ride'));
         await tester.pumpAndSettle();
         await _tapVisible(tester, const Key('confirm-and-request'));
-        await tester.pumpAndSettle();
+        await _settle(tester);
 
-        expect(find.text(warning), findsOneWidget);
-        expect(submitter.submissions, 0);
+        expect(submitter.submissions, 1);
+        expect(find.byKey(banner), findsOneWidget);
       });
     }
 
@@ -175,10 +244,10 @@ void main() {
       await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
       await _tapVisible(tester, const Key('confirm-and-request'));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
-      expect(find.text(warning), findsOneWidget);
-      expect(submitter.submissions, 0);
+      expect(submitter.submissions, 1);
+      expect(find.byKey(banner), findsOneWidget);
     });
 
     testWidgets('Book again on a refused request, after a booking', (
@@ -202,6 +271,7 @@ void main() {
       expect(submitter.submissions, 1);
       await _settle(tester);
       expect(find.byKey(const Key('request-rejected-state')), findsOneWidget);
+      expect(find.byKey(banner), findsNothing);
 
       left = const Duration(minutes: 90);
       await tester.tap(find.byKey(const Key('rejected-book-again')));
@@ -209,10 +279,10 @@ void main() {
       await _tapVisible(tester, const Key('request-ride'));
       await tester.pumpAndSettle();
       await _tapVisible(tester, const Key('confirm-and-request'));
-      await tester.pumpAndSettle();
+      await _settle(tester);
 
-      expect(find.text(warning), findsOneWidget);
-      expect(submitter.submissions, 1);
+      expect(submitter.submissions, 2);
+      expect(find.byKey(banner), findsOneWidget);
     });
   });
 
@@ -249,9 +319,10 @@ void main() {
     await tester.tap(find.byKey(const Key('confirm-pickup')));
     await tester.pumpAndSettle();
     await reviewAndConfirm(tester);
+    await _settle(tester);
 
-    expect(find.text(warning), findsOneWidget);
-    expect(submitter.submissions, 0);
+    expect(submitter.submissions, 1);
+    expect(find.byKey(banner), findsOneWidget);
   });
 }
 
@@ -272,6 +343,18 @@ PassengerRideRequestRecord _completed() => PassengerRideRequestRecord(
   updatedAt: DateTime.utc(2026, 10, 9, 9),
   hasMobileReceipt: true,
   tripCreated: true,
+);
+
+PassengerRideRequestRecord _requested() => PassengerRideRequestRecord(
+  requestReference: 'RR-APP-3A9F1C2B4E5D',
+  status: 'requested',
+  pickupLocation: 'Osu',
+  destination: 'Airport',
+  passengerCount: 1,
+  createdAt: DateTime.utc(2026, 10, 9, 8),
+  updatedAt: DateTime.utc(2026, 10, 9, 8),
+  hasMobileReceipt: true,
+  tripCreated: false,
 );
 
 PassengerRideRequestRecord _rejected() => PassengerRideRequestRecord(
@@ -312,6 +395,9 @@ Future<void> _tapVisible(WidgetTester tester, Key key) async {
 }
 
 final class _Submitter implements PassengerRideRequestSubmitter {
+  _Submitter({this.fail = false});
+
+  final bool fail;
   var submissions = 0;
 
   @override
@@ -320,6 +406,11 @@ final class _Submitter implements PassengerRideRequestSubmitter {
     required String idempotencyKey,
   }) async {
     submissions += 1;
+    if (fail) {
+      throw const PassengerRideRequestSubmissionException(
+        PassengerRideRequestSubmissionException.unknownErrorMessage,
+      );
+    }
     return const PassengerRideRequestResult(
       requestReference: 'RR-APP-3A9F1C2B4E5D',
       status: 'requested',
