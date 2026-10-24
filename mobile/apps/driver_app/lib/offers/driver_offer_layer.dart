@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -36,11 +38,13 @@ final class DriverOfferRouteObserver extends NavigatorObserver {
   /// Sheets and dialogs over them.
   final ValueNotifier<int> popups = ValueNotifier<int>(0);
 
+  // Never below zero: a route that went away before this observer saw it
+  // arrive (or before the counts were reset) is not counted.
   void _count(Route<dynamic>? route, int by) {
     if (route is PageRoute) {
-      pages.value += by;
+      pages.value = math.max(0, pages.value + by);
     } else if (route is PopupRoute) {
-      popups.value += by;
+      popups.value = math.max(0, popups.value + by);
     }
   }
 

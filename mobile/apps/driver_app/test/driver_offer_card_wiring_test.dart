@@ -10,6 +10,7 @@ import 'package:driver_app/network/driver_offer_response_resilience.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/notifications/push_notification_runtime.dart';
 import 'package:driver_app/offers/driver_offer_coordinator.dart';
+import 'package:driver_app/offers/driver_offer_layer.dart';
 import 'package:driver_app/offers/driver_pending_offer_store.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -777,6 +778,58 @@ void main() {
         tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
         1,
       );
+      await app.dispose(tester);
+    });
+
+    for (final (navigation, bottomInset) in const [
+      ('gesture navigation', 0.0),
+      ('three-button navigation', 126.0),
+    ]) {
+      testWidgets('at a large text size (2.0), $navigation: the card still '
+          'sits above the tab bar', (tester) async {
+        // The test phone's screen (1080 x 2340 px), with the text size
+        // turned up after signing in, as a driver would in settings.
+        tester.view.physicalSize = const Size(1080, 2340);
+        tester.view.devicePixelRatio = 2.625;
+        tester.view.padding = FakeViewPadding(bottom: bottomInset);
+        tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+        addTearDown(tester.view.reset);
+        final app = _App();
+        await app.pumpSignedIn(tester);
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await _settle(tester);
+        await offerArrives(tester, app);
+
+        final card = tester.getRect(find.byKey(const Key('offer-card')));
+        final tabs = tester.getRect(find.byType(NavigationBar));
+        expect(card.bottom, lessThanOrEqualTo(tabs.top));
+        expect(tabs.height, driverOfferLayerTabBarHeight + bottomInset / 2.625);
+        await app.dispose(tester);
+      });
+    }
+
+    testWidgets('sign out and in again in the same shell: the card shows only '
+        "the new session's offers", (tester) async {
+      final app = _App()
+        ..source.offers = [_offer('TRIP-A', pickup: 'Pickup A')];
+      await app.pumpSignedIn(tester);
+      expect(find.text('Pickup A'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('driver-sign-out')));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+
+      app.source.offers = [_offer('TRIP-B', pickup: 'Pickup B')];
+      await app.signIn(tester);
+      await app.coordinator.store.refresh();
+      await _settle(tester);
+
+      expect(find.text('Pickup B'), findsOneWidget);
+      expect(find.text('Pickup A'), findsNothing);
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await _settle(tester);
+      expect(app.offerGateway.acceptedTrips, ['TRIP-B']);
       await app.dispose(tester);
     });
 
