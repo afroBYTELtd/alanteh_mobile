@@ -109,6 +109,38 @@ class PassengerRideRequestRecord {
     return value == null || value.isEmpty ? null : value;
   }
 
+  String get _tripStatus => status.trim().toLowerCase();
+
+  /// [pickupVerificationCode] while it is for something: from the driver's
+  /// accept until the driver is at the pickup. A saved copy, or a reply that
+  /// leaves the code out, can still hold one after that (0660 after a
+  /// dispatch cancel, 24 Oct; 1031 on a completed trip, 23 Oct).
+  String? get shownPickupVerificationCode =>
+      _pickupCodeStatuses.contains(_tripStatus) ? pickupVerificationCode : null;
+
+  static const _pickupCodeStatuses = {
+    'driver_accepted',
+    'dispatched',
+    'driver_en_route',
+    'arrived_at_pickup',
+  };
+
+  /// A trip that ended without a ride shows no driver or vehicle; a
+  /// completed one keeps both, for the receipt and the rating.
+  bool get _showsDriverAndVehicle => !_noRideStatuses.contains(_tripStatus);
+
+  static const _noRideStatuses = {
+    'cancelled_by_passenger',
+    'cancelled_by_operations',
+    'no_show',
+  };
+
+  String? get shownDriverName => _showsDriverAndVehicle ? driverName : null;
+  String? get shownVehicleType => _showsDriverAndVehicle ? vehicleType : null;
+  String? get shownVehicleColour =>
+      _showsDriverAndVehicle ? vehicleColour : null;
+  String? get shownPlateNumber => _showsDriverAndVehicle ? plateNumber : null;
+
   bool get hasFare {
     final value = fareAmount?.trim();
     return value != null && value.isNotEmpty;

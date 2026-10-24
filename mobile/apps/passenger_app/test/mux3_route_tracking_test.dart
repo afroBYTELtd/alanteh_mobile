@@ -491,6 +491,7 @@ void main() {
 
     final repository = _SequenceRepository(<Object>[
       _record(
+        status: 'driver_accepted',
         latestStaffState: 'driver assigned',
         plateNumber: 'GT 1234-26',
         pickupVerificationCode: '4821',
@@ -2144,6 +2145,129 @@ void main() {
       tester.getTopLeft(safety).dy,
       greaterThan(tester.getBottomLeft(vehicle).dy),
     );
+
+    await _disposeTracking(tester);
+  });
+
+  // 24 Oct: after a dispatch cancel the card still showed code 0660 and the
+  // vehicle, from the record the screen already held.
+  testWidgets('a cancel removes the pickup code, the driver and the vehicle', (
+    tester,
+  ) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(
+        status: 'driver_accepted',
+        pickupVerificationCode: '0660',
+        driverName: 'Kwame Mensah',
+        vehicleType: 'Solar Taxi',
+        vehicleColour: 'Green',
+        plateNumber: 'GT 1234-26',
+      ),
+      _trip(status: 'cancelled_by_operations'),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(seconds: 1),
+    );
+    expect(find.text('0660'), findsOneWidget);
+    expect(find.text('Kwame'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.byKey(const Key('trip-cancelled-state')), findsOneWidget);
+    expect(
+      find.byKey(const Key('tracking-pickup-verification-code-badge')),
+      findsNothing,
+    );
+    expect(find.text('0660'), findsNothing);
+    expect(find.byKey(const Key('tracking-driver-first-name')), findsNothing);
+    expect(find.byKey(const Key('tracking-vehicle-info')), findsNothing);
+    expect(find.byKey(const Key('tracking-plate-badge')), findsNothing);
+
+    await _disposeTracking(tester);
+  });
+
+  // 23 Oct: a completed trip still showed code 1031.
+  testWidgets('a completed trip keeps the driver and vehicle but not the '
+      'pickup code', (tester) async {
+    _useSurface(tester);
+
+    final requestRepository = _SequenceRepository(<Object>[
+      _record(status: 'converted', tripReference: 'TRIP-SWITCH-001'),
+    ]);
+    final tripRepository = _TripSequenceRepository(<Object>[
+      _trip(
+        status: 'completed_pending_review',
+        pickupVerificationCode: '1031',
+        driverName: 'Kwame Mensah',
+        vehicleType: 'Solar Taxi',
+        vehicleColour: 'Green',
+        plateNumber: 'GT 1234-26',
+      ),
+    ]);
+
+    await _pumpTracking(
+      tester,
+      requestRepository,
+      tripRepository: tripRepository,
+      pollInterval: const Duration(hours: 1),
+    );
+
+    expect(
+      find.byKey(const Key('tracking-pickup-verification-code-badge')),
+      findsNothing,
+    );
+    expect(find.text('1031'), findsNothing);
+    expect(find.text('Kwame'), findsOneWidget);
+    expect(find.byKey(const Key('tracking-vehicle-info')), findsOneWidget);
+    expect(find.text('GT 1234-26'), findsOneWidget);
+
+    await _disposeTracking(tester);
+  });
+
+  testWidgets('sharing a cancelled trip sends no driver or vehicle', (
+    tester,
+  ) async {
+    _useSurface(tester);
+    final repository = _SequenceRepository(<Object>[
+      _record(
+        status: 'cancelled_by_operations',
+        driverName: 'Kwame Mensah',
+        vehicleColour: 'Blue',
+        vehicleType: 'Solar Taxi',
+        plateNumber: 'GT 1234-26',
+      ),
+    ]);
+    final share = _RecordingSafetyShareGateway();
+
+    await _pumpTracking(
+      tester,
+      repository,
+      pollInterval: const Duration(hours: 1),
+      safetyShareGateway: share,
+    );
+
+    final finder = find.byKey(const Key('tracking-safety-share'));
+    await tester.ensureVisible(finder);
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tracking-safety-share-another-way')));
+    await tester.pumpAndSettle();
+
+    expect(share.sharedTexts, hasLength(1));
+    expect(share.sharedTexts.single, isNot(contains('Kwame')));
+    expect(share.sharedTexts.single, isNot(contains('Solar Taxi')));
+    expect(share.sharedTexts.single, isNot(contains('Blue')));
+    expect(share.sharedTexts.single, isNot(contains('GT 1234-26')));
 
     await _disposeTracking(tester);
   });
