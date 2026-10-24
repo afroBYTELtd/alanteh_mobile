@@ -625,6 +625,15 @@ final class AsmConnectionPool {
 
   static Duration _idleTimeout = idleTimeout;
   static IOHttpClientAdapter? _adapter;
+  static DateTime Function() _now = DateTime.now;
+
+  /// Each answer the pool gave, by the wall clock, until [idleTimeout]
+  /// has passed. dart:io closes an idle connection with a timer started
+  /// when the answer is read, and timers do not run while the app is
+  /// suspended. An answer still listed after the limit, or listed in the
+  /// future (the clock was set back), means its connection may be dead but
+  /// still pooled.
+  static final Set<_PooledAnswer> _answers = <_PooledAnswer>{};
 
   /// The idle limit the pool is using now.
   static Duration get effectiveIdleTimeout => _idleTimeout;
@@ -632,6 +641,54 @@ final class AsmConnectionPool {
   static HttpClientAdapter get _shared => _adapter ??= IOHttpClientAdapter(
     createHttpClient: () => HttpClient()..idleTimeout = _idleTimeout,
   );
+
+  static Future<ResponseBody> _fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    _dropIdleIfStale();
+    final body = await _shared.fetch(options, requestStream, cancelFuture);
+    // The connection goes back to the pool once the answer is read.
+    body.stream = body.stream.transform(
+      StreamTransformer<Uint8List, Uint8List>.fromHandlers(
+        handleDone: (sink) {
+          _noteAnswer();
+          sink.close();
+        },
+      ),
+    );
+    return body;
+  }
+
+  static void _noteAnswer() {
+    final answer = _PooledAnswer(_now());
+    answer.limit = Timer(_idleTimeout, () => _answers.remove(answer));
+    _answers.add(answer);
+  }
+
+  /// Closes the pooled connections that are idle (requests already on
+  /// their way finish) when an answer outlived its idle timer.
+  static void _dropIdleIfStale() {
+    final now = _now();
+    final stale = _answers.any((answer) {
+      final age = now.difference(answer.at);
+      return age.isNegative || age > _idleTimeout;
+    });
+    if (!stale) {
+      return;
+    }
+    _forgetAnswers();
+    _adapter?.close();
+    _adapter = null;
+  }
+
+  static void _forgetAnswers() {
+    for (final answer in _answers) {
+      answer.limit?.cancel();
+    }
+    _answers.clear();
+  }
 
   static bool isRetryable(RequestOptions options) {
     final method = options.method.trim().toUpperCase();
@@ -647,11 +704,23 @@ final class AsmConnectionPool {
 
   /// Tests only: closes the pool, so the next request starts a new one
   /// with [idleTimeout].
-  static void resetForTesting({Duration idleTimeout = idleTimeout}) {
+  static void resetForTesting({
+    Duration idleTimeout = idleTimeout,
+    DateTime Function()? now,
+  }) {
     _adapter?.close(force: true);
     _adapter = null;
     _idleTimeout = idleTimeout;
+    _now = now ?? DateTime.now;
+    _forgetAnswers();
   }
+}
+
+final class _PooledAnswer {
+  _PooledAnswer(this.at);
+
+  final DateTime at;
+  Timer? limit;
 }
 
 /// The adapter every [AsmApiClient] gets unless it is given its own [Dio]:
@@ -674,11 +743,7 @@ final class AsmConnectionRouter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) {
     if (pooled && AsmConnectionPool.isRetryable(options)) {
-      return AsmConnectionPool._shared.fetch(
-        options,
-        requestStream,
-        cancelFuture,
-      );
+      return AsmConnectionPool._fetch(options, requestStream, cancelFuture);
     }
     options.persistentConnection = false;
     return _ownConnections.fetch(options, requestStream, cancelFuture);

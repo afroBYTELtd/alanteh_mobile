@@ -130,6 +130,80 @@ void main() {
     },
   );
 
+  // dart:io closes an idle connection with a timer, and timers do not run
+  // while the app is suspended. A fake wall clock moved on while no real
+  // time passes is that case: the timers have not fired, the clock says
+  // the connection is old. (Seen 24 Oct: a trip screen took 5-44 s to
+  // update after the driver app came back to the front.)
+  group('after the app was suspended', () {
+    late DateTime wall;
+
+    setUp(() {
+      wall = DateTime.utc(2026, 10, 24, 14, 48);
+      AsmConnectionPool.resetForTesting(now: () => wall);
+    });
+
+    test('19 s later by the wall clock: the connection is reused', () async {
+      final api = client();
+      await api.get<Object?>('/ok');
+      wall = wall.add(const Duration(seconds: 19));
+      await api.get<Object?>('/ok');
+
+      expect(server.ports.toSet(), hasLength(1));
+    });
+
+    test('21 s later by the wall clock, its idle timer never run: a new '
+        'connection', () async {
+      final api = client();
+      await api.get<Object?>('/ok');
+      wall = wall.add(const Duration(seconds: 21));
+      final response = await api.get<Object?>('/ok');
+
+      expect(response.isSuccess, isTrue);
+      expect(server.ports.toSet(), hasLength(2));
+    });
+
+    test('the clock set backwards: a new connection', () async {
+      final api = client();
+      await api.get<Object?>('/ok');
+      wall = wall.subtract(const Duration(minutes: 5));
+      await api.get<Object?>('/ok');
+
+      expect(server.ports.toSet(), hasLength(2));
+    });
+
+    test('the limit is the named 20 s', () async {
+      final api = client();
+      await api.get<Object?>('/ok');
+      wall = wall.add(AsmConnectionPool.idleTimeout);
+      await api.get<Object?>('/ok');
+      wall = wall.add(
+        AsmConnectionPool.idleTimeout + const Duration(milliseconds: 1),
+      );
+      await api.get<Object?>('/ok');
+
+      expect(server.ports, hasLength(3));
+      expect(server.ports.toSet(), hasLength(2));
+    });
+  });
+
+  test('awake, an answer whose limit has passed is forgotten: a connection '
+      'used since is still reused', () async {
+    AsmConnectionPool.resetForTesting(
+      idleTimeout: const Duration(milliseconds: 600),
+    );
+    final api = client();
+    await api.get<Object?>('/ok');
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    await api.get<Object?>('/ok');
+    // The first answer is now older than the limit, but its timer has run;
+    // the connection was used since, 300 ms ago.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await api.get<Object?>('/ok');
+
+    expect(server.ports.toSet(), hasLength(1));
+  });
+
   group('requests that cannot be retried', () {
     test('a keyless POST never uses a pooled connection', () async {
       final api = client();
