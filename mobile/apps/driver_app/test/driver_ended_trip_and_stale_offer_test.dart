@@ -164,7 +164,7 @@ void main() {
       await deliver([_offer()]);
 
       expect(store.isFresh, isTrue);
-      expect(store.listedFresh(_ref), isTrue);
+      expect(store.offerFor(_ref), isNotNull);
     });
 
     test('stale once older than one poll and a bit', () async {
@@ -177,7 +177,6 @@ void main() {
       clock.value += const Duration(seconds: 1);
       wall = wall.add(const Duration(seconds: 1));
       expect(store.isFresh, isFalse);
-      expect(store.listedFresh(_ref), isFalse);
       // Still listed: the card keeps what it shows until a fetch answers.
       expect(store.offerFor(_ref), isNotNull);
     });
@@ -208,17 +207,45 @@ void main() {
       await refreshing;
 
       expect(store.isFresh, isFalse);
-      expect(store.listedFresh(_ref), isFalse);
     });
 
-    test('a pushed or tapped offer opens only from a fresh listing', () async {
+    test(
+      'a pushed or tapped offer: the list the fetch brings decides',
+      () async {
+        final offers = DriverOfferCoordinator(store: store);
+        await deliver([_offer()]);
+        wall = wall.add(const Duration(minutes: 35));
+
+        var opening = offers.fetchThenCanOpen(_ref);
+        source.complete(<String, Object?>{
+          'server_time': '2026-10-23T01:57:00+00:00',
+          'offers': <Object?>[],
+        });
+        expect(await opening, isFalse, reason: 'a current list says it ended');
+
+        opening = offers.fetchThenCanOpen(_ref);
+        source.complete(<String, Object?>{
+          'server_time': '2026-10-23T01:57:05+00:00',
+          'offers': [_offer()],
+        });
+        expect(await opening, isTrue);
+        offers.dispose();
+      },
+    );
+
+    test('a pushed or tapped offer: a failed fetch falls back to the list '
+        'held before', () async {
       final offers = DriverOfferCoordinator(store: store);
       await deliver([_offer()]);
-      expect(offers.canOpen(_ref), isTrue);
-      expect(offers.canOpen('TRIP-OTHER'), isFalse);
-
       wall = wall.add(const Duration(minutes: 35));
-      expect(offers.canOpen(_ref), isFalse);
+
+      var opening = offers.fetchThenCanOpen(_ref);
+      source.fail();
+      expect(await opening, isTrue);
+
+      opening = offers.fetchThenCanOpen('TRIP-OTHER');
+      source.fail();
+      expect(await opening, isFalse, reason: 'nothing to open it from');
       offers.dispose();
     });
   });
@@ -304,6 +331,36 @@ void main() {
         'offers': [_offer(staff: true)],
       });
       await tester.pump();
+      await tester.pump();
+
+      expect(prepared, [_ref]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('a failed fetch does not block Accept: it prepares from the '
+        'list it has', (tester) async {
+      await tester.runAsync(() => deliver([_offer(staff: true)]));
+      wall = wall.add(const Duration(minutes: 35));
+
+      await showCard(tester);
+      expect(source.calls, 2);
+      source.fail();
+      await tester.pump();
+      await tester.pump();
+
+      expect(prepared, [_ref]);
+      expect(find.byKey(const Key('offer-card-details-failed')), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('a slow fetch holds Accept back at most 5 s', (tester) async {
+      await tester.runAsync(() => deliver([_offer(staff: true)]));
+      wall = wall.add(const Duration(minutes: 35));
+
+      await showCard(tester);
+      await tester.pump(const Duration(seconds: 4));
+      expect(prepared, isEmpty);
+      await tester.pump(const Duration(seconds: 1));
       await tester.pump();
 
       expect(prepared, [_ref]);

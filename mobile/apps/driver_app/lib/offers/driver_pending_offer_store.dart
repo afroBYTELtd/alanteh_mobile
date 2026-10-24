@@ -19,6 +19,10 @@ abstract final class DriverOfferCardTiming {
   /// nothing new is prepared or opened from it.
   static const listingFreshFor = Duration(seconds: 20);
 
+  /// How long a pushed or tapped offer, or a card shown from an old list,
+  /// waits for a fetch before it goes ahead with the list it has.
+  static const staleListWait = Duration(seconds: 5);
+
   /// Offer fetch: one try of at most 5 s, and one more after 1 s.
   static const fetchConnectTimeout = Duration(seconds: 4);
   static const fetchRequestTimeout = Duration(seconds: 5);
@@ -214,11 +218,6 @@ final class DriverPendingOfferStore extends ChangeNotifier {
     return clock.now - current.receivedAt <= limit &&
         _wallClock().difference(receivedAtWall) <= limit;
   }
-
-  /// The offer is listed, and the list is current: safe to prepare an
-  /// answer for it or to open it from a push.
-  bool listedFresh(String tripReference) =>
-      isFresh && offerFor(tripReference) != null;
 
   final DriverPendingOffersSource source;
   final DriverMonotonicClock clock;
