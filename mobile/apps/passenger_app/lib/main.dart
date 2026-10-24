@@ -337,6 +337,10 @@ class PassengerLoginShell extends StatefulWidget {
 
 class _PassengerLoginShellState extends State<PassengerLoginShell> {
   final _formKey = GlobalKey<FormState>();
+
+  /// A tracking screen a push opened sits above the shell; its "Book again"
+  /// opens the shell's booking form.
+  final _shellKey = GlobalKey<PassengerShellState>();
   final _phoneController = TextEditingController();
   final _pinController = TextEditingController();
 
@@ -633,6 +637,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
         cancellationGateway: widget.cancellationGateway,
         phoneNumber: _passengerPhoneNumber,
         onSignInRequired: _returnToSignIn,
+        onBookAgain: (record) => _shellKey.currentState?.openBookAgain(record),
       ),
     );
   }
@@ -915,6 +920,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
 
     if (_localQaOpened || _signedIn) {
       final shell = PassengerShell(
+        key: _shellKey,
         configuration: widget.configuration,
         localQaEnabled: widget.configuration.localQaEnabled,
         rideRequestSubmitter: _rideRequestSubmitter,
