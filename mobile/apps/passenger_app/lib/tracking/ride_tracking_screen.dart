@@ -2,6 +2,7 @@ import '../booking/scheduled_pickup.dart';
 import 'dart:async';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -66,6 +67,7 @@ class RideTrackingScreen extends StatefulWidget {
     this.onBookAgain,
     this.passengerName,
     this.supportMessageSubmitter,
+    this.signInEndsSoon,
     super.key,
   });
 
@@ -94,6 +96,10 @@ class RideTrackingScreen extends StatefulWidget {
   final String? passengerName;
   final PassengerSupportMessageSubmitter? supportMessageSubmitter;
 
+  /// Right after a booking: true when the sign-in ends soon, shown as a
+  /// banner with "Sign in again". The booking never waits for it.
+  final Future<bool>? signInEndsSoon;
+
   @override
   State<RideTrackingScreen> createState() => _RideTrackingScreenState();
 }
@@ -108,6 +114,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
   bool _reconnecting = false;
   double _bottomSheetHeight = 0;
   bool _cancelling = false;
+  bool _signInEndsSoonShown = false;
 
   /// "Still cancelling — the connection is slow."
   bool _cancelSlow = false;
@@ -133,6 +140,11 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     super.initState();
     _record = widget.initialRecord;
     _load();
+    widget.signInEndsSoon?.then((soon) {
+      if (soon && mounted) {
+        setState(() => _signInEndsSoonShown = true);
+      }
+    }, onError: (Object _) {});
   }
 
   @override
@@ -789,6 +801,35 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screen = _buildScreen(context);
+    if (!_signInEndsSoonShown) {
+      return screen;
+    }
+    // Above every state of the screen (loading, offline, refused, the map).
+    return Material(
+      color: AsmColors.passengerSurface,
+      child: Column(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: _SignInEndsSoonBanner(
+              onSignIn: widget.onSignInRequired,
+              onClose: () => setState(() => _signInEndsSoonShown = false),
+            ),
+          ),
+          Expanded(
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: screen,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context) {
     if (_loading && _record == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -1720,6 +1761,40 @@ class _PassengerCancellationReasonSheetState
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SignInEndsSoonBanner extends StatelessWidget {
+  const _SignInEndsSoonBanner({required this.onSignIn, required this.onClose});
+
+  final VoidCallback? onSignIn;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        key: const Key('tracking-sign-in-ends-soon'),
+        children: [
+          const Icon(Icons.lock_clock_outlined),
+          const SizedBox(width: AsmSpacing.space12),
+          const Expanded(child: Text(authSignInEndsSoonMessage)),
+          if (onSignIn != null)
+            TextButton(
+              key: const Key('tracking-sign-in-again'),
+              onPressed: onSignIn,
+              child: const Text('Sign in again'),
+            ),
+          IconButton(
+            key: const Key('tracking-sign-in-ends-soon-close'),
+            tooltip: 'Close',
+            onPressed: onClose,
+            icon: const Icon(Icons.close),
+          ),
+        ],
       ),
     );
   }
