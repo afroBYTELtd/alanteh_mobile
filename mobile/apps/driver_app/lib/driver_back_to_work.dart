@@ -6,8 +6,17 @@ abstract final class DriverBackToWork {
   /// Set by the driver shell while it is shown.
   static VoidCallback? selectWorkTab;
 
+  /// Set by the driver shell while it is shown.
+  static VoidCallback? selectTripsTab;
+
   static void go(BuildContext context) {
     Navigator.of(context).popUntil((route) => route.isFirst);
     selectWorkTab?.call();
+  }
+
+  /// The same, to the Trips tab ("My Assigned Trips").
+  static void goToAssignedTrips(BuildContext context) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    selectTripsTab?.call();
   }
 }

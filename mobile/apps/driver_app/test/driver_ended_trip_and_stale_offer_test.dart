@@ -287,7 +287,7 @@ void main() {
                 tripReference: _ref,
                 store: store,
                 controllerFactory: _recordingFactory(prepared),
-                pickDeclineReason: (_) async => null,
+                pickDeclineReason: (_, _) async => null,
               ),
             ),
           ),

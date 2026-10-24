@@ -147,6 +147,7 @@ class _DriverShellState extends State<DriverShell> {
   void initState() {
     super.initState();
     DriverBackToWork.selectWorkTab = _selectWorkTab;
+    DriverBackToWork.selectTripsTab = _openAssignedTrips;
 
     _startupGateDiag(
       'shell_init '
@@ -246,6 +247,9 @@ class _DriverShellState extends State<DriverShell> {
   void dispose() {
     if (DriverBackToWork.selectWorkTab == _selectWorkTab) {
       DriverBackToWork.selectWorkTab = null;
+    }
+    if (DriverBackToWork.selectTripsTab == _openAssignedTrips) {
+      DriverBackToWork.selectTripsTab = null;
     }
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
@@ -769,8 +773,15 @@ class _DriverShellState extends State<DriverShell> {
       }
 
       if (!refreshed.isOnline) {
+        // The server answered: show Work as it is, offline, with the shift
+        // check saved and Go online.
         final oldDutyLoading = _dutyLoading;
         setState(() {
+          _dutySummary = refreshed;
+          _startupGateDiagDutySummary(
+            _dutySummary,
+            reason: 'confirm_online_server_not_online',
+          );
           _dutyLoading = false;
           _startupGateDiagBoolTransition(
             field: 'duty_loading',
@@ -778,10 +789,7 @@ class _DriverShellState extends State<DriverShell> {
             newValue: _dutyLoading,
             reason: 'confirm_online_server_not_online',
           );
-          _dutyError = const DriverDutyApiException(
-            DriverDutyApiFailureType.badResponse,
-            'Driver online status could not be confirmed.',
-          );
+          _dutyError = null;
           _confirmingShiftCheck = false;
         });
         return;
@@ -829,7 +837,7 @@ class _DriverShellState extends State<DriverShell> {
           newValue: _dutyLoading,
           reason: 'confirm_online_failure',
         );
-        _dutyError = error;
+        _dutyError = _OnlineNotConfirmed(error);
         _confirmingShiftCheck = false;
       });
     }
@@ -961,7 +969,15 @@ class _DriverShellState extends State<DriverShell> {
     }
 
     if (_dutyError != null && widget.driverDutyGateway != null) {
-      return DriverOfflineState(onRetry: _loadDuty);
+      return _dutyError is _OnlineNotConfirmed
+          ? DriverOfflineState(
+              onRetry: _loadDuty,
+              title: "Couldn't confirm you're online",
+              message:
+                  'Your shift check is saved. Check your connection and tap '
+                  'Retry.',
+            )
+          : DriverOfflineState(onRetry: _loadDuty);
     }
 
     if (_startupShiftCheckNavigationPending ||
@@ -1070,25 +1086,62 @@ class _DriverShellState extends State<DriverShell> {
   }
 }
 
-class _DriverShiftCheckConfirmingState extends StatelessWidget {
+/// After a shift check, the duty check failed: the check itself is saved.
+final class _OnlineNotConfirmed {
+  const _OnlineNotConfirmed(this.cause);
+
+  final Object cause;
+}
+
+/// "Going online…" adds "Still trying…" after this long. The duty check
+/// can take about 74 s (4 tries of 15 s and the waits) before its error.
+const driverGoingOnlineStillTryingAfter = Duration(seconds: 15);
+
+class _DriverShiftCheckConfirmingState extends StatefulWidget {
   const _DriverShiftCheckConfirmingState();
 
   @override
+  State<_DriverShiftCheckConfirmingState> createState() =>
+      _DriverShiftCheckConfirmingStateState();
+}
+
+class _DriverShiftCheckConfirmingStateState
+    extends State<_DriverShiftCheckConfirmingState> {
+  Timer? _timer;
+  bool _stillTrying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(driverGoingOnlineStillTryingAfter, () {
+      if (mounted) {
+        setState(() => _stillTrying = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const AsmScreenSurface(
-      key: Key('driver-shift-check-confirming'),
+    return AsmScreenSurface(
+      key: const Key('driver-shift-check-confirming'),
       expandToViewport: true,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
+            const Text(
               'Shift check submitted.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
             ),
-            SizedBox(height: AsmSpacing.space8),
-            Text(
+            const SizedBox(height: AsmSpacing.space8),
+            const Text(
               'Going online…',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -1096,8 +1149,17 @@ class _DriverShiftCheckConfirmingState extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            SizedBox(height: AsmSpacing.space16),
-            CircularProgressIndicator(),
+            const SizedBox(height: AsmSpacing.space16),
+            const CircularProgressIndicator(),
+            if (_stillTrying) ...[
+              const SizedBox(height: AsmSpacing.space12),
+              const Text(
+                'Still trying…',
+                key: Key('driver-going-online-still-trying'),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AsmColors.driverTextSecondary),
+              ),
+            ],
           ],
         ),
       ),

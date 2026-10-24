@@ -139,9 +139,18 @@ class DriverWaitingForOfferPanel extends StatelessWidget {
 }
 
 class DriverOfflineState extends StatelessWidget {
-  const DriverOfflineState({required this.onRetry, super.key});
+  const DriverOfflineState({
+    required this.onRetry,
+    this.title = 'You’re offline',
+    this.message =
+        "Check your connection. You can't receive ride offers "
+        'or update your shift status while offline.',
+    super.key,
+  });
 
   final VoidCallback onRetry;
+  final String title;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -170,21 +179,20 @@ class DriverOfflineState extends StatelessWidget {
                     color: AsmColors.driverWarningSurface,
                   ),
                   const SizedBox(height: AsmSpacing.space16),
-                  const Text(
-                    'You’re offline',
+                  Text(
+                    title,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 28,
                       height: 1.1,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: AsmSpacing.space12),
-                  const Text(
-                    "Check your connection. You can't receive ride offers "
-                    'or update your shift status while offline.',
+                  Text(
+                    message,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: AsmColors.driverTextSecondary,
                       height: 1.45,
                     ),

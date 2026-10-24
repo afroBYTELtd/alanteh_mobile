@@ -278,18 +278,19 @@ class _DriverDutyStatusCard extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    if (isOnline || !shiftCheckCompletedToday) ...[
-                      const SizedBox(height: AsmSpacing.space4),
-                      Text(
-                        isOnline
-                            ? 'Ready to receive nearby ride offers.'
-                            : 'Complete your pre-shift check to go online.',
-                        style: const TextStyle(
-                          color: AsmColors.driverTextSecondary,
-                          height: 1.35,
-                        ),
+                    const SizedBox(height: AsmSpacing.space4),
+                    Text(
+                      isOnline
+                          ? 'Ready to receive nearby ride offers.'
+                          : shiftCheckCompletedToday
+                          ? "Today's shift check is already saved. Tap Go "
+                                'online to start getting trips.'
+                          : 'Complete your pre-shift check to go online.',
+                      style: const TextStyle(
+                        color: AsmColors.driverTextSecondary,
+                        height: 1.35,
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),

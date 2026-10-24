@@ -2315,13 +2315,16 @@ final class DriverDeclineChoice {
 }
 
 /// The decline-reason sheet the trip detail uses; the offer card shares it.
+/// When [offerEnded] turns true the sheet says "Offer ended" instead, and
+/// sends nothing.
 Future<DriverDeclineChoice?> showDriverDeclineReasonSheet(
-  BuildContext context,
-) async {
+  BuildContext context, [
+  ValueListenable<bool>? offerEnded,
+]) async {
   final selection = await showModalBottomSheet<_DriverDeclineSelection>(
     context: context,
     isScrollControlled: true,
-    builder: (context) => const _DriverDeclineReasonSheet(),
+    builder: (context) => _DriverDeclineReasonSheet(offerEnded: offerEnded),
   );
   return selection == null
       ? null
@@ -2332,7 +2335,9 @@ Future<DriverDeclineChoice?> showDriverDeclineReasonSheet(
 }
 
 class _DriverDeclineReasonSheet extends StatefulWidget {
-  const _DriverDeclineReasonSheet();
+  const _DriverDeclineReasonSheet({this.offerEnded});
+
+  final ValueListenable<bool>? offerEnded;
 
   @override
   State<_DriverDeclineReasonSheet> createState() =>
@@ -2360,6 +2365,18 @@ class _DriverDeclineReasonSheetState
 
   @override
   Widget build(BuildContext context) {
+    final offerEnded = widget.offerEnded;
+    if (offerEnded == null) {
+      return _reasons(context);
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: offerEnded,
+      builder: (context, ended, _) =>
+          ended ? const _DriverDeclineOfferEnded() : _reasons(context),
+    );
+  }
+
+  Widget _reasons(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -2451,6 +2468,45 @@ class _DriverDeclineReasonSheetState
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The offer ended while the driver was choosing a reason.
+class _DriverDeclineOfferEnded extends StatelessWidget {
+  const _DriverDeclineOfferEnded();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(AsmSpacing.space20),
+        child: Column(
+          key: const Key('driver-decline-offer-ended'),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Offer ended',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: AsmSpacing.space8),
+            const Text(
+              'This offer is no longer waiting for you. Nothing was sent.',
+            ),
+            const SizedBox(height: AsmSpacing.space16),
+            FilledButton(
+              key: const Key('driver-decline-offer-ended-ok'),
+              onPressed: () => Navigator.of(context).pop(),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       ),
     );
