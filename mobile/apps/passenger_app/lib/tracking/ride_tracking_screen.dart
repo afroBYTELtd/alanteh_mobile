@@ -756,8 +756,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     );
   }
 
-  /// A request staff rejected is final - it can never become a trip - so
-  /// booking again cannot duplicate it.
+  /// A request staff rejected, or a cancelled trip, is final, so booking
+  /// again cannot duplicate it.
   void _bookAgain(PassengerRideRequestRecord record) {
     final navigator = Navigator.of(context);
     // Close this screen first, synchronously, so the new booking opens in
@@ -1186,7 +1186,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       const SizedBox(height: 18),
                       FilledButton(
                         key: const Key('cancelled-by-operations-book-again'),
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed: () => _bookAgain(record),
                         child: const Text('Book again'),
                       ),
                     ] else if (record.passengerState ==
@@ -1194,7 +1194,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                       const SizedBox(height: 18),
                       FilledButton(
                         key: const Key('cancelled-by-passenger-book-again'),
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        onPressed: () => _bookAgain(record),
                         child: const Text('Book again'),
                       ),
                     ] else if (widget.cancellationGateway != null &&

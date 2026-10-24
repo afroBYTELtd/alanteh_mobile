@@ -87,10 +87,10 @@ class PassengerShell extends StatefulWidget {
   final PassengerHomeLocationPermissionService homeLocationPermissionService;
 
   @override
-  State<PassengerShell> createState() => _PassengerShellState();
+  State<PassengerShell> createState() => PassengerShellState();
 }
 
-class _PassengerShellState extends State<PassengerShell> {
+class PassengerShellState extends State<PassengerShell> {
   int _selectedIndex = 0;
   String? _pickupDescription;
   String? _destinationDescription;
@@ -336,6 +336,11 @@ class _PassengerShellState extends State<PassengerShell> {
       }
     }
   }
+
+  /// The booking form, pre-filled from [record]. Also used by a tracking
+  /// screen a push opened, which sits above the shell.
+  Future<void> openBookAgain(PassengerRideRequestRecord record) =>
+      _openBookAgain(record);
 
   Future<void> _openBookAgain(PassengerRideRequestRecord record) async {
     await Navigator.of(context).push<bool>(

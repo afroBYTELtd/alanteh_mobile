@@ -36,6 +36,7 @@ Widget buildPassengerPushTripDestination({
   PassengerCancellationGateway? cancellationGateway,
   String? phoneNumber,
   VoidCallback? onSignInRequired,
+  ValueChanged<PassengerRideRequestRecord>? onBookAgain,
 }) {
   return RideTrackingScreen(
     repository: repository,
@@ -49,6 +50,7 @@ Widget buildPassengerPushTripDestination({
     cancellationGateway: cancellationGateway,
     phoneNumber: phoneNumber,
     onSignInRequired: onSignInRequired,
+    onBookAgain: onBookAgain,
   );
 }
 
