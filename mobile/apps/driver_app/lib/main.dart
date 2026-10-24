@@ -26,6 +26,7 @@ import 'notifications/trip_offer_channel.dart';
 import 'notifications/trip_offer_notifications_warning.dart';
 import 'offers/driver_offer_card_wiring.dart';
 import 'offers/driver_offer_coordinator.dart';
+import 'offers/driver_offer_layer.dart';
 import 'offers/driver_pending_offer_store.dart';
 import 'offers/driver_pending_offers_panel.dart';
 import 'readiness/driver_shift_check_submission.dart';
@@ -602,6 +603,8 @@ class DriverApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'ALANTEH Driver',
       theme: AsmThemes.driver,
+      navigatorKey: driverNavigatorKey,
+      navigatorObservers: [driverOfferRoutes],
       builder: (context, child) {
         final content = enableNetworkResilience
             ? GhanaNetworkStatusBanner(
@@ -614,13 +617,23 @@ class DriverApp extends StatelessWidget {
 
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: AsmSystemChrome.driver,
-          child: content,
+          child: DriverOfferLayer(
+            navigatorKey: driverNavigatorKey,
+            routeCounter: driverOfferRoutes,
+            child: content,
+          ),
         );
       },
       home: showSplash ? DriverSplashGate(child: home) : home,
     );
   }
 }
+
+/// The driver app's navigator, for the offer card that sits above it.
+final driverNavigatorKey = GlobalKey<NavigatorState>();
+
+/// Where the offer card goes: over the tabs or over a pushed screen.
+final driverOfferRoutes = DriverOfferRouteObserver();
 
 class DriverLoginShell extends StatefulWidget {
   const DriverLoginShell({
@@ -781,6 +794,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return;
     }
     _offerScreenOpen = true;
+    _offerLayer?.offerScreenOpen = true;
     try {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
@@ -800,6 +814,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       );
     } finally {
       _offerScreenOpen = false;
+      _offerLayer?.offerScreenOpen = false;
     }
   }
 
@@ -1077,6 +1092,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     }
     _lifecycle?.dispose();
     _offers?.dispose();
+    final layer = _offerLayer;
+    if (layer != null && _layerSource != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (layer.mounted) {
+          layer.source = null;
+        }
+      });
+    }
     // Tear-offs of the same method on the same object are equal.
     if (DriverSessionEnd.signIn == _signInAgain) {
       DriverSessionEnd.signIn = null;
@@ -1247,6 +1270,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
   @override
   Widget build(BuildContext context) {
+    _syncOfferLayer();
     final content = _buildContent(context);
     final listens =
         _pushDeviceRegistrar != null || widget.pushMessageSource != null;
@@ -1265,6 +1289,9 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     );
   }
 
+  /// Work's offers area. The card itself is the app-wide one
+  /// ([DriverOfferLayer]); Work says "Waiting for offers" while there is
+  /// none.
   Widget? _pendingOffersPanel(Widget waitingPanel) {
     final offers = _offers;
     final factory = _offerCardFactory;
@@ -1274,15 +1301,50 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     return Column(
       children: [
         const TripOfferNotificationsWarning(),
-        DriverPendingOffersPanel(
-          coordinator: offers,
-          controllerFactory: factory,
-          waitingPanel: waitingPanel,
-          pickupTimeLookup: _offerPickupTimeLookup,
-          onAccepted: _openTripDetail,
+        ListenableBuilder(
+          listenable: offers.store,
+          builder: (context, _) => offers.store.firstOffer == null
+              ? waitingPanel
+              : const SizedBox.shrink(),
         ),
       ],
     );
+  }
+
+  /// Kept from [didChangeDependencies]: dispose may not look it up.
+  DriverOfferLayerState? _offerLayer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _offerLayer = DriverOfferLayer.maybeOf(context);
+  }
+
+  /// What the app-wide card shows: this driver's offers while signed in.
+  DriverOfferLayerSource? _layerSource;
+
+  void _syncOfferLayer() {
+    final offers = _offers;
+    final factory = _offerCardFactory;
+    final wanted = offers == null || factory == null || !_signedIn
+        ? null
+        : DriverOfferLayerSource(
+            coordinator: offers,
+            controllerFactory: factory,
+            pickupTimeLookup: _offerPickupTimeLookup,
+            onAccepted: _openTripDetail,
+          );
+    final changed = (wanted == null) != (_layerSource == null);
+    if (!changed) {
+      return;
+    }
+    _layerSource = wanted;
+    // Not during this build: the layer is above it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _offerLayer?.source = _layerSource;
+      }
+    });
   }
 
   Widget _buildContent(BuildContext context) {

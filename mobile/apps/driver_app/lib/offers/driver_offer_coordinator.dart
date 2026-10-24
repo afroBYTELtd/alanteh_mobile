@@ -63,6 +63,11 @@ final class DriverOfferCoordinator {
     }
     _foreground = foreground;
     _reschedule(fetchNow: foreground);
+    // Back in front with a card open: its offer may have ended while the
+    // app was away, and the poll is paused for the card, so ask at once.
+    if (foreground && _onDuty && _openCards > 0) {
+      unawaited(store.refresh());
+    }
   }
 
   /// An offer card opened or closed (the poll pauses while one is open).
