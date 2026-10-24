@@ -78,6 +78,22 @@ final class DriverOfferCoordinator {
     _reschedule(fetchNow: false);
   }
 
+  /// Fetches, then says whether a pushed or tapped offer opens its card. A
+  /// list the fetch brings decides. If the fetch fails, or takes longer than
+  /// [DriverOfferCardTiming.staleListWait], the list held before decides, as
+  /// it always did: an automatic offer lives 45 s, so a card dropped for a
+  /// slow network is a lost ride. With nothing held to open from, it waits
+  /// for the fetch to finish.
+  Future<bool> fetchThenCanOpen(String tripReference) async {
+    var fetched = false;
+    final fetch = store.refresh().whenComplete(() => fetched = true);
+    await fetch.timeout(DriverOfferCardTiming.staleListWait, onTimeout: () {});
+    if (!fetched && store.offerFor(tripReference) == null) {
+      await fetch;
+    }
+    return store.offerFor(tripReference) != null;
+  }
+
   /// An offer push arrived.
   Future<void> offerPushed() => store.refresh();
 

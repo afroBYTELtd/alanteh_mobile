@@ -836,11 +836,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (tap == null || offers == null) {
       return;
     }
-    await offers.store.refresh();
+    final listed = await offers.fetchThenCanOpen(tap.tripReference);
     if (!mounted || !_signedIn) {
       return;
     }
-    if (offers.store.offerFor(tap.tripReference) != null) {
+    if (listed) {
       await _openOfferScreen(tap.tripReference);
     }
   }
@@ -874,14 +874,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (!_signedIn) {
       return true;
     }
-    await offers.offerPushed();
+    final listed = await offers.fetchThenCanOpen(intent.tripReference);
     if (!mounted || !_signedIn) {
       return true;
     }
     if (_offerScreenOpen) {
       return true;
     }
-    if (offers.store.offerFor(intent.tripReference) == null) {
+    if (!listed) {
       return false;
     }
     unawaited(_openOfferScreen(intent.tripReference));

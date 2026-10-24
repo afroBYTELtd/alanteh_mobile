@@ -422,6 +422,149 @@ void main() {
     });
   });
 
+  // An automatic offer lives 45 s: a pushed or tapped offer is never dropped
+  // because the list held was old. A fetch decides; if it fails, or takes
+  // more than 5 s, the list held before decides, as it always did.
+  group('a tap that opened the app, with an old list held', () {
+    Future<_App> withOldList(WidgetTester tester) async {
+      final app = _App(initial: _offerMessage('TRIP-1'))
+        ..source.offers = [_offer('TRIP-1')];
+      await app.coordinator.store.refresh();
+      app.clock.value += const Duration(seconds: 30);
+      expect(app.coordinator.store.isFresh, isFalse);
+      return app;
+    }
+
+    testWidgets('the fetch still lists the offer: the card opens', (
+      tester,
+    ) async {
+      final app = await withOldList(tester);
+      await app.pumpRestoring(tester);
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('the fetch fails: the card opens from the old list', (
+      tester,
+    ) async {
+      final app = await withOldList(tester);
+      app.source.failAll = true;
+      await app.pumpRestoring(tester);
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('the fetch is slow: the card opens from the old list after '
+        '5 s', (tester) async {
+      final app = await withOldList(tester);
+      app.source.hold = true;
+      await app.pumpRestoring(tester);
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+
+      await tester.pump(const Duration(seconds: 4));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      app.source.release([_offer('TRIP-1')]);
+      await _settle(tester);
+      await app.dispose(tester);
+    });
+
+    testWidgets('a current list without the offer: no card', (tester) async {
+      final app = await withOldList(tester);
+      app.source.offers = [];
+      await app.pumpRestoring(tester);
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+      await app.dispose(tester);
+    });
+  });
+
+  group('a push while the app is open, with an old list held', () {
+    Future<_App> withOldList(WidgetTester tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      app.source.offers = [_offer('TRIP-1')];
+      await app.coordinator.store.refresh();
+      await _settle(tester);
+      app.clock.value += const Duration(seconds: 30);
+      expect(app.coordinator.store.isFresh, isFalse);
+      return app;
+    }
+
+    testWidgets('the fetch still lists the offer: the card opens', (
+      tester,
+    ) async {
+      final app = await withOldList(tester);
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('the fetch fails: the card opens from the old list', (
+      tester,
+    ) async {
+      final app = await withOldList(tester);
+      app.source.failAll = true;
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('the fetch is slow: the card opens from the old list after '
+        '5 s', (tester) async {
+      final app = await withOldList(tester);
+      app.source.hold = true;
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+      await tester.pump(const Duration(seconds: 4));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      app.source.release([_offer('TRIP-1')]);
+      await _settle(tester);
+      await app.dispose(tester);
+    });
+
+    testWidgets('a current list without the offer: the snackbar, no card', (
+      tester,
+    ) async {
+      final app = await withOldList(tester);
+      app.source.offers = [];
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsNothing);
+      expect(find.byKey(const Key('push-snackbar-open')), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('nothing held to open from: it waits for the slow fetch', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      app.source.hold = true;
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await tester.pump(const Duration(seconds: 7));
+      app.source.release([_offer('TRIP-1')]);
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      await app.dispose(tester);
+    });
+  });
+
   testWidgets('polls only while on duty; sign-out stops it', (tester) async {
     final app = _App();
     await app.pumpSignedIn(tester);
@@ -577,9 +720,15 @@ final class _Source implements DriverPendingOffersSource {
   /// The next request fails as if there were no network.
   bool failNext = false;
 
+  /// Every request fails as if there were no network.
+  bool failAll = false;
+
   @override
   Future<DriverPendingOffersFetch> fetch() {
     calls += 1;
+    if (failAll) {
+      return Future.value(const DriverPendingOffersUnavailable());
+    }
     if (failNext) {
       failNext = false;
       return Future.value(const DriverPendingOffersUnavailable());
