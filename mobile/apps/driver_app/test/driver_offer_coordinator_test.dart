@@ -56,6 +56,34 @@ void main() {
       expect(source.calls, before + 1, reason: 'resume fetches at once');
     });
 
+    // B5: a card left open while the app was away may show an offer that
+    // ended meanwhile; the poll is paused for it, so ask at once.
+    test('back in front: fetches at once even with a card open', () async {
+      coordinator
+        ..setForeground(true)
+        ..setOnDuty(true)
+        ..cardOpened();
+      await pumpEventQueue();
+      coordinator.setForeground(false);
+      final before = source.calls;
+
+      coordinator.setForeground(true);
+      await pumpEventQueue();
+
+      expect(source.calls, before + 1);
+      expect(coordinator.polling, isFalse, reason: 'paused for the card');
+    });
+
+    test('returning to the front off duty fetches nothing', () async {
+      coordinator.setForeground(false);
+      final before = source.calls;
+
+      coordinator.setForeground(true);
+      await pumpEventQueue();
+
+      expect(source.calls, before);
+    });
+
     test('pauses while a card is open', () async {
       coordinator
         ..setForeground(true)

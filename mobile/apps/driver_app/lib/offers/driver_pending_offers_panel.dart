@@ -1,6 +1,8 @@
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
+import '../driver_back_to_work.dart';
+import '../driver_duty_trips.dart';
 import '../network/driver_offer_response_resilience.dart';
 import 'driver_offer_coordinator.dart';
 import 'driver_pending_offer_card.dart';
@@ -16,6 +18,8 @@ class DriverPendingOffersPanel extends StatefulWidget {
     required this.waitingPanel,
     this.pickupTimeLookup,
     this.onAccepted,
+    this.pickDeclineReason,
+    this.openAssignedTrips,
     super.key,
   });
 
@@ -24,6 +28,10 @@ class DriverPendingOffersPanel extends StatefulWidget {
   final Widget waitingPanel;
   final DriverOfferPickupTimeLookup? pickupTimeLookup;
   final ValueChanged<String>? onAccepted;
+
+  /// The card's own when null.
+  final DriverDeclineReasonPicker? pickDeclineReason;
+  final void Function(BuildContext context)? openAssignedTrips;
 
   @override
   State<DriverPendingOffersPanel> createState() =>
@@ -88,6 +96,10 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
       store: widget.coordinator.store,
       controllerFactory: widget.controllerFactory,
       pickupTimeLookup: widget.pickupTimeLookup,
+      pickDeclineReason:
+          widget.pickDeclineReason ?? showDriverDeclineReasonSheet,
+      openAssignedTrips:
+          widget.openAssignedTrips ?? DriverBackToWork.goToAssignedTrips,
       onAccepted: widget.onAccepted,
       onEnded: () {
         _ended = identity;

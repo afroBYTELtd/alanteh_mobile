@@ -11,6 +11,7 @@ import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/notifications/push_notification_runtime.dart';
 import 'package:driver_app/offers/driver_offer_coordinator.dart';
 import 'package:driver_app/offers/driver_pending_offer_store.dart';
+import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -565,6 +566,232 @@ void main() {
     });
   });
 
+  // B5: one card for the whole app, on every tab and over any screen the
+  // driver has open. Seen 24 Oct: an offer for TRIP-76C8ADB446D4 ran out
+  // while the driver was on the "Trip completed" screens, where no card
+  // showed.
+  group('one offer card everywhere', () {
+    Future<void> offerArrives(WidgetTester tester, _App app) async {
+      app.source.offers = [
+        _offer('TRIP-1', expiresAt: '2026-10-09T10:01:00+00:00'),
+      ];
+      await app.coordinator.store.refresh();
+      await _settle(tester);
+    }
+
+    Future<void> selectTab(WidgetTester tester, String label) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+      );
+      await _settle(tester);
+    }
+
+    testWidgets('on Work: exactly one card, and no "Waiting for offers"', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await offerArrives(tester, app);
+
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(find.text('Waiting for offers'), findsNothing);
+      await app.dispose(tester);
+    });
+
+    testWidgets('on Trips: the card shows and Accept opens the trip', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await selectTab(tester, 'Trips');
+      await offerArrives(tester, app);
+
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await _settle(tester);
+
+      expect(app.offerGateway.acceptedTrips, ['TRIP-1']);
+      expect(find.byType(DriverTripDetailScreen), findsOneWidget);
+      await app.dispose(tester);
+    });
+
+    testWidgets('on Account: Decline asks for a reason and sends it', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await selectTab(tester, 'Account');
+      await offerArrives(tester, app);
+
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await _settle(tester);
+      expect(find.text('Why are you declining?'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('driver-decline-reason-option-end_of_shift')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('driver-decline-reason-confirm')));
+      await _settle(tester);
+
+      expect(app.offerGateway.declines, 1);
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+      await app.dispose(tester);
+    });
+
+    testWidgets('switching tabs keeps the countdown and "Sending…"', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await offerArrives(tester, app);
+      app.offerGateway.holdAccept = Completer<void>();
+
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await tester.pump();
+      expect(find.text('Sending…'), findsOneWidget);
+      final countdown = tester
+          .widget<Text>(find.byKey(const Key('offer-card-countdown')))
+          .data;
+
+      await selectTab(tester, 'Trips');
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(find.text('Sending…'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('offer-card-countdown'))).data,
+        countdown,
+      );
+      expect(app.offerGateway.accepts, 1, reason: 'not sent twice');
+
+      app.offerGateway.holdAccept!.complete();
+      await _settle(tester);
+      await app.dispose(tester);
+    });
+
+    testWidgets('over the "Trip completed" screen: the card shows and Accept '
+        'works', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      unawaited(
+        Navigator.of(tester.element(find.byType(DriverShell))).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const DriverTripVisualSequencePage(
+              initialStatus: 'completed_pending_review',
+              tripReference: 'TRIP-0',
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(
+        find.text('Trip completed — awaiting operations review'),
+        findsWidgets,
+      );
+
+      await offerArrives(tester, app);
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await _settle(tester);
+
+      expect(app.offerGateway.acceptedTrips, ['TRIP-1']);
+      await app.dispose(tester);
+    });
+
+    testWidgets('on the tabs it sits above the tab bar, clear of the header '
+        '(Sign out, Go offline)', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await offerArrives(tester, app);
+
+      final card = tester.getRect(find.byKey(const Key('offer-card')));
+      final tabs = tester.getRect(find.byType(NavigationBar));
+      final signOut = tester.getRect(find.byKey(const Key('driver-sign-out')));
+      expect(card.bottom, lessThanOrEqualTo(tabs.top));
+      expect(card.top, greaterThan(signOut.bottom));
+      await app.dispose(tester);
+    });
+
+    testWidgets('over a pushed screen it sits at the top, clear of the '
+        'bottom of the screen', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      unawaited(
+        Navigator.of(tester.element(find.byType(DriverShell))).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(
+              body: Align(
+                alignment: Alignment.bottomCenter,
+                child: Text('Emergency 191'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      await offerArrives(tester, app);
+
+      final card = tester.getRect(find.byKey(const Key('offer-card')));
+      final bottomButton = tester.getRect(find.text('Emergency 191'));
+      expect(card.top, lessThan(100));
+      expect(card.bottom, lessThan(bottomButton.top));
+      await app.dispose(tester);
+    });
+
+    testWidgets('while the reason sheet is open the card is hidden, and it '
+        'comes back after "Never mind"', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await offerArrives(tester, app);
+
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await _settle(tester);
+      expect(find.text('Why are you declining?'), findsOneWidget);
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('driver-decline-reason-cancel')));
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(app.offerGateway.declines, 0);
+      await app.dispose(tester);
+    });
+
+    testWidgets('a 409: "My Assigned Trips" on the card opens the Trips tab', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await offerArrives(tester, app);
+      app.offerGateway.acceptError = const DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.conflict,
+        message: driverOfferConflictMessage,
+      );
+
+      await tester.tap(find.byKey(const Key('offer-card-accept')));
+      await _settle(tester);
+      await tester.tap(find.byKey(const Key('offer-card-open-assigned-trips')));
+      await _settle(tester);
+
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1,
+      );
+      await app.dispose(tester);
+    });
+
+    testWidgets('signed out: no card', (tester) async {
+      final app = _App();
+      await app.pumpSignedOut(tester);
+      app.source.offers = [_offer('TRIP-1')];
+      await app.coordinator.store.refresh();
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+      await app.dispose(tester);
+    });
+  });
+
   testWidgets('polls only while on duty; sign-out stops it', (tester) async {
     final app = _App();
     await app.pumpSignedIn(tester);
@@ -853,7 +1080,14 @@ final class _Duty implements DriverDutyGateway {
 
 final class _OfferGateway implements DriverOfferResponseGateway {
   var accepts = 0;
+  var declines = 0;
   final acceptedTrips = <String>[];
+
+  /// When set, Accept waits for it (a slow answer).
+  Completer<void>? holdAccept;
+
+  /// When set, Accept fails with it.
+  DriverOfferResponseException? acceptError;
 
   @override
   Future<DriverOfferResponseReceipt> accept({
@@ -864,6 +1098,11 @@ final class _OfferGateway implements DriverOfferResponseGateway {
   }) async {
     accepts += 1;
     acceptedTrips.add(tripReference);
+    await holdAccept?.future;
+    final error = acceptError;
+    if (error != null) {
+      throw error;
+    }
     return DriverOfferResponseReceipt(
       tripReference: tripReference,
       tripStatus: 'driver_accepted',
@@ -879,11 +1118,14 @@ final class _OfferGateway implements DriverOfferResponseGateway {
     required DriverDeclineReason reason,
     String? reasonNote,
     DriverOfferSubmissionTelemetrySink? telemetrySink,
-  }) async => DriverOfferResponseReceipt(
-    tripReference: tripReference,
-    tripStatus: 'driver_declined',
-    duplicate: false,
-  );
+  }) async {
+    declines += 1;
+    return DriverOfferResponseReceipt(
+      tripReference: tripReference,
+      tripStatus: 'driver_declined',
+      duplicate: false,
+    );
+  }
 }
 
 final class _Queue implements DriverTripActionPersistentQueue {
