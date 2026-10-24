@@ -11,8 +11,11 @@ const driverOfferAcceptanceFailureMessage =
     'Could not confirm acceptance. Check your connection and try again.';
 const driverOfferDeclineFailureMessage =
     'Could not confirm decline. Check your connection and try again.';
+/// A 409: the server already holds a different answer to this offer from
+/// this phone.
 const driverOfferConflictMessage =
-    'There was a conflict with this request. Please contact support.';
+    'This offer was already answered from this phone. Open My Assigned '
+    'Trips to see where it stands.';
 const driverOfferSafeClientFailureMessage =
     'Could not accept this offer. Please review the trip and try again.';
 const driverOfferDeclineSafeClientFailureMessage =

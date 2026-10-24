@@ -5,6 +5,7 @@ import 'package:asm_app_config/asm_app_config.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
+import 'package:driver_app/driver_back_to_work.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/driver_home.dart';
 import 'package:driver_app/driver_shell.dart';
@@ -14,6 +15,10 @@ import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/readiness/driver_shift_check_submission.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+const _shiftCheckSavedGoOnline =
+    "Today's shift check is already saved. Tap Go online to start getting "
+    'trips.';
 
 void main() {
   final now = DateTime(2026, 8, 7, 8);
@@ -382,8 +387,9 @@ void main() {
     await controller.stopAutomaticSync();
   });
 
-  testWidgets('if online cannot be confirmed after a submitted shift check, '
-      'the error shows, not the old offline screen', (tester) async {
+  testWidgets('if the server says offline after a submitted shift check, '
+      'Work says so with Go online, not an error and not the old offline '
+      'screen', (tester) async {
     final dutyGateway = _MutableDutyGateway(
       DriverDutySummary(
         driverReference: 'DRV-001',
@@ -442,7 +448,10 @@ void main() {
     );
     expect(find.byKey(const Key('driver-online-transition')), findsNothing);
     expect(find.text('START SHIFT CHECK'), findsNothing);
-    expect(find.byKey(const Key('driver-offline-screen')), findsOneWidget);
+    expect(find.byKey(const Key('driver-offline-screen')), findsNothing);
+    expect(find.text("You're offline"), findsOneWidget);
+    expect(find.text(_shiftCheckSavedGoOnline), findsOneWidget);
+    expect(find.text('GO ONLINE'), findsOneWidget);
 
     await controller.stopAutomaticSync();
   });
@@ -488,8 +497,156 @@ void main() {
       findsNothing,
     );
     expect(find.byKey(const Key('driver-offline-screen')), findsOneWidget);
+    expect(find.text("Couldn't confirm you're online"), findsOneWidget);
+    expect(
+      find.text(
+        'Your shift check is saved. Check your connection and tap Retry.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('You’re offline'), findsNothing);
+
+    // Retry asks again; the server has the driver online by now.
+    dutyGateway.current = DriverDutySummary(
+      driverReference: 'DRV-001',
+      dutyStatus: 'online',
+      dutySince: now,
+      shiftCheckToday: true,
+    );
+    await tester.tap(find.byKey(const Key('driver-offline-retry')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('driver-offline-screen')), findsNothing);
+    expect(find.text("You're online"), findsOneWidget);
 
     await controller.stopAutomaticSync();
+  });
+
+  testWidgets('"Going online…" says "Still trying…" once the duty check has '
+      'taken 15 s', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'online',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _SuccessfulShiftCheckGateway(
+        onSubmit: () {
+          dutyGateway.current = DriverDutySummary(
+            driverReference: 'DRV-001',
+            dutyStatus: 'online',
+            dutySince: now,
+            shiftCheckToday: true,
+          );
+        },
+      ),
+      isOnline: () async => true,
+    );
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: dutyGateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    final slowConfirm = Completer<void>();
+    dutyGateway.holdNext = slowConfirm;
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Going online…'), findsOneWidget);
+    expect(find.text('Still trying…'), findsNothing);
+
+    // Counted from when "Going online…" appeared (at most 0.5 s ago).
+    await tester.pump(const Duration(seconds: 14));
+    expect(find.text('Still trying…'), findsNothing);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Going online…'), findsOneWidget);
+    expect(find.text('Still trying…'), findsOneWidget);
+
+    slowConfirm.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('driver-online-transition')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    await controller.stopAutomaticSync();
+  });
+
+  // The offer card's "My Assigned Trips" after a 409 uses this.
+  testWidgets('from a screen over the shell, "My Assigned Trips" closes it '
+      'and opens the Trips tab', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        dutyStatus: 'online',
+        dutySince: now,
+        shiftCheckToday: true,
+      ),
+    );
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(driverDutyGateway: dutyGateway, deviceNow: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final shellContext = tester.element(find.byType(DriverShell));
+    unawaited(
+      Navigator.of(shellContext).push<void>(
+        MaterialPageRoute<void>(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              key: const Key('over-the-shell'),
+              onPressed: () => DriverBackToWork.goToAssignedTrips(context),
+              child: const Text('My Assigned Trips'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('over-the-shell')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('over-the-shell')), findsNothing);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+  });
+
+  testWidgets('a duty check that fails at start-up still shows the plain '
+      'offline screen', (tester) async {
+    final dutyGateway = _MutableDutyGateway(
+      DriverDutySummary(
+        dutyStatus: 'online',
+        dutySince: now,
+        shiftCheckToday: true,
+      ),
+    )..failNext = true;
+
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(driverDutyGateway: dutyGateway, deviceNow: () => now),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-offline-screen')), findsOneWidget);
+    expect(find.text('You’re offline'), findsOneWidget);
+    expect(find.text("Couldn't confirm you're online"), findsNothing);
   });
 
   // In the app a sign-out replaces the shell with the sign-in form, so a
@@ -886,6 +1043,7 @@ void main() {
 
     expect(find.text("Today's shift · offline"), findsOneWidget);
     expect(find.text("You're offline"), findsOneWidget);
+    expect(find.text(_shiftCheckSavedGoOnline), findsOneWidget);
     expect(find.text('GO ONLINE'), findsOneWidget);
     expect(find.text('START SHIFT CHECK'), findsNothing);
     expect(find.text('Complete readiness check'), findsNothing);

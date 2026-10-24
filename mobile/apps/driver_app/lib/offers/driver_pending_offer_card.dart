@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../driver_back_to_work.dart';
 import '../driver_duty_trips.dart';
 import '../network/driver_offer_response_gateway.dart';
 import '../network/driver_offer_response_resilience.dart';
@@ -15,8 +17,13 @@ const driverOfferFareToBeConfirmed = 'Fare to be confirmed by dispatch';
 typedef DriverOfferPickupTimeLookup =
     Future<DriverOfferPickupTime> Function(String tripReference);
 
+/// Asks for a decline reason. [offerEnded] turns true if the offer ends
+/// while the driver is choosing.
 typedef DriverDeclineReasonPicker =
-    Future<DriverDeclineChoice?> Function(BuildContext context);
+    Future<DriverDeclineChoice?> Function(
+      BuildContext context,
+      ValueListenable<bool> offerEnded,
+    );
 
 /// A pending trip offer: the pickup, the fare, the time left, Accept and
 /// Decline. It appears at once, from whatever the store already knows.
@@ -27,6 +34,7 @@ class DriverPendingOfferCard extends StatefulWidget {
     required this.controllerFactory,
     this.pickupTimeLookup,
     this.pickDeclineReason = showDriverDeclineReasonSheet,
+    this.openAssignedTrips = DriverBackToWork.goToAssignedTrips,
     this.onAccepted,
     this.onFinished,
     this.onEnded,
@@ -42,6 +50,9 @@ class DriverPendingOfferCard extends StatefulWidget {
   /// Asked when the offer does not say whether the ride is for now.
   final DriverOfferPickupTimeLookup? pickupTimeLookup;
   final DriverDeclineReasonPicker pickDeclineReason;
+
+  /// "My Assigned Trips" after a 409.
+  final void Function(BuildContext context) openAssignedTrips;
 
   /// The driver accepted; open the trip.
   final ValueChanged<String>? onAccepted;
@@ -100,6 +111,12 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   /// Not final: the driver can try again.
   String? _message;
 
+  /// [_message] is a 409: the server holds another answer from this phone.
+  bool _conflict = false;
+
+  /// For an open decline-reason sheet.
+  final _offerEnded = ValueNotifier<bool>(false);
+
   DriverPendingOfferStore get _store => widget.store;
   String get _reference => widget.tripReference.trim();
 
@@ -116,6 +133,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
 
   @override
   void dispose() {
+    _offerEnded.dispose();
     _store.removeListener(_onStoreChanged);
     _ticker?.cancel();
     _detailsTimer?.cancel();
@@ -129,6 +147,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   }
 
   void _reportIfEnded() {
+    _offerEnded.value = _locked;
     if (_locked && !_reportedEnded) {
       _reportedEnded = true;
       widget.onEnded?.call();
@@ -415,7 +434,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     if (!_canDecline) {
       return;
     }
-    final choice = await widget.pickDeclineReason(context);
+    final choice = await widget.pickDeclineReason(context, _offerEnded);
     if (choice == null || !mounted || !_canDecline) {
       return;
     }
@@ -463,6 +482,7 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   }
 
   void _applyFailure(DriverOfferResponseException? error, String? message) {
+    _conflict = error?.type == DriverOfferResponseFailureType.conflict;
     if (error?.type == DriverOfferResponseFailureType.offerUnavailable) {
       _endedMessage = error!.message;
       unawaited(_store.refresh());
@@ -614,6 +634,12 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
               key: const Key('offer-card-message'),
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
+            if (_conflict && _endedMessage == null)
+              TextButton(
+                key: const Key('offer-card-open-assigned-trips'),
+                onPressed: () => widget.openAssignedTrips(context),
+                child: const Text('My Assigned Trips'),
+              ),
           ],
           const SizedBox(height: AsmSpacing.space16),
           Row(

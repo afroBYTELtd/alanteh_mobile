@@ -18,6 +18,8 @@ void main() {
 
   setUp(() => h = _Harness());
 
+  group('B4 wording', _wordingTests);
+
   group('appears at once', () {
     testWidgets('before any fetch: "Respond quickly", Decline on, Accept off', (
       tester,
@@ -516,6 +518,127 @@ void main() {
   });
 }
 
+// B4: the 409 answer and the reason sheet when the offer ends under it.
+void _wordingTests() {
+  late _Harness h;
+
+  setUp(() => h = _Harness());
+
+  const conflict = DriverOfferResponseException(
+    type: DriverOfferResponseFailureType.conflict,
+    message: driverOfferConflictMessage,
+  );
+  const conflictText =
+      'This offer was already answered from this phone. Open My Assigned '
+      'Trips to see where it stands.';
+
+  testWidgets('a 409 on Accept: says so, with My Assigned Trips', (
+    tester,
+  ) async {
+    await h.pump(tester);
+    await h.deliver(tester, [h.offer()]);
+    h.gateway.acceptError = conflict;
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+    expect(find.text(conflictText), findsOneWidget);
+    await tester.tap(find.byKey(const Key('offer-card-open-assigned-trips')));
+    await tester.pump();
+    expect(h.openedAssignedTrips, 1);
+    await h.dispose(tester);
+  });
+
+  testWidgets('a 409 on Decline: the same', (tester) async {
+    await h.pump(tester);
+    await h.deliver(tester, [h.offer()]);
+    h.gateway.declineError = conflict;
+    await tester.tap(find.byKey(const Key('offer-card-decline')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+    expect(find.text(conflictText), findsOneWidget);
+    expect(
+      find.byKey(const Key('offer-card-open-assigned-trips')),
+      findsOneWidget,
+    );
+    await h.dispose(tester);
+  });
+
+  testWidgets('any other failure: its own message, no My Assigned Trips', (
+    tester,
+  ) async {
+    await h.pump(tester);
+    await h.deliver(tester, [h.offer()]);
+    h.gateway.acceptError = const DriverOfferResponseException(
+      type: DriverOfferResponseFailureType.clientFailure,
+      message: driverOfferSafeClientFailureMessage,
+    );
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 10));
+
+    expect(find.text(driverOfferSafeClientFailureMessage), findsOneWidget);
+    expect(
+      find.byKey(const Key('offer-card-open-assigned-trips')),
+      findsNothing,
+    );
+    await h.dispose(tester);
+  });
+
+  Future<void> openRealSheet(WidgetTester tester) async {
+    await h.pump(tester, pickDeclineReason: showDriverDeclineReasonSheet);
+    await h.deliver(tester, [h.offer()]);
+    await tester.tap(find.byKey(const Key('offer-card-decline')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 10));
+    expect(find.text('Why are you declining?'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const Key('driver-decline-reason-option-end_of_shift')),
+    );
+    await tester.pump();
+  }
+
+  Future<void> expectOfferEndedSheet(WidgetTester tester) async {
+    expect(find.text('Offer ended'), findsWidgets);
+    expect(
+      find.text('This offer is no longer waiting for you. Nothing was sent.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('driver-decline-reason-confirm')),
+      findsNothing,
+    );
+    expect(find.text('Why are you declining?'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('driver-decline-offer-ended-ok')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 10));
+    expect(find.byKey(const Key('driver-decline-offer-ended')), findsNothing);
+    expect(h.gateway.declines, 0, reason: 'nothing was sent');
+  }
+
+  testWidgets('the offer is withdrawn while the reason sheet is open: the '
+      'sheet says "Offer ended", and OK sends nothing', (tester) async {
+    await openRealSheet(tester);
+
+    await h.deliver(tester, []);
+    await tester.pump();
+
+    await expectOfferEndedSheet(tester);
+    expect(h.countdownText(tester), 'Offer ended');
+    await h.dispose(tester);
+  });
+
+  testWidgets('the time runs out while the reason sheet is open: the same', (
+    tester,
+  ) async {
+    await openRealSheet(tester);
+
+    await h.advance(tester, const Duration(seconds: 41));
+    await tester.pump();
+
+    await expectOfferEndedSheet(tester);
+    expect(h.countdownText(tester), 'Offer expired');
+    await h.dispose(tester);
+  });
+}
+
 final class _Harness {
   final clock = _ManualClock();
   final source = _ControlledSource();
@@ -523,6 +646,7 @@ final class _Harness {
   final accepted = <String>[];
   final finished = <String>[];
   final preparedFor = <DateTime?>[];
+  var openedAssignedTrips = 0;
 
   /// Shared by every controller when set; otherwise each gets its own.
   DriverTripActionPersistentQueue? queue;
@@ -531,6 +655,7 @@ final class _Harness {
   Future<void> pump(
     WidgetTester tester, {
     DriverOfferPickupTimeLookup? pickupTimeLookup,
+    DriverDeclineReasonPicker? pickDeclineReason,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -557,9 +682,12 @@ final class _Harness {
                     );
                   },
               pickupTimeLookup: pickupTimeLookup,
-              pickDeclineReason: (_) async => const DriverDeclineChoice(
-                reason: DriverDeclineReason.endOfShift,
-              ),
+              pickDeclineReason:
+                  pickDeclineReason ??
+                  (_, _) async => const DriverDeclineChoice(
+                    reason: DriverDeclineReason.endOfShift,
+                  ),
+              openAssignedTrips: (_) => openedAssignedTrips += 1,
               onAccepted: accepted.add,
               onFinished: finished.add,
             ),
