@@ -362,10 +362,10 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
     return PassengerTripSafetySummary(
       tripReference: record.normalizedTripReference,
       tripStatus: record.status,
-      driverFirstName: _driverFirstName(record.driverName),
-      vehicleType: record.vehicleType,
-      vehicleColour: record.vehicleColour,
-      plate: record.plateNumber,
+      driverFirstName: _driverFirstName(record.shownDriverName),
+      vehicleType: record.shownVehicleType,
+      vehicleColour: record.shownVehicleColour,
+      plate: record.shownPlateNumber,
       pickup: record.pickupLocation,
       destination: record.destination,
     );
@@ -798,8 +798,13 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
 
     final record = _record!;
     final theme = Theme.of(context);
-    final driverFirstName = _driverFirstName(record.driverName);
-    final vehicleInfo = _vehicleInfo(record.vehicleColour, record.vehicleType);
+    final driverFirstName = _driverFirstName(record.shownDriverName);
+    final vehicleInfo = _vehicleInfo(
+      record.shownVehicleColour,
+      record.shownVehicleType,
+    );
+    final plateNumber = record.shownPlateNumber;
+    final pickupCode = record.shownPickupVerificationCode;
     final driverDistanceKm = record.driverDistanceKm;
     // "converted" is the RideRequest's own placeholder status - it means
     // "this has a linked Trip now, look there for the real status," never
@@ -957,8 +962,8 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                     Text(view.message),
                     if (driverFirstName != null ||
                         vehicleInfo != null ||
-                        record.plateNumber != null ||
-                        record.pickupVerificationCode != null) ...[
+                        plateNumber != null ||
+                        pickupCode != null) ...[
                       const SizedBox(height: AsmSpacing.space16),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1004,7 +1009,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                if (record.plateNumber != null) ...[
+                                if (plateNumber != null) ...[
                                   if (driverFirstName != null ||
                                       vehicleInfo != null)
                                     const SizedBox(height: AsmSpacing.space12),
@@ -1024,7 +1029,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      record.plateNumber!,
+                                      plateNumber,
                                       key: const Key(
                                         'tracking-safe-plate-number',
                                       ),
@@ -1035,7 +1040,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                                     ),
                                   ),
                                 ],
-                                if (record.pickupVerificationCode != null) ...[
+                                if (pickupCode != null) ...[
                                   const SizedBox(height: AsmSpacing.space12),
                                   Container(
                                     key: const Key(
@@ -1069,7 +1074,7 @@ class _RideTrackingScreenState extends State<RideTrackingScreen> {
                                               ),
                                         ),
                                         Text(
-                                          record.pickupVerificationCode!,
+                                          pickupCode,
                                           key: const Key(
                                             'tracking-pickup-verification-code',
                                           ),
