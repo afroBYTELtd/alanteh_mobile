@@ -1221,10 +1221,12 @@ class _DriverAccountPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Not expandToViewport: its IntrinsicHeight measured this page too short
+    // at large text sizes, and the page overflowed (168 px at 2.0), hiding
+    // "Sign out". Nothing here needs the extra height.
     return AsmScreenSurface(
       key: const Key('driver-account-screen'),
       scrollable: true,
-      expandToViewport: true,
       padding: const EdgeInsets.fromLTRB(
         22,
         AsmSpacing.space20,

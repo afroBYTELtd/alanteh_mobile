@@ -855,6 +855,73 @@ void main() {
     expect(app.coordinator.polling, isFalse);
     await app.dispose(tester);
   });
+
+  // B5.1: at large text the Account page overflowed even with no card (by
+  // 168 px at 2.0), so "Sign out" could not always be reached.
+  group('Account page at large text', () {
+    for (final textScale in _largeTextScales) {
+      for (final (navigation, bottomInset) in _bottomInsets) {
+        testWidgets('at text $textScale, $navigation: no overflow, and '
+            '"Safety & emergency" and "Sign out" scroll into full view', (
+          tester,
+        ) async {
+          _phoneScreen(tester, bottomInset: bottomInset);
+          final app = _App();
+          await app.pumpSignedIn(tester);
+          _textScale(tester, textScale);
+          await _selectTab(tester, 'Account');
+
+          expect(tester.takeException(), isNull);
+          final page = tester.getRect(
+            find.byKey(const Key('driver-account-screen')),
+          );
+          for (final row in const [
+            Key('driver-account-safety-emergency'),
+            Key('driver-account-sign-out'),
+          ]) {
+            await tester.ensureVisible(find.byKey(row));
+            await _settle(tester);
+            final rect = tester.getRect(find.byKey(row));
+            expect(rect.top, greaterThanOrEqualTo(page.top), reason: '$row');
+            expect(rect.bottom, lessThanOrEqualTo(page.bottom), reason: '$row');
+          }
+          expect(tester.takeException(), isNull);
+          await app.dispose(tester);
+        });
+      }
+    }
+  });
+}
+
+/// Text sizes a driver can pick in the phone's settings, above the default.
+const _largeTextScales = [1.3, 1.5, 2.0];
+
+/// Gesture navigation, and three-button navigation (48 dp at the bottom).
+const _bottomInsets = [
+  ('gesture navigation', 0.0),
+  ('three-button navigation', 126.0),
+];
+
+/// The test phone's screen: 1080 x 2340 px at 2.625.
+void _phoneScreen(WidgetTester tester, {required double bottomInset}) {
+  tester.view.physicalSize = const Size(1080, 2340);
+  tester.view.devicePixelRatio = 2.625;
+  tester.view.padding = FakeViewPadding(bottom: bottomInset);
+  tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+  addTearDown(tester.view.reset);
+}
+
+/// The text size turned up after signing in, as a driver would in settings.
+void _textScale(WidgetTester tester, double scale) {
+  tester.platformDispatcher.textScaleFactorTestValue = scale;
+  addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+}
+
+Future<void> _selectTab(WidgetTester tester, String label) async {
+  await tester.tap(
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+  );
+  await _settle(tester);
 }
 
 Future<void> _settle(WidgetTester tester) async {
