@@ -702,7 +702,9 @@ class _SideBySideOrStacked extends StatelessWidget {
 }
 
 /// Decline and Accept side by side when every label they can show fits in
-/// half the width; at large text sizes, one above the other at full width.
+/// half the width; at large text sizes, one above the other at full width,
+/// Accept on top: a mis-tap on Decline only opens the reason sheet, one on
+/// Accept commits the driver.
 class _OfferButtons extends StatelessWidget {
   const _OfferButtons({required this.decline, required this.accept});
 
@@ -756,9 +758,9 @@ class _OfferButtons extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            decline,
-            const SizedBox(height: AsmSpacing.space8),
             accept,
+            const SizedBox(height: AsmSpacing.space8),
+            decline,
           ],
         );
       },

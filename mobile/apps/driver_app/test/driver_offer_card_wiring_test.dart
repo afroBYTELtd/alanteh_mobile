@@ -964,6 +964,26 @@ void main() {
       await app.dispose(tester);
     });
 
+    // A mis-tap on Decline only opens the reason sheet; one on Accept
+    // commits the driver. So when they stack, Accept is on top.
+    testWidgets('when they do not fit side by side, Accept is above Decline', (
+      tester,
+    ) async {
+      _phoneScreen(tester, bottomInset: 126);
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      _textScale(tester, 2.0);
+      await _offerArrives(tester, app, fare: null);
+
+      final decline = tester.getRect(
+        find.byKey(const Key('offer-card-decline')),
+      );
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.width, decline.width);
+      expect(accept.bottom, lessThanOrEqualTo(decline.top));
+      await app.dispose(tester);
+    });
+
     for (final (navigation, bottomInset) in _bottomInsets) {
       testWidgets('a very long pickup at text 2.0, $navigation: the card '
           'stops at 60% of the screen, its details scroll, and Accept and '
