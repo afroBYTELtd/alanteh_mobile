@@ -15,6 +15,7 @@ import 'package:driver_app/offers/driver_pending_offer_store.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -891,6 +892,199 @@ void main() {
       }
     }
   });
+
+  // B5.1: at 2.0 the card was 1,528 dp tall on an 891 dp screen: "New trip
+  // request" had 81 dp beside the countdown and "GHS 35.00" 12 dp beside
+  // "1 passenger", so both broke almost a letter per line.
+  group('offer card at large text', () {
+    for (final textScale in _largeTextScales) {
+      for (final (navigation, bottomInset) in _bottomInsets) {
+        for (final fare in const ['35.00', null]) {
+          testWidgets('at text $textScale, $navigation, fare $fare: no word '
+              'is broken, and the whole card fits above the tab bar', (
+            tester,
+          ) async {
+            _phoneScreen(tester, bottomInset: bottomInset);
+            final app = _App();
+            await app.pumpSignedIn(tester);
+            _textScale(tester, textScale);
+            await _offerArrives(tester, app, fare: fare);
+
+            final card = find.byKey(const Key('offer-card'));
+            _expectNoBrokenWords(tester, card);
+            final rect = tester.getRect(card);
+            final tabs = tester.getRect(find.byType(NavigationBar));
+            expect(rect.top, greaterThanOrEqualTo(0));
+            expect(rect.bottom, lessThanOrEqualTo(tabs.top));
+            final screenHeight =
+                tester.view.physicalSize.height / tester.view.devicePixelRatio;
+            expect(rect.height, lessThanOrEqualTo(screenHeight * 0.6 + 0.5));
+            if (textScale < 2.0) {
+              expect(
+                _scrollExtentInside(tester, card),
+                0,
+                reason: 'an ordinary offer fits without scrolling',
+              );
+            }
+            for (final button in const [
+              Key('offer-card-decline'),
+              Key('offer-card-accept'),
+            ]) {
+              final buttonRect = tester.getRect(find.byKey(button));
+              expect(buttonRect.top, greaterThanOrEqualTo(rect.top));
+              expect(buttonRect.bottom, lessThanOrEqualTo(rect.bottom));
+            }
+            await app.dispose(tester);
+          });
+        }
+      }
+    }
+
+    // The test font draws every letter 1 em wide, about twice as wide as
+    // the phone's, so here "Sending…" misses half of a 411 dp card by 1 dp.
+    // On a wider screen the labels fit, as they do on the phone.
+    testWidgets('when the labels fit, Accept and Decline stay side by side', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 2340);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await _offerArrives(tester, app, fare: null);
+
+      final decline = tester.getRect(
+        find.byKey(const Key('offer-card-decline')),
+      );
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.top, decline.top);
+      expect(accept.left, greaterThan(decline.right));
+      _expectNoBrokenWords(tester, find.byKey(const Key('offer-card')));
+      await app.dispose(tester);
+    });
+
+    for (final (navigation, bottomInset) in _bottomInsets) {
+      testWidgets('a very long pickup at text 2.0, $navigation: the card '
+          'stops at 60% of the screen, its details scroll, and Accept and '
+          'Decline stay in view', (tester) async {
+        _phoneScreen(tester, bottomInset: bottomInset);
+        final app = _App();
+        await app.pumpSignedIn(tester);
+        _textScale(tester, 2.0);
+        await _offerArrives(
+          tester,
+          app,
+          pickup: List.filled(30, 'Kotoka International Airport').join(' '),
+        );
+
+        final card = tester.getRect(find.byKey(const Key('offer-card')));
+        final screenHeight =
+            tester.view.physicalSize.height / tester.view.devicePixelRatio;
+        expect(card.height, lessThanOrEqualTo(screenHeight * 0.6 + 0.5));
+        expect(card.top, greaterThanOrEqualTo(0));
+        expect(
+          _scrollExtentInside(tester, find.byKey(const Key('offer-card'))),
+          greaterThan(0),
+        );
+        for (final button in const [
+          Key('offer-card-decline'),
+          Key('offer-card-accept'),
+        ]) {
+          final rect = tester.getRect(find.byKey(button));
+          expect(rect.top, greaterThanOrEqualTo(card.top), reason: '$button');
+          expect(
+            rect.bottom,
+            lessThanOrEqualTo(card.bottom),
+            reason: '$button',
+          );
+        }
+        await tester.tap(find.byKey(const Key('offer-card-accept')));
+        await _settle(tester);
+        expect(app.offerGateway.acceptedTrips, ['TRIP-1']);
+        await app.dispose(tester);
+      });
+    }
+
+    testWidgets('the full "Trip offer" screen at text 2.0: no word is '
+        'broken, and Accept is on screen', (tester) async {
+      _phoneScreen(tester, bottomInset: 126);
+      final app = _App()..source.offers = [_offer('TRIP-1', fare: null)];
+      await app.pumpSignedIn(tester);
+      _textScale(tester, 2.0);
+      app.push.emitOpened(_offerMessage('TRIP-1'));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      final card = find.byKey(const Key('offer-card'));
+      _expectNoBrokenWords(tester, card);
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.top, greaterThanOrEqualTo(0));
+      expect(accept.bottom, lessThanOrEqualTo(screenHeight));
+      await app.dispose(tester);
+    });
+  });
+}
+
+Future<void> _offerArrives(
+  WidgetTester tester,
+  _App app, {
+  String pickup = 'Accra Mall',
+  String? fare = '35.00',
+}) async {
+  app.source.offers = [
+    _offer(
+      'TRIP-1',
+      pickup: pickup,
+      fare: fare,
+      expiresAt: '2026-10-09T10:01:00+00:00',
+    ),
+  ];
+  await app.coordinator.store.refresh();
+  await _settle(tester);
+}
+
+/// No text inside [within] is narrower than its widest word, so no word is
+/// broken across lines.
+void _expectNoBrokenWords(WidgetTester tester, Finder within) {
+  final paragraphs = find.descendant(
+    of: within,
+    matching: find.byType(RichText),
+  );
+  expect(paragraphs, findsWidgets);
+  for (final element in paragraphs.evaluate()) {
+    final paragraph = element.renderObject! as RenderParagraph;
+    final text = paragraph.text.toPlainText();
+    for (final word in text.split(RegExp(r'\s+'))) {
+      final painter = TextPainter(
+        text: TextSpan(text: word, style: paragraph.text.style),
+        textScaler: paragraph.textScaler,
+        textDirection: TextDirection.ltr,
+      )..layout();
+      expect(
+        paragraph.size.width,
+        greaterThanOrEqualTo(painter.width - 0.5),
+        reason: '"$word" in "$text"',
+      );
+      painter.dispose();
+    }
+  }
+}
+
+/// How far the scrolling part of [within] can scroll; 0 when it has none.
+double _scrollExtentInside(WidgetTester tester, Finder within) {
+  final scrollables = find.descendant(
+    of: within,
+    matching: find.byType(Scrollable),
+  );
+  if (scrollables.evaluate().isEmpty) {
+    return 0;
+  }
+  return tester
+      .state<ScrollableState>(scrollables.first)
+      .position
+      .maxScrollExtent;
 }
 
 /// Text sizes a driver can pick in the phone's settings, above the default.
@@ -946,11 +1140,12 @@ Map<String, Object?> _offer(
   String pickup = 'Accra Mall',
   String expiresAt = '2026-10-09T10:00:45+00:00',
   bool includePickupTime = true,
+  String? fare = '35.00',
 }) => <String, Object?>{
   'trip_reference': reference,
   'pickup_location': pickup,
   'passenger_count': 1,
-  'fare_amount': '35.00',
+  'fare_amount': fare,
   'fare_currency': 'GHS',
   'assigned_at': '2026-10-09T10:00:00+00:00',
   'offer_expires_at': expiresAt,
