@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,11 @@ import 'driver_pending_offers.dart';
 
 /// The fare line when the server sends no fare: staff confirm fares.
 const driverOfferFareToBeConfirmed = 'Fare to be confirmed by dispatch';
+
+/// The card never grows past this share of the screen: its details scroll
+/// and Accept and Decline stay in view. Stacked rows keep an ordinary
+/// offer well under it; this is the limit for anything longer.
+const driverOfferCardMaxScreenShare = 0.6;
 
 typedef DriverOfferPickupTimeLookup =
     Future<DriverOfferPickupTime> Function(String tripReference);
@@ -525,9 +531,113 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
     final pickupLine =
         offer?.pickupLabel ?? (_locked ? null : 'Loading trip details…');
 
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SideBySideOrStacked(
+          children: [
+            const Text(
+              'New trip request',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            Text(
+              _countdownText,
+              key: const Key('offer-card-countdown'),
+              style: const TextStyle(
+                color: AsmColors.driverMintAction,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        if (pickupLine != null) ...[
+          const SizedBox(height: AsmSpacing.space12),
+          Text(
+            pickupLine,
+            key: const Key('offer-card-pickup'),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+        ],
+        if (offer != null) ...[
+          const SizedBox(height: AsmSpacing.space8),
+          _SideBySideOrStacked(
+            children: [
+              if (passengers != null)
+                Text(
+                  passengers == 1 ? '1 passenger' : '$passengers passengers',
+                  key: const Key('offer-card-passengers'),
+                  style: const TextStyle(color: AsmColors.driverTextSecondary),
+                ),
+              Text(
+                fare == null
+                    ? driverOfferFareToBeConfirmed
+                    : [offer.fareCurrency, fare].whereType<String>().join(' '),
+                key: const Key('offer-card-fare'),
+                textAlign: TextAlign.end,
+                style: fare == null
+                    ? const TextStyle(
+                        color: AsmColors.driverTextSecondary,
+                        fontWeight: FontWeight.w700,
+                      )
+                    : const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+              ),
+            ],
+          ),
+        ],
+        if (pickupTime is DriverOfferPickupAt) ...[
+          const SizedBox(height: AsmSpacing.space12),
+          DriverScheduledPickupBadge(
+            key: const Key('offer-card-scheduled'),
+            label: driverScheduledPickupLabel(pickupTime.at),
+          ),
+        ],
+        if ((_detailsTimedOut && !_readyToShow && !_locked) ||
+            (_prepareFailed && !_locked)) ...[
+          const SizedBox(height: AsmSpacing.space12),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  "Couldn't load trip details",
+                  key: Key('offer-card-details-failed'),
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              TextButton(
+                key: const Key('offer-card-try-again'),
+                onPressed: _tryAgain,
+                child: const Text('Try again'),
+              ),
+            ],
+          ),
+        ],
+        if (note != null) ...[
+          const SizedBox(height: AsmSpacing.space12),
+          Text(
+            note,
+            key: const Key('offer-card-message'),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (_conflict && _endedMessage == null)
+            TextButton(
+              key: const Key('offer-card-open-assigned-trips'),
+              onPressed: () => widget.openAssignedTrips(context),
+              child: const Text('My Assigned Trips'),
+            ),
+        ],
+      ],
+    );
+
     return Container(
       key: const Key('offer-card'),
       width: double.infinity,
+      constraints: BoxConstraints(
+        maxHeight:
+            MediaQuery.sizeOf(context).height * driverOfferCardMaxScreenShare,
+      ),
       padding: const EdgeInsets.all(AsmSpacing.space20),
       decoration: BoxDecoration(
         color: AsmColors.driverCardElevated,
@@ -535,131 +645,22 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
         border: Border.all(color: AsmColors.driverMintAction, width: 2),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'New trip request',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                ),
-              ),
-              Text(
-                _countdownText,
-                key: const Key('offer-card-countdown'),
-                style: const TextStyle(
-                  color: AsmColors.driverMintAction,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          if (pickupLine != null) ...[
-            const SizedBox(height: AsmSpacing.space12),
-            Text(
-              pickupLine,
-              key: const Key('offer-card-pickup'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-            ),
-          ],
-          if (offer != null) ...[
-            const SizedBox(height: AsmSpacing.space8),
-            Row(
-              children: [
-                if (passengers != null)
-                  Text(
-                    passengers == 1 ? '1 passenger' : '$passengers passengers',
-                    key: const Key('offer-card-passengers'),
-                    style: const TextStyle(
-                      color: AsmColors.driverTextSecondary,
-                    ),
-                  ),
-                const SizedBox(width: AsmSpacing.space12),
-                Expanded(
-                  child: Text(
-                    fare == null
-                        ? driverOfferFareToBeConfirmed
-                        : [
-                            offer.fareCurrency,
-                            fare,
-                          ].whereType<String>().join(' '),
-                    key: const Key('offer-card-fare'),
-                    textAlign: TextAlign.end,
-                    style: fare == null
-                        ? const TextStyle(
-                            color: AsmColors.driverTextSecondary,
-                            fontWeight: FontWeight.w700,
-                          )
-                        : const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (pickupTime is DriverOfferPickupAt) ...[
-            const SizedBox(height: AsmSpacing.space12),
-            DriverScheduledPickupBadge(
-              key: const Key('offer-card-scheduled'),
-              label: driverScheduledPickupLabel(pickupTime.at),
-            ),
-          ],
-          if ((_detailsTimedOut && !_readyToShow && !_locked) ||
-              (_prepareFailed && !_locked)) ...[
-            const SizedBox(height: AsmSpacing.space12),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    "Couldn't load trip details",
-                    key: Key('offer-card-details-failed'),
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                TextButton(
-                  key: const Key('offer-card-try-again'),
-                  onPressed: _tryAgain,
-                  child: const Text('Try again'),
-                ),
-              ],
-            ),
-          ],
-          if (note != null) ...[
-            const SizedBox(height: AsmSpacing.space12),
-            Text(
-              note,
-              key: const Key('offer-card-message'),
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            if (_conflict && _endedMessage == null)
-              TextButton(
-                key: const Key('offer-card-open-assigned-trips'),
-                onPressed: () => widget.openAssignedTrips(context),
-                child: const Text('My Assigned Trips'),
-              ),
-          ],
+          Flexible(child: SingleChildScrollView(child: details)),
           const SizedBox(height: AsmSpacing.space16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  key: const Key('offer-card-decline'),
-                  onPressed: _canDecline ? _decline : null,
-                  child: const Text('Decline'),
-                ),
-              ),
-              const SizedBox(width: AsmSpacing.space12),
-              Expanded(
-                child: FilledButton(
-                  key: const Key('offer-card-accept'),
-                  onPressed: _canAccept ? _accept : null,
-                  child: Text(_sending ? 'Sending…' : 'Accept'),
-                ),
-              ),
-            ],
+          _OfferButtons(
+            decline: OutlinedButton(
+              key: const Key('offer-card-decline'),
+              onPressed: _canDecline ? _decline : null,
+              child: const Text('Decline'),
+            ),
+            accept: FilledButton(
+              key: const Key('offer-card-accept'),
+              onPressed: _canAccept ? _accept : null,
+              child: Text(_sending ? 'Sending…' : 'Accept'),
+            ),
           ),
           if (othersWaiting > 0) ...[
             const SizedBox(height: AsmSpacing.space12),
@@ -673,6 +674,96 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Two short items on one line, the first at the start and the second at
+/// the end; the second goes under the first when they don't both fit (at
+/// large text sizes), instead of squeezing either into a narrow column.
+class _SideBySideOrStacked extends StatelessWidget {
+  const _SideBySideOrStacked({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AsmSpacing.space12,
+        runSpacing: AsmSpacing.space4,
+        children: children,
+      ),
+    );
+  }
+}
+
+/// Decline and Accept side by side when every label they can show fits in
+/// half the width; at large text sizes, one above the other at full width,
+/// Accept on top: a mis-tap on Decline only opens the reason sheet, one on
+/// Accept commits the driver.
+class _OfferButtons extends StatelessWidget {
+  const _OfferButtons({required this.decline, required this.accept});
+
+  final Widget decline;
+  final Widget accept;
+
+  static const _labels = ['Decline', 'Accept', 'Sending…'];
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800);
+    final scaler = MediaQuery.textScalerOf(context);
+    final fontSize = style?.fontSize ?? 14;
+    // The buttons' own padding, which shrinks as the text grows, and their
+    // border.
+    final labelPadding =
+        ButtonStyleButton.scaledPadding(
+          const EdgeInsets.symmetric(horizontal: 24),
+          const EdgeInsets.symmetric(horizontal: 12),
+          const EdgeInsets.symmetric(horizontal: 6),
+          scaler.scale(fontSize) / fontSize,
+        ).horizontal +
+        2;
+    final widestLabel = _labels
+        .map((label) {
+          final painter = TextPainter(
+            text: TextSpan(text: label, style: style),
+            textScaler: scaler,
+            textDirection: TextDirection.ltr,
+          )..layout();
+          final width = painter.width;
+          painter.dispose();
+          return width;
+        })
+        .reduce(math.max);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final half = (constraints.maxWidth - AsmSpacing.space12) / 2;
+        if (widestLabel + labelPadding <= half) {
+          return Row(
+            children: [
+              Expanded(child: decline),
+              const SizedBox(width: AsmSpacing.space12),
+              Expanded(child: accept),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            accept,
+            const SizedBox(height: AsmSpacing.space8),
+            decline,
+          ],
+        );
+      },
     );
   }
 }

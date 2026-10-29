@@ -14,6 +14,7 @@ import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_report_gateway.dart';
 import 'network/driver_trip_action_resilience.dart';
+import 'offers/driver_offer_layer.dart';
 import 'readiness/driver_readiness_page.dart';
 import 'readiness/driver_shift_check_submission.dart';
 import 'ride_offer/driver_ride_offer_page.dart';
@@ -1050,7 +1051,12 @@ class _DriverShellState extends State<DriverShell> {
   Widget build(BuildContext context) {
     _reportDuty();
     return Scaffold(
-      body: _selectedPage,
+      // The page ends above an offer card on the tabs, so it covers nothing.
+      body: Padding(
+        key: const Key('driver-shell-body'),
+        padding: EdgeInsets.only(bottom: DriverOfferTabsInset.of(context)),
+        child: _selectedPage,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
@@ -1221,10 +1227,12 @@ class _DriverAccountPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Not expandToViewport: its IntrinsicHeight measured this page too short
+    // at large text sizes, and the page overflowed (168 px at 2.0), hiding
+    // "Sign out". Nothing here needs the extra height.
     return AsmScreenSurface(
       key: const Key('driver-account-screen'),
       scrollable: true,
-      expandToViewport: true,
       padding: const EdgeInsets.fromLTRB(
         22,
         AsmSpacing.space20,

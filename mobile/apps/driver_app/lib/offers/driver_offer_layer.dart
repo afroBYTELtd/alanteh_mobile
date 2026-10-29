@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../driver_back_to_work.dart';
 import '../driver_duty_trips.dart';
@@ -70,13 +71,33 @@ final class DriverOfferRouteObserver extends NavigatorObserver {
 /// The NavigationBar's height under the shell's tabs.
 const driverOfferLayerTabBarHeight = 80.0;
 
+/// How much of the tabs' page the offer card covers, from the top of the
+/// tab bar up: 0 when no card shows on the tabs. The shell ends its page
+/// this much higher, so the card covers nothing on it.
+class DriverOfferTabsInset extends InheritedNotifier<ValueNotifier<double>> {
+  const DriverOfferTabsInset({
+    required ValueNotifier<double> super.notifier,
+    required super.child,
+    super.key,
+  });
+
+  /// The inset above [context]; 0 when the app has no offer layer.
+  static double of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<DriverOfferTabsInset>()
+          ?.notifier
+          ?.value ??
+      0;
+}
+
 /// The one offer card for the whole app, on every tab and over every screen
 /// the driver has open (seen 24 Oct: an offer ran out while the driver was
 /// on the "Trip completed" screens, where no card showed). One card, so its
 /// countdown and "Sending…" stay when the driver moves around.
 ///
 /// On the tabs it sits above the tab bar, clear of the header's Sign out
-/// and Go offline. Over a pushed screen it sits at the top, clear of the
+/// and Go offline, and the page ends above it ([DriverOfferTabsInset]).
+/// Over a pushed screen it sits at the top, clear of the
 /// Emergency and Alert Dispatch buttons at the bottom of the trip screens.
 /// While a sheet or dialog is open it is hidden (kept alive), so it never
 /// covers the sheet's buttons.
@@ -106,6 +127,9 @@ class DriverOfferLayer extends StatefulWidget {
 class DriverOfferLayerState extends State<DriverOfferLayer> {
   DriverOfferLayerSource? _source;
   bool _offerScreenOpen = false;
+  final _tabsInset = ValueNotifier<double>(0);
+  double _cardHeight = 0;
+  bool _insetUpdateScheduled = false;
 
   /// The signed-in driver's offers, or null when there is none to show.
   set source(DriverOfferLayerSource? source) {
@@ -137,7 +161,42 @@ class DriverOfferLayerState extends State<DriverOfferLayer> {
   void dispose() {
     widget.routeCounter.pages.removeListener(_routesChanged);
     widget.routeCounter.popups.removeListener(_routesChanged);
+    _tabsInset.dispose();
     super.dispose();
+  }
+
+  bool get _onTabs => widget.routeCounter.pages.value <= 1;
+
+  // The card's height on the tabs, plus the gaps below and above it.
+  double get _wantedTabsInset {
+    if (_source == null || _offerScreenOpen || !_onTabs || _cardHeight <= 0) {
+      return 0;
+    }
+    return _cardHeight + 2 * AsmSpacing.space8;
+  }
+
+  // After the frame: the shell is below this layer and must not be told to
+  // rebuild while the layer builds.
+  void _scheduleTabsInsetUpdate() {
+    if (_insetUpdateScheduled) {
+      return;
+    }
+    _insetUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _insetUpdateScheduled = false;
+      if (mounted) {
+        _tabsInset.value = _wantedTabsInset;
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _cardMeasured(double height) {
+    if (height == _cardHeight) {
+      return;
+    }
+    _cardHeight = height;
+    _scheduleTabsInsetUpdate();
   }
 
   // The navigator can report a route during a build: rebuild after it.
@@ -172,16 +231,17 @@ class DriverOfferLayerState extends State<DriverOfferLayer> {
 
   @override
   Widget build(BuildContext context) {
+    _scheduleTabsInsetUpdate();
     final source = _source;
     if (source == null || _offerScreenOpen) {
-      return widget.child;
+      return DriverOfferTabsInset(notifier: _tabsInset, child: widget.child);
     }
-    final onTabs = widget.routeCounter.pages.value <= 1;
+    final onTabs = _onTabs;
     final padding = MediaQuery.paddingOf(context);
     const gap = AsmSpacing.space8;
     return Stack(
       children: [
-        widget.child,
+        DriverOfferTabsInset(notifier: _tabsInset, child: widget.child),
         Positioned(
           left: AsmSpacing.space16,
           right: AsmSpacing.space16,
@@ -193,20 +253,59 @@ class DriverOfferLayerState extends State<DriverOfferLayer> {
             offstage: widget.routeCounter.popups.value > 0,
             child: Material(
               type: MaterialType.transparency,
-              child: DriverPendingOffersPanel(
-                key: const Key('driver-offer-layer'),
-                coordinator: source.coordinator,
-                controllerFactory: source.controllerFactory,
-                pickupTimeLookup: source.pickupTimeLookup,
-                onAccepted: source.onAccepted,
-                pickDeclineReason: _pickDeclineReason,
-                openAssignedTrips: _openAssignedTrips,
-                waitingPanel: const SizedBox.shrink(),
+              child: _HeightReporter(
+                onHeight: _cardMeasured,
+                child: DriverPendingOffersPanel(
+                  key: const Key('driver-offer-layer'),
+                  coordinator: source.coordinator,
+                  controllerFactory: source.controllerFactory,
+                  pickupTimeLookup: source.pickupTimeLookup,
+                  onAccepted: source.onAccepted,
+                  pickDeclineReason: _pickDeclineReason,
+                  openAssignedTrips: _openAssignedTrips,
+                  waitingPanel: const SizedBox.shrink(),
+                ),
               ),
             ),
           ),
         ),
       ],
     );
+  }
+}
+
+/// Reports its child's height after each layout that changes it.
+class _HeightReporter extends SingleChildRenderObjectWidget {
+  const _HeightReporter({required this.onHeight, super.child});
+
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHeightReporter(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderHeightReporter renderObject,
+  ) {
+    renderObject.onHeight = onHeight;
+  }
+}
+
+class _RenderHeightReporter extends RenderProxyBox {
+  _RenderHeightReporter(this.onHeight);
+
+  ValueChanged<double> onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final height = size.height;
+    if (height != _reported) {
+      _reported = height;
+      onHeight(height);
+    }
   }
 }

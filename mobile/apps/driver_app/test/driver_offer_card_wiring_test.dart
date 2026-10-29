@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/driver_duty_trips.dart';
+import 'package:driver_app/driver_home.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/network/driver_offer_response_gateway.dart';
 import 'package:driver_app/network/driver_offer_response_resilience.dart';
@@ -15,6 +16,7 @@ import 'package:driver_app/offers/driver_pending_offer_store.dart';
 import 'package:driver_app/trip_progress/driver_trip_visual_sequence.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -855,6 +857,495 @@ void main() {
     expect(app.coordinator.polling, isFalse);
     await app.dispose(tester);
   });
+
+  // B5.1: at large text the Account page overflowed even with no card (by
+  // 168 px at 2.0), so "Sign out" could not always be reached.
+  group('Account page at large text', () {
+    for (final textScale in _largeTextScales) {
+      for (final (navigation, bottomInset) in _bottomInsets) {
+        testWidgets('at text $textScale, $navigation: no overflow, and '
+            '"Safety & emergency" and "Sign out" scroll into full view', (
+          tester,
+        ) async {
+          _phoneScreen(tester, bottomInset: bottomInset);
+          final app = _App();
+          await app.pumpSignedIn(tester);
+          _textScale(tester, textScale);
+          await _selectTab(tester, 'Account');
+
+          expect(tester.takeException(), isNull);
+          final page = tester.getRect(
+            find.byKey(const Key('driver-account-screen')),
+          );
+          for (final row in const [
+            Key('driver-account-safety-emergency'),
+            Key('driver-account-sign-out'),
+          ]) {
+            await tester.ensureVisible(find.byKey(row));
+            await _settle(tester);
+            final rect = tester.getRect(find.byKey(row));
+            expect(rect.top, greaterThanOrEqualTo(page.top), reason: '$row');
+            expect(rect.bottom, lessThanOrEqualTo(page.bottom), reason: '$row');
+          }
+          expect(tester.takeException(), isNull);
+          await app.dispose(tester);
+        });
+      }
+    }
+  });
+
+  // B5.1: at 2.0 the card was 1,528 dp tall on an 891 dp screen: "New trip
+  // request" had 81 dp beside the countdown and "GHS 35.00" 12 dp beside
+  // "1 passenger", so both broke almost a letter per line.
+  group('offer card at large text', () {
+    for (final textScale in _largeTextScales) {
+      for (final (navigation, bottomInset) in _bottomInsets) {
+        for (final fare in const ['35.00', null]) {
+          testWidgets('at text $textScale, $navigation, fare $fare: no word '
+              'is broken, and the whole card fits above the tab bar', (
+            tester,
+          ) async {
+            _phoneScreen(tester, bottomInset: bottomInset);
+            final app = _App();
+            await app.pumpSignedIn(tester);
+            _textScale(tester, textScale);
+            await _offerArrives(tester, app, fare: fare);
+
+            final card = find.byKey(const Key('offer-card'));
+            _expectNoBrokenWords(tester, card);
+            final rect = tester.getRect(card);
+            final tabs = tester.getRect(find.byType(NavigationBar));
+            expect(rect.top, greaterThanOrEqualTo(0));
+            expect(rect.bottom, lessThanOrEqualTo(tabs.top));
+            final screenHeight =
+                tester.view.physicalSize.height / tester.view.devicePixelRatio;
+            expect(rect.height, lessThanOrEqualTo(screenHeight * 0.6 + 0.5));
+            if (textScale < 2.0) {
+              expect(
+                _scrollExtentInside(tester, card),
+                0,
+                reason: 'an ordinary offer fits without scrolling',
+              );
+            }
+            for (final button in const [
+              Key('offer-card-decline'),
+              Key('offer-card-accept'),
+            ]) {
+              final buttonRect = tester.getRect(find.byKey(button));
+              expect(buttonRect.top, greaterThanOrEqualTo(rect.top));
+              expect(buttonRect.bottom, lessThanOrEqualTo(rect.bottom));
+            }
+            await app.dispose(tester);
+          });
+        }
+      }
+    }
+
+    // The test font draws every letter 1 em wide, about twice as wide as
+    // the phone's, so here "Sending…" misses half of a 411 dp card by 1 dp.
+    // On a wider screen the labels fit, as they do on the phone.
+    testWidgets('when the labels fit, Accept and Decline stay side by side', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 2340);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await _offerArrives(tester, app, fare: null);
+
+      final decline = tester.getRect(
+        find.byKey(const Key('offer-card-decline')),
+      );
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.top, decline.top);
+      expect(accept.left, greaterThan(decline.right));
+      _expectNoBrokenWords(tester, find.byKey(const Key('offer-card')));
+      await app.dispose(tester);
+    });
+
+    // A mis-tap on Decline only opens the reason sheet; one on Accept
+    // commits the driver. So when they stack, Accept is on top.
+    testWidgets('when they do not fit side by side, Accept is above Decline', (
+      tester,
+    ) async {
+      _phoneScreen(tester, bottomInset: 126);
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      _textScale(tester, 2.0);
+      await _offerArrives(tester, app, fare: null);
+
+      final decline = tester.getRect(
+        find.byKey(const Key('offer-card-decline')),
+      );
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.width, decline.width);
+      expect(accept.bottom, lessThanOrEqualTo(decline.top));
+      await app.dispose(tester);
+    });
+
+    for (final (navigation, bottomInset) in _bottomInsets) {
+      testWidgets('a very long pickup at text 2.0, $navigation: the card '
+          'stops at 60% of the screen, its details scroll, and Accept and '
+          'Decline stay in view', (tester) async {
+        _phoneScreen(tester, bottomInset: bottomInset);
+        final app = _App();
+        await app.pumpSignedIn(tester);
+        _textScale(tester, 2.0);
+        await _offerArrives(
+          tester,
+          app,
+          pickup: List.filled(30, 'Kotoka International Airport').join(' '),
+        );
+
+        final card = tester.getRect(find.byKey(const Key('offer-card')));
+        final screenHeight =
+            tester.view.physicalSize.height / tester.view.devicePixelRatio;
+        expect(card.height, lessThanOrEqualTo(screenHeight * 0.6 + 0.5));
+        expect(card.top, greaterThanOrEqualTo(0));
+        expect(
+          _scrollExtentInside(tester, find.byKey(const Key('offer-card'))),
+          greaterThan(0),
+        );
+        for (final button in const [
+          Key('offer-card-decline'),
+          Key('offer-card-accept'),
+        ]) {
+          final rect = tester.getRect(find.byKey(button));
+          expect(rect.top, greaterThanOrEqualTo(card.top), reason: '$button');
+          expect(
+            rect.bottom,
+            lessThanOrEqualTo(card.bottom),
+            reason: '$button',
+          );
+        }
+        await tester.tap(find.byKey(const Key('offer-card-accept')));
+        await _settle(tester);
+        expect(app.offerGateway.acceptedTrips, ['TRIP-1']);
+        await app.dispose(tester);
+      });
+    }
+
+    testWidgets('the full "Trip offer" screen at text 2.0: no word is '
+        'broken, and Accept is on screen', (tester) async {
+      _phoneScreen(tester, bottomInset: 126);
+      final app = _App()..source.offers = [_offer('TRIP-1', fare: null)];
+      await app.pumpSignedIn(tester);
+      _textScale(tester, 2.0);
+      app.push.emitOpened(_offerMessage('TRIP-1'));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-screen')), findsOneWidget);
+      final card = find.byKey(const Key('offer-card'));
+      _expectNoBrokenWords(tester, card);
+      final screenHeight =
+          tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      final accept = tester.getRect(find.byKey(const Key('offer-card-accept')));
+      expect(accept.top, greaterThanOrEqualTo(0));
+      expect(accept.bottom, lessThanOrEqualTo(screenHeight));
+      await app.dispose(tester);
+    });
+  });
+
+  // B5.1: seen 24 Oct on Account, the card covered "Sign out" and most of
+  // the "Safety & emergency" row. On the tabs the page now ends above the
+  // card; the header and the tab bar stay where they are.
+  group('on the tabs the page ends above the card', () {
+    for (final textScale in [1.0, ..._largeTextScales]) {
+      for (final (navigation, bottomInset) in _bottomInsets) {
+        testWidgets('on Account at text $textScale, $navigation: '
+            '"Safety & emergency" and "Sign out" can be seen in full, clear '
+            'of the card', (tester) async {
+          _phoneScreen(tester, bottomInset: bottomInset);
+          final app = _App();
+          await app.pumpSignedIn(tester);
+          _textScale(tester, textScale);
+          await _selectTab(tester, 'Account');
+          final tabs = tester.getRect(find.byType(NavigationBar));
+          await _offerArrives(tester, app, fare: null);
+
+          final card = tester.getRect(find.byKey(const Key('offer-card')));
+          final page = tester.getRect(
+            find.byKey(const Key('driver-account-screen')),
+          );
+          expect(_pageArea(tester).bottom, lessThanOrEqualTo(card.top));
+          expect(page.bottom, lessThanOrEqualTo(card.top));
+          expect(tester.getRect(find.byType(NavigationBar)), tabs);
+          for (final row in const [
+            Key('driver-account-safety-emergency'),
+            Key('driver-account-sign-out'),
+          ]) {
+            await _expectScrollsIntoView(tester, find.byKey(row), page);
+          }
+          expect(tester.takeException(), isNull);
+          await app.dispose(tester);
+        });
+
+        testWidgets('on Work and Trips at text $textScale, $navigation: the '
+            'page ends above the card; the header and the tab bar stay put', (
+          tester,
+        ) async {
+          _phoneScreen(tester, bottomInset: bottomInset);
+          final app = _App();
+          await app.pumpSignedIn(tester);
+          _textScale(tester, textScale);
+          await _settle(tester);
+          final header = tester.getRect(
+            find.byKey(const Key('driver-sign-out')),
+          );
+          final tabs = tester.getRect(find.byType(NavigationBar));
+          await _offerArrives(tester, app, fare: null);
+
+          expect(
+            tester.getRect(find.byKey(const Key('driver-sign-out'))),
+            header,
+          );
+          for (final (tab, page) in [
+            ('Work', find.byType(DriverHome)),
+            ('Trips', find.byType(DriverAssignedTripsScreen)),
+          ]) {
+            await _selectTab(tester, tab);
+            expect(page, findsOneWidget, reason: tab);
+            final card = tester.getRect(find.byKey(const Key('offer-card')));
+            expect(
+              _pageArea(tester).bottom,
+              lessThanOrEqualTo(card.top),
+              reason: tab,
+            );
+            expect(
+              tester.getRect(find.byType(NavigationBar)),
+              tabs,
+              reason: tab,
+            );
+          }
+          expect(tester.takeException(), isNull);
+          await app.dispose(tester);
+        });
+      }
+    }
+
+    testWidgets('when the card goes, each tab is full height again', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await _selectTab(tester, 'Account');
+      final tabs = tester.getRect(find.byType(NavigationBar));
+      expect(_pageArea(tester).bottom, tabs.top);
+      await _offerArrives(tester, app);
+      expect(_pageArea(tester).bottom, lessThan(tabs.top));
+
+      await tester.tap(find.byKey(const Key('offer-card-decline')));
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const Key('driver-decline-reason-option-end_of_shift')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('driver-decline-reason-confirm')));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+      expect(_pageArea(tester).bottom, tabs.top);
+      for (final tab in const ['Work', 'Trips']) {
+        await _selectTab(tester, tab);
+        expect(_pageArea(tester).bottom, tabs.top, reason: tab);
+      }
+      await app.dispose(tester);
+    });
+
+    testWidgets('over a pushed screen the card stays on top and the screen '
+        'keeps its full height', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      unawaited(
+        Navigator.of(tester.element(find.byType(DriverShell))).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(
+              key: Key('pushed-screen'),
+              body: SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      final screen = tester.getRect(find.byKey(const Key('pushed-screen')));
+      final tabsTop = _pageArea(tester).bottom;
+      await _offerArrives(tester, app);
+
+      final card = tester.getRect(find.byKey(const Key('offer-card')));
+      expect(card.top, lessThan(100));
+      expect(tester.getRect(find.byKey(const Key('pushed-screen'))), screen);
+      expect(
+        _pageArea(tester).bottom,
+        tabsTop,
+        reason: 'the tabs under the pushed screen are not shortened',
+      );
+      await app.dispose(tester);
+    });
+
+    testWidgets('an offer that arrives on a pushed screen: back on the tabs, '
+        'the page ends above the card', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      unawaited(
+        Navigator.of(tester.element(find.byType(DriverShell))).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(
+              key: Key('pushed-screen'),
+              body: SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      await _offerArrives(tester, app);
+
+      Navigator.of(
+        tester.element(find.byKey(const Key('pushed-screen'))),
+      ).pop();
+      await _settle(tester);
+      final card = tester.getRect(find.byKey(const Key('offer-card')));
+      expect(
+        card.bottom,
+        lessThanOrEqualTo(tester.getRect(find.byType(NavigationBar)).top),
+      );
+      expect(_pageArea(tester).bottom, lessThanOrEqualTo(card.top));
+      await app.dispose(tester);
+    });
+  });
+}
+
+Future<void> _offerArrives(
+  WidgetTester tester,
+  _App app, {
+  String pickup = 'Accra Mall',
+  String? fare = '35.00',
+}) async {
+  app.source.offers = [
+    _offer(
+      'TRIP-1',
+      pickup: pickup,
+      fare: fare,
+      expiresAt: '2026-10-09T10:01:00+00:00',
+    ),
+  ];
+  await app.coordinator.store.refresh();
+  await _settle(tester);
+}
+
+/// The space the shell offers the selected tab's page: above the tab bar,
+/// and above an offer card on the tabs. (A page may use less: the empty
+/// Trips list is shorter, with nothing below it.)
+Rect _pageArea(WidgetTester tester) {
+  final body = find.byKey(const Key('driver-shell-body'), skipOffstage: false);
+  final padding = tester
+      .widget<Padding>(body)
+      .padding
+      .resolve(TextDirection.ltr);
+  final offered = tester.renderObject<RenderBox>(body).constraints.maxHeight;
+  final rect = tester.getRect(body);
+  return Rect.fromLTRB(
+    rect.left,
+    rect.top + padding.top,
+    rect.right,
+    rect.top + offered - padding.bottom,
+  );
+}
+
+/// Every part of [row] can be scrolled into view inside [page]: in full at
+/// once when it fits, else its top and then its bottom (the test font makes
+/// some rows taller than the page left above the card at 2.0).
+Future<void> _expectScrollsIntoView(
+  WidgetTester tester,
+  Finder row,
+  Rect page,
+) async {
+  for (final alignment in const [0.0, 1.0]) {
+    await Scrollable.ensureVisible(tester.element(row), alignment: alignment);
+    await _settle(tester);
+    final rect = tester.getRect(row);
+    if (rect.height <= page.height) {
+      expect(rect.top, greaterThanOrEqualTo(page.top), reason: '$row');
+      expect(rect.bottom, lessThanOrEqualTo(page.bottom), reason: '$row');
+    } else if (alignment == 0) {
+      expect(rect.top, greaterThanOrEqualTo(page.top), reason: '$row top');
+    } else {
+      expect(rect.bottom, lessThanOrEqualTo(page.bottom), reason: '$row end');
+    }
+  }
+}
+
+/// No text inside [within] is narrower than its widest word, so no word is
+/// broken across lines.
+void _expectNoBrokenWords(WidgetTester tester, Finder within) {
+  final paragraphs = find.descendant(
+    of: within,
+    matching: find.byType(RichText),
+  );
+  expect(paragraphs, findsWidgets);
+  for (final element in paragraphs.evaluate()) {
+    final paragraph = element.renderObject! as RenderParagraph;
+    final text = paragraph.text.toPlainText();
+    for (final word in text.split(RegExp(r'\s+'))) {
+      final painter = TextPainter(
+        text: TextSpan(text: word, style: paragraph.text.style),
+        textScaler: paragraph.textScaler,
+        textDirection: TextDirection.ltr,
+      )..layout();
+      expect(
+        paragraph.size.width,
+        greaterThanOrEqualTo(painter.width - 0.5),
+        reason: '"$word" in "$text"',
+      );
+      painter.dispose();
+    }
+  }
+}
+
+/// How far the scrolling part of [within] can scroll; 0 when it has none.
+double _scrollExtentInside(WidgetTester tester, Finder within) {
+  final scrollables = find.descendant(
+    of: within,
+    matching: find.byType(Scrollable),
+  );
+  if (scrollables.evaluate().isEmpty) {
+    return 0;
+  }
+  return tester
+      .state<ScrollableState>(scrollables.first)
+      .position
+      .maxScrollExtent;
+}
+
+/// Text sizes a driver can pick in the phone's settings, above the default.
+const _largeTextScales = [1.3, 1.5, 2.0];
+
+/// Gesture navigation, and three-button navigation (48 dp at the bottom).
+const _bottomInsets = [
+  ('gesture navigation', 0.0),
+  ('three-button navigation', 126.0),
+];
+
+/// The test phone's screen: 1080 x 2340 px at 2.625.
+void _phoneScreen(WidgetTester tester, {required double bottomInset}) {
+  tester.view.physicalSize = const Size(1080, 2340);
+  tester.view.devicePixelRatio = 2.625;
+  tester.view.padding = FakeViewPadding(bottom: bottomInset);
+  tester.view.viewPadding = FakeViewPadding(bottom: bottomInset);
+  addTearDown(tester.view.reset);
+}
+
+/// The text size turned up after signing in, as a driver would in settings.
+void _textScale(WidgetTester tester, double scale) {
+  tester.platformDispatcher.textScaleFactorTestValue = scale;
+  addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+}
+
+Future<void> _selectTab(WidgetTester tester, String label) async {
+  await tester.tap(
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+  );
+  await _settle(tester);
 }
 
 Future<void> _settle(WidgetTester tester) async {
@@ -879,11 +1370,12 @@ Map<String, Object?> _offer(
   String pickup = 'Accra Mall',
   String expiresAt = '2026-10-09T10:00:45+00:00',
   bool includePickupTime = true,
+  String? fare = '35.00',
 }) => <String, Object?>{
   'trip_reference': reference,
   'pickup_location': pickup,
   'passenger_count': 1,
-  'fare_amount': '35.00',
+  'fare_amount': fare,
   'fare_currency': 'GHS',
   'assigned_at': '2026-10-09T10:00:00+00:00',
   'offer_expires_at': expiresAt,
