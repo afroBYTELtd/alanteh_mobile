@@ -123,7 +123,8 @@ class DriverShell extends StatefulWidget {
   /// See [DriverHome.pendingOffersPanelBuilder].
   final Widget Function(Widget waitingPanel)? pendingOffersPanelBuilder;
 
-  /// Told after every change of on-duty (online with today's shift check).
+  /// Told after every change of on-duty: online on the server, with or
+  /// without today's shift check (staff offers need none).
   final ValueChanged<bool>? onDutyChanged;
 
   /// How long the sign-in has left (the refresh token's own expiry); null
@@ -1143,7 +1144,7 @@ class _DriverShellState extends State<DriverShell> {
   bool? _reportedOnDuty;
 
   void _reportDuty() {
-    final onDuty = _isOnline;
+    final onDuty = _isOnline || _onlineWithoutShiftCheck;
     final report = widget.onDutyChanged;
     if (report == null || onDuty == _reportedOnDuty) {
       return;
