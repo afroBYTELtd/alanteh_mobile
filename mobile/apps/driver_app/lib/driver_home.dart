@@ -17,6 +17,11 @@ String _driverGreeting({DateTime Function()? now}) {
   }
 }
 
+/// Online on the server, without today's shift check.
+const driverShiftCheckNeededMessage =
+    "You're online, but today's shift check isn't done. You won't get "
+    'automatic trips until you do it.';
+
 class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
@@ -24,6 +29,8 @@ class DriverHome extends StatelessWidget {
     required this.shiftCheckCompletedToday,
     required this.dutyActionInFlight,
     required this.onOpenReadiness,
+    this.onlineWithoutShiftCheck = false,
+    this.goOfflineError,
     required this.onGoOnline,
     required this.onGoOffline,
     required this.onRecordConcern,
@@ -43,6 +50,13 @@ class DriverHome extends StatelessWidget {
   final bool shiftCheckCompletedToday;
   final bool dutyActionInFlight;
   final VoidCallback onOpenReadiness;
+
+  /// Online on the server without today's shift check: the driver gets no
+  /// automatic trips until doing it.
+  final bool onlineWithoutShiftCheck;
+
+  /// Why the last GO OFFLINE failed; the driver is still online.
+  final String? goOfflineError;
   final VoidCallback? onGoOnline;
   final VoidCallback? onGoOffline;
   final VoidCallback onRecordConcern;
@@ -105,6 +119,8 @@ class DriverHome extends StatelessWidget {
           Text(
             isOnShift
                 ? "Today's shift · online now"
+                : onlineWithoutShiftCheck
+                ? "Today's shift · online · shift check needed"
                 : shiftCheckCompletedToday
                 ? "Today's shift · offline"
                 : "Today's shift · not yet started",
@@ -114,15 +130,21 @@ class DriverHome extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (onlineWithoutShiftCheck) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            _DriverShiftCheckNeededBanner(onStart: onOpenReadiness),
+          ],
           const SizedBox(height: AsmSpacing.space16),
           _DriverDutyStatusCard(
-            isOnline: isOnShift,
+            isOnline: isOnShift || onlineWithoutShiftCheck,
+            shiftCheckNeeded: onlineWithoutShiftCheck,
             shiftCheckCompletedToday: shiftCheckCompletedToday,
             dutyActionInFlight: dutyActionInFlight,
             localQaEnabled: localQaEnabled,
             onOpenReadiness: onOpenReadiness,
             onGoOnline: onGoOnline,
             onGoOffline: onGoOffline,
+            goOfflineError: goOfflineError,
           ),
           if (isOnShift) ...[
             const SizedBox(height: AsmSpacing.space16),
@@ -198,6 +220,55 @@ class DriverHome extends StatelessWidget {
   }
 }
 
+/// Online without today's shift check: what that means, and the way to it.
+class _DriverShiftCheckNeededBanner extends StatelessWidget {
+  const _DriverShiftCheckNeededBanner({required this.onStart});
+
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('driver-shift-check-needed-banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: AsmColors.driverCardElevated,
+        borderRadius: BorderRadius.circular(AsmRadii.radius24),
+        border: Border.all(color: AsmColors.driverWarningSurface),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.fact_check_outlined,
+                color: AsmColors.driverWarningSurface,
+              ),
+              SizedBox(width: AsmSpacing.space12),
+              Expanded(
+                child: Text(
+                  driverShiftCheckNeededMessage,
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AsmSpacing.space12),
+          AsmPrimaryActionButton(
+            key: const Key('driver-shift-check-needed-start'),
+            onPressed: onStart,
+            icon: Icons.fact_check_outlined,
+            label: 'Start shift check',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DriverDutyStatusCard extends StatelessWidget {
   const _DriverDutyStatusCard({
     required this.isOnline,
@@ -207,9 +278,15 @@ class _DriverDutyStatusCard extends StatelessWidget {
     required this.onOpenReadiness,
     required this.onGoOnline,
     required this.onGoOffline,
+    this.shiftCheckNeeded = false,
+    this.goOfflineError,
   });
 
   final bool isOnline;
+
+  /// Online without today's shift check; the banner above explains it.
+  final bool shiftCheckNeeded;
+  final String? goOfflineError;
   final bool shiftCheckCompletedToday;
   final bool dutyActionInFlight;
   final bool localQaEnabled;
@@ -278,46 +355,64 @@ class _DriverDutyStatusCard extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: AsmSpacing.space4),
-                    Text(
-                      isOnline
-                          ? 'Ready to receive nearby ride offers.'
-                          : shiftCheckCompletedToday
-                          ? "Today's shift check is already saved. Tap Go "
-                                'online to start getting trips.'
-                          : 'Complete your pre-shift check to go online.',
-                      style: const TextStyle(
-                        color: AsmColors.driverTextSecondary,
-                        height: 1.35,
+                    if (!shiftCheckNeeded) ...[
+                      const SizedBox(height: AsmSpacing.space4),
+                      Text(
+                        isOnline
+                            ? 'Ready to receive nearby ride offers.'
+                            : shiftCheckCompletedToday
+                            ? "Today's shift check is already saved. Tap Go "
+                                  'online to start getting trips.'
+                            : 'Complete your pre-shift check to go online.',
+                        style: const TextStyle(
+                          color: AsmColors.driverTextSecondary,
+                          height: 1.35,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AsmSpacing.space20),
-          KeyedSubtree(
-            key: localQaEnabled && !isOnline && !shiftCheckCompletedToday
-                ? const Key('open-readiness')
-                : null,
-            child: AsmPrimaryActionButton(
-              key: Key(
-                isOnline
-                    ? 'driver-go-offline'
-                    : shiftCheckCompletedToday
-                    ? 'driver-go-online'
-                    : 'driver-start-readiness',
-              ),
-              onPressed: dutyActionInFlight ? null : action,
-              icon: isOnline
-                  ? Icons.power_settings_new
-                  : shiftCheckCompletedToday
-                  ? Icons.online_prediction
-                  : Icons.fact_check_outlined,
-              label: actionLabel,
+          if (isOnline && goOfflineError != null) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            Text(
+              goOfflineError!,
+              key: const Key('driver-go-offline-error'),
+              style: const TextStyle(fontWeight: FontWeight.w700, height: 1.35),
             ),
-          ),
+            const SizedBox(height: AsmSpacing.space12),
+            AsmPrimaryActionButton(
+              key: const Key('driver-go-offline-retry'),
+              onPressed: dutyActionInFlight ? null : onGoOffline,
+              icon: Icons.refresh,
+              label: 'Retry',
+            ),
+          ] else ...[
+            const SizedBox(height: AsmSpacing.space20),
+            KeyedSubtree(
+              key: localQaEnabled && !isOnline && !shiftCheckCompletedToday
+                  ? const Key('open-readiness')
+                  : null,
+              child: AsmPrimaryActionButton(
+                key: Key(
+                  isOnline
+                      ? 'driver-go-offline'
+                      : shiftCheckCompletedToday
+                      ? 'driver-go-online'
+                      : 'driver-start-readiness',
+                ),
+                onPressed: dutyActionInFlight ? null : action,
+                icon: isOnline
+                    ? Icons.power_settings_new
+                    : shiftCheckCompletedToday
+                    ? Icons.online_prediction
+                    : Icons.fact_check_outlined,
+                label: actionLabel,
+              ),
+            ),
+          ],
         ],
       ),
     );

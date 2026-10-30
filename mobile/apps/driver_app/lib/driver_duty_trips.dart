@@ -53,10 +53,18 @@ enum DriverDutyApiFailureType {
 }
 
 final class DriverDutyApiException implements Exception {
-  const DriverDutyApiException(this.type, this.message);
+  const DriverDutyApiException(
+    this.type,
+    this.message, {
+    this.noAnswer = false,
+  });
 
   final DriverDutyApiFailureType type;
   final String message;
+
+  /// The server never answered (no network, a timeout, or a sign-in refresh
+  /// that did not complete), as opposed to answering with an error.
+  final bool noAnswer;
 
   bool get isSessionExpired => type == DriverDutyApiFailureType.sessionExpired;
 
@@ -262,6 +270,7 @@ final class AsmDriverDutyGateway
       throw const DriverDutyApiException(
         DriverDutyApiFailureType.unavailable,
         'Driver information is temporarily unavailable.',
+        noAnswer: true,
       );
     }
 
@@ -288,8 +297,15 @@ final class AsmDriverDutyGateway
     }
 
     if (response.error?.type == AsmApiExceptionType.network ||
-        response.error?.type == AsmApiExceptionType.timeout ||
-        response.error?.type == AsmApiExceptionType.server ||
+        response.error?.type == AsmApiExceptionType.timeout) {
+      return const DriverDutyApiException(
+        DriverDutyApiFailureType.unavailable,
+        'Driver information is temporarily unavailable.',
+        noAnswer: true,
+      );
+    }
+
+    if (response.error?.type == AsmApiExceptionType.server ||
         const <int>{502, 503, 504}.contains(response.statusCode)) {
       return const DriverDutyApiException(
         DriverDutyApiFailureType.unavailable,
@@ -2177,9 +2193,7 @@ class _DriverTripDetailCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.close_outlined),
-              label: Text(
-                offerDeclineSubmitting ? 'Declining...' : 'Decline',
-              ),
+              label: Text(offerDeclineSubmitting ? 'Declining...' : 'Decline'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
               ),
@@ -2344,8 +2358,7 @@ class _DriverDeclineReasonSheet extends StatefulWidget {
       _DriverDeclineReasonSheetState();
 }
 
-class _DriverDeclineReasonSheetState
-    extends State<_DriverDeclineReasonSheet> {
+class _DriverDeclineReasonSheetState extends State<_DriverDeclineReasonSheet> {
   DriverDeclineReason? _selected;
   final _noteController = TextEditingController();
 

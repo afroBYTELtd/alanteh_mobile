@@ -66,6 +66,22 @@ String _startupGateDiagSanitizedErrorMessage(Object error) {
 /// At the shift check, a sign-in ending sooner than this is renewed first.
 const driverSignInRenewalWindow = Duration(hours: 12);
 
+/// How often Work, in front, asks the server for the duty summary again.
+const driverDutyReloadInterval = Duration(minutes: 3);
+
+/// After midnight in Accra (UTC), how long to wait before asking again, so
+/// the server's day has changed too.
+const driverDutyDayChangeDelay = Duration(seconds: 10);
+
+/// GO OFFLINE got no answer from the server.
+const driverGoOfflineNoAnswerMessage =
+    "Couldn't go offline. You may still get trip offers. Check your "
+    'connection and tap Retry.';
+
+/// GO OFFLINE was answered with an error.
+const driverGoOfflineFailedMessage =
+    "Couldn't go offline. You may still get trip offers. Tap Retry.";
+
 class DriverShell extends StatefulWidget {
   const DriverShell({
     this.configuration = AsmAppConfig.localGhana,
@@ -133,6 +149,19 @@ class _DriverShellState extends State<DriverShell> {
   DriverDutySummary? _dutySummary;
   Object? _dutyError;
 
+  /// Why the last GO OFFLINE failed; the driver is still online meanwhile.
+  String? _goOfflineError;
+
+  // Quiet reloads (resume, every few minutes on Work, the Accra day
+  // change): one at a time, and an answer that started before a newer duty
+  // change is dropped.
+  int _dutyGeneration = 0;
+  bool _quietReloadInFlight = false;
+  bool _appInFront = true;
+  AppLifecycleListener? _lifecycle;
+  Timer? _workReloadTimer;
+  Timer? _dayChangeTimer;
+
   bool get _shiftCheckCompletedToday {
     if (widget.driverDutyGateway == null) {
       return _localChecklistComplete;
@@ -143,6 +172,13 @@ class _DriverShellState extends State<DriverShell> {
 
   bool get _isOnline =>
       _shiftCheckCompletedToday && (_dutySummary?.isOnline ?? false);
+
+  /// Online on the server without today's shift check (left online from an
+  /// earlier day): no automatic trips until the driver does it.
+  bool get _onlineWithoutShiftCheck =>
+      widget.driverDutyGateway != null &&
+      (_dutySummary?.isOnline ?? false) &&
+      !_shiftCheckCompletedToday;
 
   @override
   void initState() {
@@ -165,6 +201,77 @@ class _DriverShellState extends State<DriverShell> {
 
     if (widget.driverDutyGateway != null) {
       unawaited(_loadDuty());
+    }
+
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) =>
+          _appInFront = state == AppLifecycleState.resumed,
+      onResume: () => unawaited(_reloadDutyQuietly()),
+    );
+    _workReloadTimer = Timer.periodic(driverDutyReloadInterval, (_) {
+      final workInFront =
+          _selectedIndex == 0 &&
+          _appInFront &&
+          (ModalRoute.of(context)?.isCurrent ?? true);
+      if (workInFront) {
+        unawaited(_reloadDutyQuietly());
+      }
+    });
+    _setDayChangeTimer();
+  }
+
+  /// Just after the next midnight in Accra (UTC), when today's shift check
+  /// is due again.
+  void _setDayChangeTimer() {
+    final now = (widget.deviceNow?.call() ?? DateTime.now()).toUtc();
+    final nextDay = DateTime.utc(now.year, now.month, now.day + 1);
+    _dayChangeTimer = Timer(
+      nextDay.difference(now) + driverDutyDayChangeDelay,
+      () {
+        unawaited(_reloadDutyQuietly());
+        _setDayChangeTimer();
+      },
+    );
+  }
+
+  /// Asks the server for the duty summary again, without disturbing Work:
+  /// a failure keeps what Work shows, except an ended session, shown as
+  /// before.
+  Future<void> _reloadDutyQuietly() async {
+    final gateway = widget.driverDutyGateway;
+    if (gateway == null ||
+        !mounted ||
+        _dutyLoading ||
+        _quietReloadInFlight ||
+        _dutyActionInFlight ||
+        _confirmingShiftCheck ||
+        _showOnlineTransition) {
+      return;
+    }
+    final generation = _dutyGeneration;
+    _quietReloadInFlight = true;
+    try {
+      final duty = await gateway.fetchDuty();
+      if (!mounted || generation != _dutyGeneration) {
+        return;
+      }
+      setState(() {
+        _dutySummary = duty;
+        _startupGateDiagDutySummary(_dutySummary, reason: 'quiet_reload');
+        _dutyError = null;
+        if (!duty.isOnline) {
+          _goOfflineError = null;
+        }
+      });
+    } on Object catch (error) {
+      if (!mounted || generation != _dutyGeneration) {
+        return;
+      }
+      if (error is DriverDutyApiException && error.isSessionExpired) {
+        setState(() => _dutyError = error);
+      }
+    } finally {
+      _quietReloadInFlight = false;
     }
   }
 
@@ -256,6 +363,9 @@ class _DriverShellState extends State<DriverShell> {
     if (controller != null) {
       unawaited(controller.stopAutomaticSync());
     }
+    _lifecycle?.dispose();
+    _workReloadTimer?.cancel();
+    _dayChangeTimer?.cancel();
     super.dispose();
   }
 
@@ -268,6 +378,7 @@ class _DriverShellState extends State<DriverShell> {
       );
       return;
     }
+    _dutyGeneration += 1;
 
     final oldDutyLoading = _dutyLoading;
     setState(() {
@@ -744,6 +855,7 @@ class _DriverShellState extends State<DriverShell> {
     if (gateway == null) {
       return;
     }
+    _dutyGeneration += 1;
 
     final oldDutyLoading = _dutyLoading;
     final oldSelectedIndex = _selectedIndex;
@@ -865,9 +977,11 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
 
+    _dutyGeneration += 1;
     setState(() {
       _dutyActionInFlight = true;
       _dutyError = null;
+      _goOfflineError = null;
     });
 
     try {
@@ -893,9 +1007,19 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      final sessionEnded =
+          error is DriverDutyApiException && error.isSessionExpired;
       setState(() {
         _dutyActionInFlight = false;
-        _dutyError = error;
+        if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {
+          // The driver is still online: say so on Work, with Retry, instead
+          // of the "You're offline" screen.
+          _goOfflineError = error is DriverDutyApiException && !error.noAnswer
+              ? driverGoOfflineFailedMessage
+              : driverGoOfflineNoAnswerMessage;
+        } else {
+          _dutyError = error;
+        }
       });
     }
   }
@@ -928,9 +1052,11 @@ class _DriverShellState extends State<DriverShell> {
     final oldDutyLoading = _dutyLoading;
     final oldConsidered = _startupShiftCheckConsidered;
     final oldSelectedIndex = _selectedIndex;
+    _dutyGeneration += 1;
     setState(() {
       _localChecklistComplete = false;
       _dutySummary = null;
+      _goOfflineError = null;
       _startupGateDiagDutySummary(_dutySummary, reason: 'sign_out');
       _dutyError = null;
       _dutyLoading = false;
@@ -998,9 +1124,11 @@ class _DriverShellState extends State<DriverShell> {
       onGoOnline: _shiftCheckCompletedToday && !_isOnline
           ? () => unawaited(_changeDuty(DriverOperationalDutyStatus.online))
           : null,
-      onGoOffline: _isOnline
+      onGoOffline: _isOnline || _onlineWithoutShiftCheck
           ? () => unawaited(_changeDuty(DriverOperationalDutyStatus.offline))
           : null,
+      onlineWithoutShiftCheck: _onlineWithoutShiftCheck,
+      goOfflineError: _goOfflineError,
       onRecordConcern: _openConcern,
       onPreviewIncomingRequest: _openRideOfferPreview,
       localQaEnabled: widget.localQaEnabled,
