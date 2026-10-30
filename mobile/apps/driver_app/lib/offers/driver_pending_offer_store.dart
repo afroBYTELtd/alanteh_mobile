@@ -364,8 +364,10 @@ final class DriverPendingOfferStore extends ChangeNotifier {
 }
 
 /// Remembers the driver reference and duty status from every duty fetch the
-/// app already makes, so an offer never waits for a profile fetch.
-final class DriverIdentityCachingDutyGateway implements DriverDutyGateway {
+/// app already makes, so an offer never waits for a profile fetch. Duty
+/// changes (GO OFFLINE, GO ONLINE) pass through to [inner].
+final class DriverIdentityCachingDutyGateway
+    implements DriverDutyGateway, DriverDutyStatusGateway {
   DriverIdentityCachingDutyGateway(this.inner);
 
   final DriverDutyGateway inner;
@@ -397,6 +399,26 @@ final class DriverIdentityCachingDutyGateway implements DriverDutyGateway {
       _onDuty = summary.isOnline;
     }
     return summary;
+  }
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    final changes = inner;
+    if (changes is! DriverDutyStatusGateway) {
+      throw const DriverDutyApiException(
+        DriverDutyApiFailureType.badResponse,
+        'Driver duty action is not configured.',
+      );
+    }
+    final generation = _generation;
+    final transition = await (changes as DriverDutyStatusGateway)
+        .updateDutyStatus(status);
+    if (generation == _generation) {
+      _onDuty = transition.dutyStatus == 'online';
+    }
+    return transition;
   }
 
   @override

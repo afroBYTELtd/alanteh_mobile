@@ -874,6 +874,32 @@ void main() {
     await app.dispose(tester);
   });
 
+  // B7.2: seen 25 Oct, GO OFFLINE on Work never reached the server.
+  testWidgets('GO OFFLINE on Work reaches the server', (tester) async {
+    final app = _App();
+    await app.pumpSignedIn(tester);
+
+    await tester.tap(find.byKey(const Key('driver-go-offline')));
+    await _settle(tester);
+
+    expect(app.duty.updates, [DriverOperationalDutyStatus.offline]);
+    expect(find.byKey(const Key('driver-offline-status')), findsOneWidget);
+    expect(find.byKey(const Key('driver-offline-screen')), findsNothing);
+    await app.dispose(tester);
+  });
+
+  testWidgets('GO ONLINE on Work reaches the server', (tester) async {
+    final app = _App()..duty.dutyStatus = 'offline';
+    await app.pumpSignedIn(tester);
+
+    await tester.tap(find.byKey(const Key('driver-go-online')));
+    await _settle(tester);
+
+    expect(app.duty.updates, [DriverOperationalDutyStatus.online]);
+    expect(find.byKey(const Key('driver-online-status')), findsOneWidget);
+    await app.dispose(tester);
+  });
+
   testWidgets('polls only while on duty; sign-out stops it', (tester) async {
     final app = _App();
     await app.pumpSignedIn(tester);
@@ -1618,10 +1644,23 @@ final class _AuthApi implements AuthApiGateway {
   }
 }
 
-final class _Duty implements DriverDutyGateway {
+final class _Duty implements DriverDutyGateway, DriverDutyStatusGateway {
   /// The server's duty state.
   String dutyStatus = 'online';
   bool shiftCheckToday = true;
+  final updates = <DriverOperationalDutyStatus>[];
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    updates.add(status);
+    dutyStatus = status.wireValue;
+    return DriverDutyTransition(
+      dutyStatus: status.wireValue,
+      since: DateTime(2026, 10, 9, 9),
+    );
+  }
 
   @override
   Future<DriverDutySummary> fetchDuty() async => DriverDutySummary(
