@@ -519,6 +519,45 @@ void main() {
       expect(gateway.onDuty, isFalse);
     });
 
+    // An answer that comes back after a sign-out or a driver change belongs
+    // to the old session: it must not mark the new one on duty.
+    test('a duty fetch that answers after clear() leaves the new session '
+        'as it is', () async {
+      final inner = _HeldDutyGateway();
+      final gateway = DriverIdentityCachingDutyGateway(inner);
+
+      final late = gateway.fetchDuty();
+      gateway.clear(); // sign-out, or another driver signs in
+      inner.fetch.complete(
+        const DriverDutySummary(
+          driverReference: 'DRV-OLD',
+          dutyStatus: 'online',
+        ),
+      );
+      await late;
+
+      expect(gateway.onDuty, isFalse);
+      expect(gateway.driverReference, isNull);
+    });
+
+    test('a GO ONLINE that answers after clear() leaves the new session '
+        'off duty', () async {
+      final inner = _HeldDutyGateway();
+      final gateway = DriverIdentityCachingDutyGateway(inner);
+
+      final late = gateway.updateDutyStatus(DriverOperationalDutyStatus.online);
+      gateway.clear();
+      inner.update.complete(
+        DriverDutyTransition(
+          dutyStatus: 'online',
+          since: DateTime.utc(2026, 10, 30),
+        ),
+      );
+      await late;
+
+      expect(gateway.onDuty, isFalse);
+    });
+
     test('a gateway that cannot change duty says so', () async {
       final gateway = DriverIdentityCachingDutyGateway(_DutyGateway(null));
       await expectLater(
@@ -718,6 +757,23 @@ final class _StatusDutyGateway extends _DutyGateway
       since: DateTime.utc(2026, 10, 30),
     );
   }
+}
+
+/// Answers only when the test completes [fetch] or [update].
+final class _HeldDutyGateway extends _DutyGateway
+    implements DriverDutyStatusGateway {
+  _HeldDutyGateway() : super(null);
+
+  final fetch = Completer<DriverDutySummary>();
+  final update = Completer<DriverDutyTransition>();
+
+  @override
+  Future<DriverDutySummary> fetchDuty() => fetch.future;
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) => update.future;
 }
 
 final class _MemoryQueue implements DriverTripActionPersistentQueue {
