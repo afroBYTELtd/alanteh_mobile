@@ -355,8 +355,11 @@ void main() {
     );
     await tester.pump();
     await tester.pumpAndSettle();
-    expect(find.text('START SHIFT CHECK'), findsOneWidget);
-    await tester.tap(find.text('START SHIFT CHECK'));
+    expect(
+      find.byKey(const Key('driver-shift-check-needed-start')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('driver-shift-check-needed-start')));
     await tester.pumpAndSettle();
 
     await _completeReadiness(tester);
@@ -426,8 +429,11 @@ void main() {
     );
     await tester.pump();
     await tester.pumpAndSettle();
-    expect(find.text('START SHIFT CHECK'), findsOneWidget);
-    await tester.tap(find.text('START SHIFT CHECK'));
+    expect(
+      find.byKey(const Key('driver-shift-check-needed-start')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('driver-shift-check-needed-start')));
     await tester.pumpAndSettle();
 
     await _completeReadiness(tester);
@@ -483,7 +489,7 @@ void main() {
     );
     await tester.pump();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.tap(find.byKey(const Key('driver-shift-check-needed-start')));
     await tester.pumpAndSettle();
 
     await _completeReadiness(tester);
@@ -557,7 +563,7 @@ void main() {
     );
     await tester.pump();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.tap(find.byKey(const Key('driver-shift-check-needed-start')));
     await tester.pumpAndSettle();
 
     await _completeReadiness(tester);
@@ -681,7 +687,7 @@ void main() {
     );
     await tester.pump();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('START SHIFT CHECK'));
+    await tester.tap(find.byKey(const Key('driver-shift-check-needed-start')));
     await tester.pumpAndSettle();
 
     await _completeReadiness(tester);
