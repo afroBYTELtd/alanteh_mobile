@@ -495,6 +495,43 @@ void main() {
       await expectLater(gateway.fetchDuty(), throwsStateError);
       expect(gateway.driverReference, isNull);
     });
+
+    // B7.2: the app wraps every duty gateway in this cache, and it did not
+    // pass duty changes on, so GO OFFLINE and GO ONLINE on Work never
+    // reached the server (seen 25 Oct: the server kept the driver online).
+    test('passes GO OFFLINE and GO ONLINE on to the server', () async {
+      final inner = _StatusDutyGateway();
+      final DriverDutyGateway gateway = DriverIdentityCachingDutyGateway(inner);
+      expect(gateway, isA<DriverDutyStatusGateway>());
+      final status = gateway as DriverDutyStatusGateway;
+
+      final online = await status.updateDutyStatus(
+        DriverOperationalDutyStatus.online,
+      );
+      expect(online.dutyStatus, 'online');
+      expect((gateway as DriverIdentityCachingDutyGateway).onDuty, isTrue);
+
+      await status.updateDutyStatus(DriverOperationalDutyStatus.offline);
+      expect(inner.updates, [
+        DriverOperationalDutyStatus.online,
+        DriverOperationalDutyStatus.offline,
+      ]);
+      expect(gateway.onDuty, isFalse);
+    });
+
+    test('a gateway that cannot change duty says so', () async {
+      final gateway = DriverIdentityCachingDutyGateway(_DutyGateway(null));
+      await expectLater(
+        gateway.updateDutyStatus(DriverOperationalDutyStatus.offline),
+        throwsA(
+          isA<DriverDutyApiException>().having(
+            (error) => error.type,
+            'type',
+            DriverDutyApiFailureType.badResponse,
+          ),
+        ),
+      );
+    });
   });
 }
 
@@ -663,6 +700,24 @@ final class _DutyGateway implements DriverDutyGateway {
   @override
   Future<DriverAssignedTrip> fetchTripDetail(String tripReference) =>
       throw UnimplementedError();
+}
+
+final class _StatusDutyGateway extends _DutyGateway
+    implements DriverDutyStatusGateway {
+  _StatusDutyGateway() : super(null);
+
+  final updates = <DriverOperationalDutyStatus>[];
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    updates.add(status);
+    return DriverDutyTransition(
+      dutyStatus: status.wireValue,
+      since: DateTime.utc(2026, 10, 30),
+    );
+  }
 }
 
 final class _MemoryQueue implements DriverTripActionPersistentQueue {
