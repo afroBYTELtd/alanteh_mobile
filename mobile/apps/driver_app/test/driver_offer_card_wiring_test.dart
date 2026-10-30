@@ -847,6 +847,33 @@ void main() {
     });
   });
 
+  // B7.1: a driver the server holds online without today's shift check
+  // gets no automatic trips, but staff offers need no shift check, so the
+  // app still asks for offers.
+  testWidgets('online on the server without today\'s shift check: the poll '
+      'runs', (tester) async {
+    final app = _App()..duty.shiftCheckToday = false;
+    await app.pumpSignedIn(tester);
+
+    expect(app.coordinator.polling, isTrue);
+    await app.dispose(tester);
+  });
+
+  testWidgets('online without today\'s shift check: a staff offer waiting '
+      'shows the card (the poll asks as soon as the driver is on duty)', (
+    tester,
+  ) async {
+    final app = _App()
+      ..duty.shiftCheckToday = false
+      ..source.offers = [
+        {..._offer('TRIP-S'), 'offer_expires_at': null},
+      ];
+    await app.pumpSignedIn(tester);
+
+    expect(find.byKey(const Key('offer-card')), findsOneWidget);
+    await app.dispose(tester);
+  });
+
   testWidgets('polls only while on duty; sign-out stops it', (tester) async {
     final app = _App();
     await app.pumpSignedIn(tester);
@@ -1592,12 +1619,16 @@ final class _AuthApi implements AuthApiGateway {
 }
 
 final class _Duty implements DriverDutyGateway {
+  /// The server's duty state.
+  String dutyStatus = 'online';
+  bool shiftCheckToday = true;
+
   @override
   Future<DriverDutySummary> fetchDuty() async => DriverDutySummary(
     driverReference: 'DRV-1',
-    dutyStatus: 'online',
+    dutyStatus: dutyStatus,
     dutySince: DateTime(2026, 10, 9, 8),
-    shiftCheckToday: true,
+    shiftCheckToday: shiftCheckToday,
     canReceiveAssignments: true,
   );
 

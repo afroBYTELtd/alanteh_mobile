@@ -244,6 +244,20 @@ void main() {
       expect(find.text(driverShiftCheckNeededMessage), findsNothing);
     });
 
+    // B7.1: staff offers need no shift check, so the offer poll follows
+    // the server's online state.
+    testWidgets('the app counts the driver on duty for offers, and off duty '
+        'after GO OFFLINE', (tester) async {
+      final onDuty = <bool>[];
+      final server = _DutyServer(_onlineNotChecked);
+      await _pumpShell(tester, server, onDutyChanged: onDuty.add);
+      expect(onDuty.last, isTrue);
+
+      await tester.tap(find.byKey(const Key('driver-go-offline')));
+      await _settle(tester);
+      expect(onDuty.last, isFalse);
+    });
+
     testWidgets('once the check is done, a reload removes the banner', (
       tester,
     ) async {
@@ -455,6 +469,7 @@ Future<void> _pumpShell(
   WidgetTester tester,
   _DutyServer server, {
   _Clock? clock,
+  ValueChanged<bool>? onDutyChanged,
 }) async {
   final now = clock ?? _Clock(DateTime.utc(2026, 10, 24, 10));
   await tester.pumpWidget(
@@ -464,6 +479,7 @@ Future<void> _pumpShell(
         driverDutyGateway: server,
         deviceNow: () => now.value,
         onlineTransitionDuration: Duration.zero,
+        onDutyChanged: onDutyChanged,
       ),
     ),
   );
