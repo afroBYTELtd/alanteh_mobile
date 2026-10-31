@@ -16,7 +16,6 @@ import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
-import 'package:driver_app/driver_shell.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/safety/driver_trip_safety.dart';
 import 'package:flutter_test/flutter_test.dart';

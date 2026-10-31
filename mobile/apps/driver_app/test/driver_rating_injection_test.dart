@@ -1,5 +1,4 @@
 import 'package:asm_api_client/asm_api_client.dart';
-import 'package:driver_app/driver_shell.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/network/driver_rating_gateway.dart';
 import 'package:flutter_test/flutter_test.dart';
