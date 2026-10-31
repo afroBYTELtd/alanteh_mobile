@@ -263,6 +263,7 @@ class DriverOfferLayerState extends State<DriverOfferLayer> {
                   onAccepted: source.onAccepted,
                   pickDeclineReason: _pickDeclineReason,
                   openAssignedTrips: _openAssignedTrips,
+                  openPopups: widget.routeCounter.popups,
                   waitingPanel: const SizedBox.shrink(),
                 ),
               ),

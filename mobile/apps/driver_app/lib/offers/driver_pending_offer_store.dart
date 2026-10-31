@@ -45,12 +45,18 @@ abstract final class DriverOfferCardTiming {
   /// Foreground check while on duty.
   static const pollInterval = Duration(seconds: 12);
 
+  /// The same check while an offer card is open: slower, so it never
+  /// crowds the card, but a withdrawn offer still reaches it when its push
+  /// is lost (seen 31 Oct: a cancelled staff offer stayed on the card).
+  static const openCardPollInterval = Duration(seconds: 30);
+
   /// An automatic offer's time ran out, but the check at zero can come a
   /// moment before the server expires it: ask again this long after zero.
   static const expiredRecheckDelay = Duration(seconds: 3);
 
-  /// An automatic offer whose time ran out leaves the home screen this long
-  /// after zero, even if the server still lists it as pending.
+  /// An ended card (its time ran out, or the offer is no longer available)
+  /// clears this long after it ended, even if the server still lists the
+  /// offer. The time counts only while no sheet or dialog is open on top.
   static const expiredRemovalDelay = Duration(seconds: 5);
 
   /// A push tap that arrived before sign-in is dropped after this long.
@@ -322,8 +328,13 @@ final class DriverPendingOfferStore extends ChangeNotifier {
   ];
 
   bool _isForgotten(DriverPendingOffer offer) =>
-      _forgotten.contains(DriverOfferIdentity.of(offer)) ||
-      _forgotten.contains(DriverOfferIdentity(offer.tripReference));
+      forgets(DriverOfferIdentity.of(offer));
+
+  /// True when [identity] was dropped here (answered, closed or cleared),
+  /// as opposed to left out by the server.
+  bool forgets(DriverOfferIdentity identity) =>
+      _forgotten.contains(identity) ||
+      _forgotten.contains(DriverOfferIdentity(identity.tripReference));
 
   /// The offer the card should show first: the earliest expiry.
   DriverPendingOffer? get firstOffer {

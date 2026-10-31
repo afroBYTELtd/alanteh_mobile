@@ -71,7 +71,11 @@ void main() {
       await pumpEventQueue();
 
       expect(source.calls, before + 1);
-      expect(coordinator.polling, isFalse, reason: 'paused for the card');
+      expect(
+        coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+        reason: 'slow for the card',
+      );
     });
 
     test('returning to the front off duty fetches nothing', () async {
@@ -84,14 +88,19 @@ void main() {
       expect(source.calls, before);
     });
 
-    test('pauses while a card is open', () async {
+    // B9: slower, not paused, so a withdrawn offer still reaches the card
+    // when its push is lost (31 Oct).
+    test('slows to every 30 s while a card is open', () async {
       coordinator
         ..setForeground(true)
         ..setOnDuty(true)
         ..cardOpened();
-      expect(coordinator.polling, isFalse);
+      expect(coordinator.polling, isTrue);
+      expect(timers.intervals.last, const Duration(seconds: 30));
       coordinator.cardClosed();
       expect(coordinator.polling, isTrue);
+      expect(timers.intervals.last, const Duration(seconds: 12));
+      expect(timers.active, 1, reason: 'one poll timer at a time');
     });
 
     test('stops off duty', () {

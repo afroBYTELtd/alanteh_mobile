@@ -46,6 +46,14 @@ const driverTripCancelledPushTypes = <String>{
   'trip_cancelled_by_operations',
 };
 
+/// The event type of a push about a trip (an offer, a cancel, any other
+/// naming a trip), or null for any other push.
+String? driverTripPushEventType(RemoteMessage message) {
+  final eventType = _requiredPushDataString(message.data, 'event_type');
+  final tripReference = _requiredPushDataString(message.data, 'trip_reference');
+  return eventType == null || tripReference == null ? null : eventType;
+}
+
 /// The trip a cancel push names, or null for any other push.
 String? driverTripCancelledPushReference(RemoteMessage message) {
   final eventType = _requiredPushDataString(message.data, 'event_type');
@@ -94,6 +102,7 @@ class FirebaseForegroundPushListener extends StatefulWidget {
     this.onNavigationIntent,
     this.onInitialIntent,
     this.onForegroundIntent,
+    this.onTripPush,
     this.foregroundEnabled = true,
     this.messageSource,
     super.key,
@@ -113,6 +122,10 @@ class FirebaseForegroundPushListener extends StatefulWidget {
   /// with an "Open" action.
   final Future<bool> Function(DriverPushNavigationIntent intent)?
   onForegroundIntent;
+
+  /// Any trip push while the app is open, with its event type: the offers
+  /// and the trips reload on it.
+  final ValueChanged<String>? onTripPush;
 
   /// False while signed out: foreground messages are not shown.
   final bool foregroundEnabled;
@@ -164,6 +177,10 @@ class _FirebaseForegroundPushListenerState
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     if (!widget.foregroundEnabled) {
       return;
+    }
+    final tripPush = driverTripPushEventType(message);
+    if (tripPush != null) {
+      widget.onTripPush?.call(tripPush);
     }
     // The live screen for a cancelled trip shows the cancel itself.
     final cancelledTrip = driverTripCancelledPushReference(message);

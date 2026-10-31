@@ -190,16 +190,26 @@ void main() {
       await h.dispose(tester);
     });
 
+    // B9: the 404 says "expired" only when the offer's own time had run out
+    // by the time the answer came.
     testWidgets('Accept after an expiry race: "This offer expired"', (
       tester,
     ) async {
       await h.pump(tester);
       await h.deliver(tester, [h.offer()]);
-      h.gateway.acceptError = const DriverOfferResponseException(
-        type: DriverOfferResponseFailureType.offerUnavailable,
-        message: driverOfferExpiredMessage,
-      );
+      await h.advance(tester, const Duration(seconds: 37));
+      h.gateway
+        ..acceptErrorAfter = Completer<void>()
+        ..acceptError = const DriverOfferResponseException(
+          type: DriverOfferResponseFailureType.offerUnavailable,
+          message: driverOfferNoLongerAvailableMessage,
+        );
       await tester.tap(find.byKey(const Key('offer-card-accept')));
+      // The list is old by now: the card waits up to 5 s for a fresh one
+      // before the Accept goes out; the answer comes after the 2 s left.
+      await h.advance(tester, const Duration(seconds: 6));
+      expect(h.gateway.accepts, 1);
+      h.gateway.acceptErrorAfter!.complete();
       await tester.pumpAndSettle(const Duration(milliseconds: 10));
 
       expect(find.text('This offer expired'), findsOneWidget);
@@ -784,6 +794,9 @@ final class _FakeGateway implements DriverOfferResponseGateway {
   final seenKeys = <String>{};
   var duplicates = 0;
   DriverOfferResponseException? acceptError;
+
+  /// While set, [acceptError] is thrown only once it completes.
+  Completer<void>? acceptErrorAfter;
   Completer<void>? _accept;
 
   void finishAccept() => _accept?.complete();
@@ -799,6 +812,7 @@ final class _FakeGateway implements DriverOfferResponseGateway {
     keys.add(idempotencyKey);
     final error = acceptError;
     if (error != null) {
+      await acceptErrorAfter?.future;
       throw error;
     }
     await (_accept = Completer<void>()).future;

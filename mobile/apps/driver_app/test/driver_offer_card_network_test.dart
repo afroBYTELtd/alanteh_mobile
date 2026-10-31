@@ -108,19 +108,17 @@ void main() {
       fail('accept should have failed');
     }
 
-    test(
-      '404 after an expiry race: "This offer expired", never retried',
-      () async {
-        final error = await acceptFailure(
-          _apiFailure(404, {
-            'detail': 'Trip offer is not assigned to this driver.',
-          }),
-        );
-        expect(error.type, DriverOfferResponseFailureType.offerUnavailable);
-        expect(error.message, 'This offer expired');
-        expect(error.permitsManualRetry, isFalse);
-      },
-    );
+    test('404 (expired, cancelled or released): "This offer is no longer '
+        'available", never retried', () async {
+      final error = await acceptFailure(
+        _apiFailure(404, {
+          'detail': 'Trip offer is not assigned to this driver.',
+        }),
+      );
+      expect(error.type, DriverOfferResponseFailureType.offerUnavailable);
+      expect(error.message, 'This offer is no longer available');
+      expect(error.permitsManualRetry, isFalse);
+    });
 
     test('offer_not_pending: "This offer is no longer available"', () async {
       final error = await acceptFailure(
@@ -186,7 +184,7 @@ void main() {
         final result = await controller.accept();
         expect(result.disposition, DriverOfferAcceptanceDisposition.rejected);
         expect(result.permitsManualRetry, isFalse);
-        expect(result.message, 'This offer expired');
+        expect(result.message, 'This offer is no longer available');
       },
     );
   });

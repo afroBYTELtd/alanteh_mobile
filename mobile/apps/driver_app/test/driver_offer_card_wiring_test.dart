@@ -1266,7 +1266,70 @@ void main() {
       await app.dispose(tester);
     });
   });
+
+  // B9. Seen 31 Oct: staff cancelled a staff offer while its card was open
+  // on Work; the cancel push arrived, and the card kept offering the trip
+  // for 13 minutes.
+  group('a trip push in front (B9)', () {
+    testWidgets('the 31 Oct case: staff offer, card open, cancel push: the '
+        'card says the offer is no longer available, then goes', (
+      tester,
+    ) async {
+      final app = _App();
+      app.source.offers = [_staffOffer('TRIP-97C00E85A3BF')];
+      await app.pumpSignedIn(tester);
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      expect(find.text('Waiting for your response'), findsOneWidget);
+
+      // Staff cancel it; the fetch the push makes leaves after the card
+      // opened.
+      app.clock.value += const Duration(seconds: 1);
+      app.source.offers = [];
+      final fetches = app.source.calls;
+      app.push.emitForeground(_cancelMessage('TRIP-97C00E85A3BF'));
+      await _settle(tester);
+
+      expect(app.source.calls, fetches + 1);
+      expect(find.text('Offer ended'), findsOneWidget);
+      expect(find.text(driverOfferNoLongerAvailableMessage), findsOneWidget);
+
+      for (var i = 0; i < 6; i += 1) {
+        app.clock.value += const Duration(seconds: 1);
+        await tester.pump(const Duration(seconds: 1));
+      }
+      await _settle(tester);
+      expect(find.byKey(const Key('offer-card')), findsNothing);
+      await app.dispose(tester);
+    });
+
+    testWidgets('a trip push reloads the Trips list', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      await _selectTab(tester, 'Trips');
+      final calls = app.duty.tripCalls;
+
+      app.push.emitForeground(_cancelMessage('TRIP-1'));
+      await _settle(tester);
+
+      expect(app.duty.tripCalls, calls + 1);
+      await app.dispose(tester);
+    });
+  });
 }
+
+/// A staff offer: no expiry.
+Map<String, Object?> _staffOffer(String reference) => <String, Object?>{
+  ..._offer(reference, pickup: 'Pinned location', fare: null),
+  'offer_expires_at': null,
+};
+
+RemoteMessage _cancelMessage(String reference) => RemoteMessage(
+  data: <String, dynamic>{
+    'event_type': 'trip_cancelled_by_operations',
+    'trip_reference': reference,
+  },
+  notification: const RemoteNotification(title: 'Trip cancelled'),
+);
 
 Future<void> _offerArrives(
   WidgetTester tester,
@@ -1671,8 +1734,13 @@ final class _Duty implements DriverDutyGateway, DriverDutyStatusGateway {
     canReceiveAssignments: true,
   );
 
+  int tripCalls = 0;
+
   @override
-  Future<List<DriverAssignedTrip>> fetchTrips() async => const [];
+  Future<List<DriverAssignedTrip>> fetchTrips() async {
+    tripCalls += 1;
+    return const [];
+  }
 
   /// Trip-detail lookups wait this long (a slow network).
   Duration detailDelay = Duration.zero;

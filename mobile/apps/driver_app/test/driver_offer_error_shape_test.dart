@@ -37,8 +37,10 @@ void main() {
 
   for (final (status, body, message) in [
     (400, _offerNotPending, 'This offer is no longer available'),
-    (404, _notAssigned, 'This offer expired'),
-    (404, _noTrip, 'This offer expired'),
+    // B9: a cancel or staff release answers 404 too; only the card, which
+    // knows the offer's expiry, says "expired".
+    (404, _notAssigned, 'This offer is no longer available'),
+    (404, _noTrip, 'This offer is no longer available'),
   ]) {
     test('Accept through the real client: $status ${body['detail']} -> '
         '"$message"', () async {
