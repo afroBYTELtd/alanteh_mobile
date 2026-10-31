@@ -1302,6 +1302,39 @@ void main() {
       await app.dispose(tester);
     });
 
+    testWidgets('one cancel push in front writes exactly one OFFER_FETCH '
+        'reason=push_cancelled line', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      app.fetchLog.clear();
+
+      app.push.emitForeground(_cancelMessage('TRIP-1'));
+      await _settle(tester);
+
+      expect(
+        app.fetchLog.where((line) => line.contains('reason=push_cancelled')),
+        hasLength(1),
+      );
+      await app.dispose(tester);
+    });
+
+    testWidgets('sign-out (the offers cleared) asks the server for no duty '
+        'and no trips through the reload signal', (tester) async {
+      final app = _App()..source.offers = [_staffOffer('TRIP-1')];
+      await app.pumpSignedIn(tester);
+      expect(find.byKey(const Key('offer-card')), findsOneWidget);
+      final dutyCalls = app.duty.dutyCalls;
+      final tripCalls = app.duty.tripCalls;
+
+      await tester.tap(find.byKey(const Key('driver-sign-out')));
+      await _settle(tester);
+
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(app.duty.dutyCalls, dutyCalls);
+      expect(app.duty.tripCalls, tripCalls);
+      await app.dispose(tester);
+    });
+
     testWidgets('a trip push reloads the Trips list', (tester) async {
       final app = _App();
       await app.pumpSignedIn(tester);
@@ -1515,9 +1548,11 @@ final class _App {
   final unknownOffers = <bool>[];
   final tokenStore = MemoryAuthTokenStore();
   final duty = _Duty();
+  final fetchLog = <String>[];
   late final coordinator = DriverOfferCoordinator(
     store: DriverPendingOfferStore(source: source, clock: clock),
     periodicTimer: timers.create,
+    log: fetchLog.add,
   );
 
   Widget _app() => DriverApp(
@@ -1725,14 +1760,19 @@ final class _Duty implements DriverDutyGateway, DriverDutyStatusGateway {
     );
   }
 
+  int dutyCalls = 0;
+
   @override
-  Future<DriverDutySummary> fetchDuty() async => DriverDutySummary(
-    driverReference: 'DRV-1',
-    dutyStatus: dutyStatus,
-    dutySince: DateTime(2026, 10, 9, 8),
-    shiftCheckToday: shiftCheckToday,
-    canReceiveAssignments: true,
-  );
+  Future<DriverDutySummary> fetchDuty() async {
+    dutyCalls += 1;
+    return DriverDutySummary(
+      driverReference: 'DRV-1',
+      dutyStatus: dutyStatus,
+      dutySince: DateTime(2026, 10, 9, 8),
+      shiftCheckToday: shiftCheckToday,
+      canReceiveAssignments: true,
+    );
+  }
 
   int tripCalls = 0;
 

@@ -173,6 +173,11 @@ final class DriverOfferCoordinator {
       return;
     }
     _lastOfferSet = current;
+    // A cleared store (sign-out, an ended session, another driver) is no
+    // change in the driver's trips: nothing should ask the server for them.
+    if (store.snapshot == null) {
+      return;
+    }
     _offerSetChanged.ping();
   }
 
@@ -228,8 +233,12 @@ final class DriverOfferCoordinator {
     store.clear();
   }
 
+  /// Stops polling and listening. The store is the caller's and is not
+  /// disposed here.
   void dispose() {
     _timer?.cancel();
     _timer = null;
+    store.removeListener(_storeChanged);
+    _offerSetChanged.dispose();
   }
 }

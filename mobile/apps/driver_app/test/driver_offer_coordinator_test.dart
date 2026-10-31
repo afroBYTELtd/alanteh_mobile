@@ -139,6 +139,31 @@ void main() {
     });
   });
 
+  // The coordinator listens to the store it was given; the store itself is
+  // its caller's and outlives it.
+  group('dispose', () {
+    test('disposes the offer-set signal', () {
+      coordinator.dispose();
+      expect(
+        () => coordinator.offerSetChanged.addListener(() {}),
+        throwsFlutterError,
+      );
+    });
+
+    testWidgets(
+      'stops listening to the store: a later change reaches nothing',
+      (tester) async {
+        coordinator.dispose();
+        source.offers = [
+          <String, Object?>{'trip_reference': 'TRIP-1'},
+        ];
+        await coordinator.store.refresh();
+        expect(coordinator.store.offers, hasLength(1));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
   test('clear() forgets offers and the cached driver', () async {
     final identity = DriverIdentityCachingDutyGateway(_Duty());
     coordinator = DriverOfferCoordinator(
@@ -159,13 +184,14 @@ void main() {
 
 final class _CountingSource implements DriverPendingOffersSource {
   var calls = 0;
+  var offers = <Object?>[];
 
   @override
   Future<DriverPendingOffersFetch> fetch() async {
     calls += 1;
-    return const DriverPendingOffersFetched(<String, Object?>{
+    return DriverPendingOffersFetched(<String, Object?>{
       'server_time': '2026-10-09T10:00:00+00:00',
-      'offers': <Object?>[],
+      'offers': offers,
     });
   }
 }
