@@ -71,7 +71,11 @@ void main() {
       await pumpEventQueue();
 
       expect(source.calls, before + 1);
-      expect(coordinator.polling, isFalse, reason: 'paused for the card');
+      expect(
+        coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+        reason: 'slow for the card',
+      );
     });
 
     test('returning to the front off duty fetches nothing', () async {
@@ -84,14 +88,19 @@ void main() {
       expect(source.calls, before);
     });
 
-    test('pauses while a card is open', () async {
+    // B9: slower, not paused, so a withdrawn offer still reaches the card
+    // when its push is lost (31 Oct).
+    test('slows to every 30 s while a card is open', () async {
       coordinator
         ..setForeground(true)
         ..setOnDuty(true)
         ..cardOpened();
-      expect(coordinator.polling, isFalse);
+      expect(coordinator.polling, isTrue);
+      expect(timers.intervals.last, const Duration(seconds: 30));
       coordinator.cardClosed();
       expect(coordinator.polling, isTrue);
+      expect(timers.intervals.last, const Duration(seconds: 12));
+      expect(timers.active, 1, reason: 'one poll timer at a time');
     });
 
     test('stops off duty', () {
@@ -130,6 +139,31 @@ void main() {
     });
   });
 
+  // The coordinator listens to the store it was given; the store itself is
+  // its caller's and outlives it.
+  group('dispose', () {
+    test('disposes the offer-set signal', () {
+      coordinator.dispose();
+      expect(
+        () => coordinator.offerSetChanged.addListener(() {}),
+        throwsFlutterError,
+      );
+    });
+
+    testWidgets(
+      'stops listening to the store: a later change reaches nothing',
+      (tester) async {
+        coordinator.dispose();
+        source.offers = [
+          <String, Object?>{'trip_reference': 'TRIP-1'},
+        ];
+        await coordinator.store.refresh();
+        expect(coordinator.store.offers, hasLength(1));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+
   test('clear() forgets offers and the cached driver', () async {
     final identity = DriverIdentityCachingDutyGateway(_Duty());
     coordinator = DriverOfferCoordinator(
@@ -150,13 +184,14 @@ void main() {
 
 final class _CountingSource implements DriverPendingOffersSource {
   var calls = 0;
+  var offers = <Object?>[];
 
   @override
   Future<DriverPendingOffersFetch> fetch() async {
     calls += 1;
-    return const DriverPendingOffersFetched(<String, Object?>{
+    return DriverPendingOffersFetched(<String, Object?>{
       'server_time': '2026-10-09T10:00:00+00:00',
-      'offers': <Object?>[],
+      'offers': offers,
     });
   }
 }

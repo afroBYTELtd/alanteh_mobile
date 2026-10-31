@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'driver_duty_trips.dart';
+import 'driver_reload_signal.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_shell.dart';
 import 'foundation/driver_foundation_widgets.dart';
@@ -709,6 +710,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   AppLifecycleListener? _lifecycle;
   bool _offerScreenOpen = false;
 
+  /// Pinged when the driver's trips may have changed: the pending offers
+  /// changed, or a trip push arrived in front. The shell reloads on it.
+  final _tripsChanged = DriverReloadSignal();
+
   /// What a "Session expired" panel's Sign in does: end the session and
   /// show this sign-in screen.
   Future<void> _signInAgain() =>
@@ -760,6 +765,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       return;
     }
     _offers = offers;
+    offers.offerSetChanged.addListener(_tripsChanged.ping);
     _offerCardFactory =
         (tripReference, {assignedAt, unknownOffer = false}) async {
           final controller = await factory(
@@ -889,7 +895,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     if (!_signedIn) {
       return true;
     }
-    final listed = await offers.fetchThenCanOpen(intent.tripReference);
+    final listed = await offers.fetchThenCanOpen(
+      intent.tripReference,
+      reason: DriverOfferFetchReason.pushAssigned,
+    );
     if (!mounted || !_signedIn) {
       return true;
     }
@@ -1091,7 +1100,9 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       unawaited(pushDeviceRegistrar.dispose());
     }
     _lifecycle?.dispose();
+    _offers?.offerSetChanged.removeListener(_tripsChanged.ping);
     _offers?.dispose();
+    _tripsChanged.dispose();
     final layer = _offerLayer;
     if (layer != null && _layerSource != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1239,6 +1250,13 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     );
   }
 
+  /// A trip push with the app in front: the offers (a cancel ends an open
+  /// card at once) and the trips reload.
+  void _tripPushed(String eventType) {
+    _offers?.tripPushed(eventType);
+    _tripsChanged.ping();
+  }
+
   void _clearForm() {
     FocusManager.instance.primaryFocus?.unfocus();
     _phoneController.clear();
@@ -1283,6 +1301,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       onNavigationIntent: _handlePushNavigationIntent,
       onInitialIntent: _handleLaunchTap,
       onForegroundIntent: _handleForegroundOffer,
+      onTripPush: _tripPushed,
       foregroundEnabled: _signedIn,
       messageSource: widget.pushMessageSource,
       child: content,
@@ -1371,6 +1390,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             : (waitingPanel) =>
                   _pendingOffersPanel(waitingPanel) ?? waitingPanel,
         onDutyChanged: _offers?.setOnDuty,
+        reloadSignal: _tripsChanged,
         driverShiftCheckController: widget.driverShiftCheckController,
         driverReportGateway: widget.driverReportGateway,
         driverRatingGateway: widget.driverRatingGateway,
@@ -1382,6 +1402,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
               (_pushDeviceRegistrar != null || widget.pushMessageSource != null)
           ? FirebaseForegroundPushListener(
               onNavigationIntent: _handlePushNavigationIntent,
+              onTripPush: _tripPushed,
               messageSource: widget.pushMessageSource,
               child: shell,
             )

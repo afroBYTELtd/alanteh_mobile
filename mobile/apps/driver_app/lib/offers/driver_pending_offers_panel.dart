@@ -1,4 +1,5 @@
 import 'package:asm_design_system/asm_design_system.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../driver_back_to_work.dart';
@@ -20,6 +21,7 @@ class DriverPendingOffersPanel extends StatefulWidget {
     this.onAccepted,
     this.pickDeclineReason,
     this.openAssignedTrips,
+    this.openPopups,
     super.key,
   });
 
@@ -33,18 +35,26 @@ class DriverPendingOffersPanel extends StatefulWidget {
   final DriverDeclineReasonPicker? pickDeclineReason;
   final void Function(BuildContext context)? openAssignedTrips;
 
+  /// See [DriverPendingOfferCard.openPopups].
+  final ValueListenable<int>? openPopups;
+
   @override
   State<DriverPendingOffersPanel> createState() =>
       _DriverPendingOffersPanelState();
 }
 
 class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
-  /// True while a live card is shown: only then is the poll paused.
+  /// True while a live card is shown: only then is the poll slowed.
   bool _showingCard = false;
 
   /// The offer whose card said it can no longer be answered. A re-offer of
   /// the same trip is a different offer, and a live one.
   DriverOfferIdentity? _ended;
+
+  /// An ended card the driver did not answer. It stays, saying why, until
+  /// it clears, even after the list drops its offer; a newer offer takes
+  /// its place at once.
+  ({DriverOfferIdentity identity, String reference})? _held;
 
   @override
   void initState() {
@@ -79,20 +89,44 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
     }
   }
 
+  void _release() {
+    if (mounted && _held != null) {
+      setState(() => _held = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final offer = widget.coordinator.store.firstOffer;
-    final identity = offer == null ? null : DriverOfferIdentity.of(offer);
-    if (offer == null) {
+    final store = widget.coordinator.store;
+    final offer = store.firstOffer;
+    var shown = offer == null
+        ? null
+        : (
+            identity: DriverOfferIdentity.of(offer),
+            reference: offer.tripReference,
+          );
+    final held = _held;
+    // Held only while the server left the offer out; one dropped here
+    // (closed, answered or cleared) goes at once, as before.
+    if (held != null &&
+        !store.forgets(held.identity) &&
+        (shown == null || shown.identity == held.identity)) {
+      shown = held;
+    } else {
+      _held = null;
+    }
+    if (shown == null) {
       _ended = null;
     }
-    _track(identity != null && identity != _ended);
-    if (offer == null) {
+    _track(shown != null && shown.identity != _ended);
+    if (shown == null) {
       return widget.waitingPanel;
     }
+    final identity = shown.identity;
+    final reference = shown.reference;
     return DriverPendingOfferCard(
-      key: ValueKey<DriverOfferIdentity>(identity!),
-      tripReference: offer.tripReference,
+      key: ValueKey<DriverOfferIdentity>(identity),
+      tripReference: reference,
       store: widget.coordinator.store,
       controllerFactory: widget.controllerFactory,
       pickupTimeLookup: widget.pickupTimeLookup,
@@ -100,11 +134,18 @@ class _DriverPendingOffersPanelState extends State<DriverPendingOffersPanel> {
           widget.pickDeclineReason ?? showDriverDeclineReasonSheet,
       openAssignedTrips:
           widget.openAssignedTrips ?? DriverBackToWork.goToAssignedTrips,
-      onAccepted: widget.onAccepted,
+      openPopups: widget.openPopups,
+      onAccepted: (reference) {
+        _release();
+        widget.onAccepted?.call(reference);
+      },
+      onFinished: (_) => _release(),
       onEnded: () {
         _ended = identity;
+        _held = (identity: identity, reference: reference);
         _track(false);
       },
+      onCleared: _release,
     );
   }
 }
@@ -203,6 +244,18 @@ class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
     });
   }
 
+  /// The ended card has shown why for long enough, with nothing open on
+  /// top: a newer live offer takes its place, or the screen closes.
+  void _cleared() {
+    if (!mounted) {
+      return;
+    }
+    _moveToNewerLiveOffer();
+    if (_endedOffer != null) {
+      Navigator.of(context).maybePop();
+    }
+  }
+
   /// An ended card yields to a newer live offer; a live card never does.
   void _moveToNewerLiveOffer() {
     final ended = _endedOffer;
@@ -261,6 +314,7 @@ class _DriverPendingOfferScreenState extends State<DriverPendingOfferScreen> {
                 widget.onAccepted?.call(context, reference),
             onFinished: _finished,
             onEnded: _ended,
+            onCleared: _cleared,
           ),
         ),
       ),

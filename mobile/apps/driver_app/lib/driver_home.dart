@@ -36,7 +36,8 @@ class DriverHome extends StatelessWidget {
     required this.onRecordConcern,
     required this.onPreviewIncomingRequest,
     required this.localQaEnabled,
-    required this.dutyGateway,
+    this.dutySummary,
+    this.onRefreshDuty,
     required this.onOpenAssignedTrips,
     required this.onOpenShiftSummary,
     this.onSignOut,
@@ -62,7 +63,13 @@ class DriverHome extends StatelessWidget {
   final VoidCallback onRecordConcern;
   final VoidCallback onPreviewIncomingRequest;
   final bool localQaEnabled;
-  final DriverDutyGateway? dutyGateway;
+
+  /// The shell's duty summary, shown in "Driver duty summary"; null
+  /// without a server.
+  final DriverDutySummary? dutySummary;
+
+  /// Asks the shell to reload [dutySummary].
+  final VoidCallback? onRefreshDuty;
   final VoidCallback onOpenAssignedTrips;
   final VoidCallback onOpenShiftSummary;
   final VoidCallback? onSignOut;
@@ -213,7 +220,10 @@ class DriverHome extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AsmSpacing.space16),
-          DriverDutySummaryPanel(gateway: dutyGateway),
+          DriverDutySummaryPanel(
+            summary: dutySummary,
+            onRefresh: onRefreshDuty,
+          ),
         ],
       ),
     );

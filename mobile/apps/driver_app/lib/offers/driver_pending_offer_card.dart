@@ -44,6 +44,8 @@ class DriverPendingOfferCard extends StatefulWidget {
     this.onAccepted,
     this.onFinished,
     this.onEnded,
+    this.onCleared,
+    this.openPopups,
     this.tickInterval = const Duration(seconds: 1),
     this.detailsTimeout = DriverOfferCardTiming.detailsTimeout,
     super.key,
@@ -70,6 +72,16 @@ class DriverPendingOfferCard extends StatefulWidget {
   /// out, it ended, or the driver answered). Only a live card should pause
   /// the offers poll.
   final VoidCallback? onEnded;
+
+  /// Called once when an ended card (not one the driver answered) has
+  /// shown its ending for [DriverOfferCardTiming.expiredRemovalDelay]; its
+  /// offer is dropped from the store then.
+  final VoidCallback? onCleared;
+
+  /// Sheets and dialogs open on the navigator, for a card that lives above
+  /// it. While one is open (or, for a card on a screen, while that screen
+  /// is not on top) an ended card does not count down to clearing.
+  final ValueListenable<int>? openPopups;
   final Duration tickInterval;
   final Duration detailsTimeout;
 
@@ -105,11 +117,14 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   /// back without its offer.
   bool _askedAgain = false;
 
-  /// When the countdown reached zero (monotonic), for the re-check and the
-  /// local removal after it.
+  /// When the countdown reached zero (monotonic), for the re-check after it.
   Duration? _ranOutAt;
   bool _rechecked = false;
-  bool _removedLocally = false;
+
+  /// Since when (monotonic) an ended card has shown with nothing open on
+  /// top of it; null while something is.
+  Duration? _clearWaitFrom;
+  bool _cleared = false;
 
   /// Final: the offer ended (expiry race, taken back, gone from the list).
   String? _endedMessage;
@@ -158,6 +173,42 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       _reportedEnded = true;
       widget.onEnded?.call();
     }
+  }
+
+  /// A sheet or dialog is open over the card, or the card's screen is not
+  /// the one on top.
+  bool get _coveredOnTop =>
+      (widget.openPopups?.value ?? 0) > 0 ||
+      !(ModalRoute.isCurrentOf(context) ?? true);
+
+  /// An ended card clears [DriverOfferCardTiming.expiredRemovalDelay] after
+  /// it ended, counting only while nothing is open on top of it.
+  void _clearIfEndedLongEnough() {
+    if (!_locked || _responded || _cleared) {
+      return;
+    }
+    if (_coveredOnTop) {
+      _clearWaitFrom = null;
+      return;
+    }
+    final now = _store.clock.now;
+    final from = _clearWaitFrom ??= now;
+    if (now - from >= DriverOfferCardTiming.expiredRemovalDelay) {
+      _cleared = true;
+      _forgetOwnOffer();
+      widget.onCleared?.call();
+    }
+  }
+
+  /// The offer's own expiry has passed, by the server's clock as the
+  /// countdown counts it.
+  bool get _ownExpiryPassed {
+    final offer = _lastOffer ?? _store.offerFor(_reference);
+    final snapshot = _store.snapshot;
+    if (offer == null || snapshot == null) {
+      return false;
+    }
+    return snapshot.remaining(offer, _store.clock.now) == Duration.zero;
   }
 
   Future<DriverOfferResponseResilienceController?> _prepare() async {
@@ -259,20 +310,18 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
       unawaited(_store.refresh());
     }
     final ranOutAt = _ranOutAt;
-    if (ranOutAt != null) {
-      final since = _store.clock.now - ranOutAt;
-      if (!_rechecked && since >= DriverOfferCardTiming.expiredRecheckDelay) {
-        _rechecked = true;
-        unawaited(_store.refresh());
-      }
-      if (!_removedLocally &&
-          since >= DriverOfferCardTiming.expiredRemovalDelay) {
-        _removedLocally = true;
-        _forgetOwnOffer();
-      }
+    if (ranOutAt != null &&
+        !_rechecked &&
+        _store.clock.now - ranOutAt >=
+            DriverOfferCardTiming.expiredRecheckDelay) {
+      _rechecked = true;
+      unawaited(_store.refresh());
     }
     _reportIfEnded();
-    setState(() {});
+    _clearIfEndedLongEnough();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _lookUpPickupTimeIfNeeded(DriverPendingOffer offer) {
@@ -490,7 +539,11 @@ class _DriverPendingOfferCardState extends State<DriverPendingOfferCard> {
   void _applyFailure(DriverOfferResponseException? error, String? message) {
     _conflict = error?.type == DriverOfferResponseFailureType.conflict;
     if (error?.type == DriverOfferResponseFailureType.offerUnavailable) {
-      _endedMessage = error!.message;
+      // Withdrawn, cancelled or taken back, unless its own time had run out
+      // by the time the answer came.
+      _endedMessage = _ownExpiryPassed
+          ? driverOfferExpiredMessage
+          : driverOfferNoLongerAvailableMessage;
       unawaited(_store.refresh());
       return;
     }

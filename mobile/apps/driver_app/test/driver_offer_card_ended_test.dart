@@ -35,12 +35,16 @@ void main() {
   group('each rule', () {
     testWidgets('an ended card does not pause the poll', (tester) async {
       await h.pumpHome(tester);
-      expect(h.coordinator.polling, isFalse, reason: 'a live card pauses it');
+      expect(
+        h.coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+        reason: 'a live card slows it (B9; it used to pause it)',
+      );
 
       await h.advance(tester, const Duration(seconds: 46));
 
       expect(find.byKey(const Key('offer-card')), findsOneWidget);
-      expect(h.coordinator.polling, isTrue);
+      expect(h.coordinator.pollInterval, DriverOfferCardTiming.pollInterval);
     });
 
     testWidgets('the poll resumes at zero even while the check at zero is '
@@ -113,7 +117,11 @@ void main() {
       await h.advance(tester, const Duration(seconds: 1));
 
       expect(h.countdown(tester), matches(RegExp(r'^0:4\d left$')));
-      expect(h.coordinator.polling, isFalse, reason: 'a live card again');
+      expect(
+        h.coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+        reason: 'a live card again',
+      );
 
       // The old card's clean-up (closing, its 5 s removal) must not drop
       // the re-offer: it is still there 10 s later.
@@ -123,7 +131,7 @@ void main() {
     });
 
     testWidgets('a staff offer has no expiry: it stays and keeps the poll '
-        'paused', (tester) async {
+        'slow (B9; it used to pause it)', (tester) async {
       h.server.offers = [h.offer(expiresAt: null)];
       await h.pumpHome(tester);
       final calls = h.server.calls;
@@ -131,7 +139,10 @@ void main() {
       await h.advance(tester, const Duration(seconds: 120));
 
       expect(h.countdown(tester), 'Waiting for your response');
-      expect(h.coordinator.polling, isFalse);
+      expect(
+        h.coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+      );
       expect(h.server.calls, calls);
     });
   });
@@ -160,7 +171,11 @@ void main() {
       expect(find.text('Osu Castle'), findsOneWidget);
       expect(h.countdown(tester), matches(RegExp(r'^0:\d\d left$')));
       expect(find.byKey(const Key('offer-screen')), findsOneWidget);
-      expect(h.coordinator.polling, isFalse, reason: 'a live card again');
+      expect(
+        h.coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+        reason: 'a live card again',
+      );
     });
 
     testWidgets('a poll that lists a newer offer, with no tap: the new offer '
@@ -284,16 +299,21 @@ void main() {
       expect(h.store.offerFor(_ref), isNotNull);
     });
 
-    testWidgets('stays until the driver closes it, and does not pause the '
-        'poll once ended', (tester) async {
+    // B9: a pushed full screen closes 5 s after its offer ended (see
+    // driver_offer_withdrawn_test.dart); the first screen has nowhere to go.
+    testWidgets('as the only screen it stays, and the poll is back to normal '
+        'once ended', (tester) async {
       await h.pumpScreen(tester);
-      expect(h.coordinator.polling, isFalse);
+      expect(
+        h.coordinator.pollInterval,
+        DriverOfferCardTiming.openCardPollInterval,
+      );
 
       await h.advance(tester, const Duration(seconds: 55));
 
       expect(find.byKey(const Key('offer-screen')), findsOneWidget);
       expect(h.countdown(tester), 'Offer expired');
-      expect(h.coordinator.polling, isTrue);
+      expect(h.coordinator.pollInterval, DriverOfferCardTiming.pollInterval);
     });
 
     testWidgets('closing it clears the ended offer from the home screen at '

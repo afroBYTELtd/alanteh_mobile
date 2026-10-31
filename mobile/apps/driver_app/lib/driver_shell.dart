@@ -10,6 +10,7 @@ import 'driver_back_to_work.dart';
 import 'driver_duty_trips.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_home.dart';
+import 'driver_reload_signal.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_resilience.dart';
 import 'network/driver_report_gateway.dart';
@@ -101,6 +102,7 @@ class DriverShell extends StatefulWidget {
     this.pendingOffersPanelBuilder,
     this.onDutyChanged,
     this.signInTimeLeft,
+    this.reloadSignal,
     super.key,
   });
 
@@ -130,6 +132,11 @@ class DriverShell extends StatefulWidget {
   /// How long the sign-in has left (the refresh token's own expiry); null
   /// when unknown. Checked when the shift check opens.
   final Future<Duration?> Function()? signInTimeLeft;
+
+  /// Pinged when the driver's trips may have changed (the pending offers
+  /// changed, or a trip push arrived in front): Work's duty summary and the
+  /// Trips list reload quietly.
+  final Listenable? reloadSignal;
 
   @override
   State<DriverShell> createState() => _DriverShellState();
@@ -162,6 +169,9 @@ class _DriverShellState extends State<DriverShell> {
   AppLifecycleListener? _lifecycle;
   Timer? _workReloadTimer;
   Timer? _dayChangeTimer;
+
+  /// Tells an open Trips list to reload quietly.
+  final _tripsReload = DriverReloadSignal();
 
   bool get _shiftCheckCompletedToday {
     if (widget.driverDutyGateway == null) {
@@ -207,18 +217,27 @@ class _DriverShellState extends State<DriverShell> {
     _lifecycle = AppLifecycleListener(
       onStateChange: (state) =>
           _appInFront = state == AppLifecycleState.resumed,
-      onResume: () => unawaited(_reloadDutyQuietly()),
+      onResume: () {
+        unawaited(_reloadDutyQuietly());
+        _tripsReload.ping();
+      },
     );
     _workReloadTimer = Timer.periodic(driverDutyReloadInterval, (_) {
-      final workInFront =
-          _selectedIndex == 0 &&
-          _appInFront &&
-          (ModalRoute.of(context)?.isCurrent ?? true);
-      if (workInFront) {
+      final tabInFront =
+          _appInFront && (ModalRoute.of(context)?.isCurrent ?? true);
+      if (tabInFront && _selectedIndex == 0) {
         unawaited(_reloadDutyQuietly());
+      } else if (tabInFront && _selectedIndex == 1) {
+        _tripsReload.ping();
       }
     });
     _setDayChangeTimer();
+    widget.reloadSignal?.addListener(_reloadOnSignal);
+  }
+
+  void _reloadOnSignal() {
+    unawaited(_reloadDutyQuietly());
+    _tripsReload.ping();
   }
 
   /// Just after the next midnight in Accra (UTC), when today's shift check
@@ -279,6 +298,10 @@ class _DriverShellState extends State<DriverShell> {
   @override
   void didUpdateWidget(covariant DriverShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.reloadSignal != widget.reloadSignal) {
+      oldWidget.reloadSignal?.removeListener(_reloadOnSignal);
+      widget.reloadSignal?.addListener(_reloadOnSignal);
+    }
 
     final gatewayIdentityChanged =
         oldWidget.driverDutyGateway != widget.driverDutyGateway;
@@ -367,6 +390,8 @@ class _DriverShellState extends State<DriverShell> {
     _lifecycle?.dispose();
     _workReloadTimer?.cancel();
     _dayChangeTimer?.cancel();
+    widget.reloadSignal?.removeListener(_reloadOnSignal);
+    _tripsReload.dispose();
     super.dispose();
   }
 
@@ -1133,7 +1158,10 @@ class _DriverShellState extends State<DriverShell> {
       onRecordConcern: _openConcern,
       onPreviewIncomingRequest: _openRideOfferPreview,
       localQaEnabled: widget.localQaEnabled,
-      dutyGateway: widget.driverDutyGateway,
+      dutySummary: _dutySummary,
+      onRefreshDuty: widget.driverDutyGateway == null
+          ? null
+          : () => unawaited(_reloadDutyQuietly()),
       onOpenAssignedTrips: _openAssignedTrips,
       onOpenShiftSummary: _openShiftSummary,
       onSignOut: widget.onSignOut == null ? null : _signOut,
@@ -1158,6 +1186,7 @@ class _DriverShellState extends State<DriverShell> {
       0 => _workPage,
       1 => DriverAssignedTripsScreen(
         gateway: widget.driverDutyGateway,
+        reload: _tripsReload,
         actionControllerFactory: widget.driverTripActionControllerFactory,
         offerResponseControllerFactory:
             widget.driverOfferResponseControllerFactory,

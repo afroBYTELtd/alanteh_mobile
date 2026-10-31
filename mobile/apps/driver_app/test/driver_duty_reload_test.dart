@@ -60,7 +60,7 @@ void main() {
       await tester.pump(driverDutyReloadInterval);
       expect(server.dutyCalls, calls, reason: 'Trips tab');
 
-      // Work's "Driver duty summary" panel fetches once as it opens.
+      // (Work's "Driver duty summary" panel shows the shell's summary: B9.)
       await _selectTab(tester, 'Work');
       final callsOnWork = server.dutyCalls;
       await _toBackground(tester);

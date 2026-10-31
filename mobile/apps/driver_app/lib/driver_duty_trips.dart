@@ -1056,79 +1056,25 @@ bool? _firstBool(Map<String, Object?> map, List<String> keys) {
   return null;
 }
 
-class DriverDutySummaryPanel extends StatefulWidget {
-  const DriverDutySummaryPanel({required this.gateway, super.key});
+/// Work's "Driver duty summary": the shell's own duty summary, so it is as
+/// fresh as Work's header and asks the server nothing itself (one fetch per
+/// reload). Refresh asks the shell to reload it.
+class DriverDutySummaryPanel extends StatelessWidget {
+  const DriverDutySummaryPanel({
+    required this.summary,
+    this.onRefresh,
+    super.key,
+  });
 
-  final DriverDutyGateway? gateway;
-
-  @override
-  State<DriverDutySummaryPanel> createState() => _DriverDutySummaryPanelState();
-}
-
-class _DriverDutySummaryPanelState extends State<DriverDutySummaryPanel> {
-  late Future<DriverDutySummary> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _loadDuty();
-  }
-
-  @override
-  void didUpdateWidget(covariant DriverDutySummaryPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.gateway != widget.gateway) {
-      _future = _loadDuty();
-    }
-  }
-
-  Future<DriverDutySummary> _loadDuty() {
-    final gateway = widget.gateway;
-    if (gateway == null) {
-      return Future<DriverDutySummary>.value(DriverDutySummary.empty());
-    }
-    return gateway.fetchDuty();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = _loadDuty();
-    });
-  }
+  /// Null without a server (local QA): every field shows as unknown.
+  final DriverDutySummary? summary;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<DriverDutySummary>(
-      future: _future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const _DriverCard(
-            key: Key('driver-duty-loading'),
-            child: _DriverLoadingContent(text: 'Loading driver duty...'),
-          );
-        }
-
-        final error = snapshot.error;
-        if (error is DriverDutyApiException && error.isSessionExpired) {
-          return _DriverSessionExpiredCard(
-            key: const Key('driver-duty-session-expired'),
-            onRetry: _refresh,
-          );
-        }
-
-        if (error != null) {
-          return _DriverErrorCard(
-            key: const Key('driver-duty-error'),
-            title: 'Driver duty could not be loaded.',
-            onRetry: _refresh,
-          );
-        }
-
-        return _DriverDutySummaryCard(
-          summary: snapshot.data ?? DriverDutySummary.empty(),
-          onRefresh: _refresh,
-        );
-      },
+    return _DriverDutySummaryCard(
+      summary: summary ?? DriverDutySummary.empty(),
+      onRefresh: onRefresh,
     );
   }
 }
@@ -1140,7 +1086,7 @@ class _DriverDutySummaryCard extends StatelessWidget {
   });
 
   final DriverDutySummary summary;
-  final VoidCallback onRefresh;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -1206,6 +1152,7 @@ class _DriverDutySummaryCard extends StatelessWidget {
 class DriverAssignedTripsScreen extends StatefulWidget {
   const DriverAssignedTripsScreen({
     required this.gateway,
+    this.reload,
     this.actionControllerFactory,
     this.offerResponseControllerFactory,
     this.ratingGateway,
@@ -1218,6 +1165,10 @@ class DriverAssignedTripsScreen extends StatefulWidget {
   });
 
   final DriverDutyGateway? gateway;
+
+  /// Pinged when the list may be out of date (resume, the timer, a change
+  /// in the pending offers, a trip push): it reloads quietly.
+  final Listenable? reload;
   final DriverTripActionControllerFactory? actionControllerFactory;
   final DriverOfferResponseControllerFactory? offerResponseControllerFactory;
   final ApiDriverRatingGateway? ratingGateway;
@@ -1232,37 +1183,142 @@ class DriverAssignedTripsScreen extends StatefulWidget {
 }
 
 class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
-  late Future<List<DriverAssignedTrip>> _future;
+  List<DriverAssignedTrip>? _trips;
+  Object? _error;
+  bool _loading = true;
+
+  // Quiet reloads: one at a time, a request during one runs once after it,
+  // and an answer that started before a newer visible load is dropped.
+  int _generation = 0;
+  bool _quietReloadInFlight = false;
+  bool _quietReloadAgain = false;
+  bool _onTop = true;
 
   @override
   void initState() {
     super.initState();
-    _future = _loadTrips();
+    unawaited(_load());
+    widget.reload?.addListener(_reloadQuietly);
   }
 
   @override
   void didUpdateWidget(covariant DriverAssignedTripsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.reload != widget.reload) {
+      oldWidget.reload?.removeListener(_reloadQuietly);
+      widget.reload?.addListener(_reloadQuietly);
+    }
     if (oldWidget.gateway != widget.gateway ||
         oldWidget.actionControllerFactory != widget.actionControllerFactory ||
         oldWidget.offerResponseControllerFactory !=
             widget.offerResponseControllerFactory) {
-      _future = _loadTrips();
+      _loading = true;
+      _error = null;
+      unawaited(_load());
     }
   }
 
-  Future<List<DriverAssignedTrip>> _loadTrips() {
-    final gateway = widget.gateway;
-    if (gateway == null) {
-      return Future<List<DriverAssignedTrip>>.value(const []);
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Back on top after a trip screen, a sheet or a dialog: the driver may
+    // have acted on a trip there.
+    final onTop = ModalRoute.isCurrentOf(context) ?? true;
+    final returned = onTop && !_onTop;
+    _onTop = onTop;
+    if (returned) {
+      _reloadQuietly();
     }
-    return gateway.fetchTrips();
+  }
+
+  @override
+  void dispose() {
+    widget.reload?.removeListener(_reloadQuietly);
+    super.dispose();
+  }
+
+  /// The visible load: the first one and Refresh.
+  Future<void> _load() async {
+    final generation = ++_generation;
+    final gateway = widget.gateway;
+    try {
+      final trips =
+          await (gateway?.fetchTrips() ??
+              Future<List<DriverAssignedTrip>>.value(const []));
+      if (!mounted || generation != _generation) {
+        return;
+      }
+      setState(() {
+        _trips = trips;
+        _error = null;
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted || generation != _generation) {
+        return;
+      }
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
   }
 
   void _refresh() {
     setState(() {
-      _future = _loadTrips();
+      _loading = true;
+      _error = null;
     });
+    unawaited(_load());
+  }
+
+  /// Reloads with the list kept on screen. A failure keeps it (an ended
+  /// session shows as before). Not while a trip screen, sheet or dialog is
+  /// on top, where a trip action may be running: the list reloads on
+  /// return instead.
+  void _reloadQuietly() {
+    if (!mounted ||
+        widget.gateway == null ||
+        _loading ||
+        !(ModalRoute.isCurrentOf(context) ?? true)) {
+      return;
+    }
+    if (_quietReloadInFlight) {
+      _quietReloadAgain = true;
+      return;
+    }
+    unawaited(_runQuietReload());
+  }
+
+  Future<void> _runQuietReload() async {
+    final gateway = widget.gateway;
+    if (gateway == null) {
+      return;
+    }
+    _quietReloadInFlight = true;
+    final generation = _generation;
+    try {
+      final trips = await gateway.fetchTrips();
+      if (mounted && generation == _generation) {
+        setState(() {
+          _trips = trips;
+          _error = null;
+        });
+      }
+    } on Object catch (error) {
+      if (mounted &&
+          generation == _generation &&
+          error is DriverDutyApiException &&
+          error.isSessionExpired) {
+        setState(() => _error = error);
+      }
+    } finally {
+      _quietReloadInFlight = false;
+      if (_quietReloadAgain) {
+        _quietReloadAgain = false;
+        _reloadQuietly();
+      }
+    }
   }
 
   @override
@@ -1276,17 +1332,16 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
         22,
         AsmSpacing.space24,
       ),
-      child: FutureBuilder<List<DriverAssignedTrip>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
+      child: Builder(
+        builder: (context) {
+          if (_loading) {
             return const _DriverCard(
               key: Key('driver-trips-loading'),
               child: _DriverLoadingContent(text: 'Loading assigned trips...'),
             );
           }
 
-          final error = snapshot.error;
+          final error = _error;
           if (error is DriverDutyApiException && error.isSessionExpired) {
             return _DriverSessionExpiredCard(
               key: const Key('driver-trips-session-expired'),
@@ -1302,7 +1357,7 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
             );
           }
 
-          final trips = snapshot.data ?? const <DriverAssignedTrip>[];
+          final trips = _trips ?? const <DriverAssignedTrip>[];
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1367,18 +1422,11 @@ class _DriverAssignedTripsScreenState extends State<DriverAssignedTripsScreen> {
                                 widget.driverTrustedContactRepository,
                             driverSafetyAlertRepository:
                                 widget.driverSafetyAlertRepository,
-                            onRefreshTripList: () async {
-                              if (mounted) {
-                                _refresh();
-                              }
-                            },
+                            onRefreshTripList: () async => _reloadQuietly(),
                           ),
                         ),
                       );
-
-                      if (mounted) {
-                        _refresh();
-                      }
+                      // Back on top, the list reloads quietly by itself.
                     },
                   ),
                   const SizedBox(height: AsmSpacing.space12),

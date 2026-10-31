@@ -269,13 +269,14 @@ void main() {
                 counters.tripActionControllerFactoryCalls += 1;
                 throw StateError('QA gate invoked trip-action factory early.');
               },
-              driverOfferResponseControllerFactory: (_, {assignedAt, unknownOffer = false}) async {
-                counters.queueOpens += 1;
-                counters.offerResponseControllerFactoryCalls += 1;
-                throw StateError(
-                  'QA gate invoked offer-response factory early.',
-                );
-              },
+              driverOfferResponseControllerFactory:
+                  (_, {assignedAt, unknownOffer = false}) async {
+                    counters.queueOpens += 1;
+                    counters.offerResponseControllerFactoryCalls += 1;
+                    throw StateError(
+                      'QA gate invoked offer-response factory early.',
+                    );
+                  },
             );
           },
         ),
@@ -2225,28 +2226,27 @@ void main() {
   );
 
   group('M4D Driver duty and assigned trips', () {
-    testWidgets('Driver duty loading state is visible', (tester) async {
+    // B9: the panel shows the shell's own summary (one fetch per reload);
+    // its loading and error states are the shell's.
+    testWidgets('Driver duty Refresh asks the shell to reload', (tester) async {
       _useSurface(tester, const Size(430, 3000));
-      final completer = Completer<DriverDutySummary>();
+      var refreshes = 0;
 
       await tester.pumpWidget(
         MaterialApp(
           theme: AsmThemes.driver,
           home: AsmScreenSurface(
             child: DriverDutySummaryPanel(
-              gateway: _FakeDriverDutyGateway(duty: completer.future),
+              summary: _sampleDuty(),
+              onRefresh: () => refreshes += 1,
             ),
           ),
         ),
       );
 
-      expect(find.byKey(const Key('driver-duty-loading')), findsOneWidget);
-      expect(find.text('Loading driver duty...'), findsOneWidget);
-
-      completer.complete(_sampleDuty());
-      await tester.pumpAndSettle();
-
       expect(find.byKey(const Key('driver-duty-loaded')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('driver-duty-refresh')));
+      expect(refreshes, 1);
     });
 
     testWidgets('Driver duty loaded state shows safe fields only', (
@@ -2258,11 +2258,7 @@ void main() {
         MaterialApp(
           theme: AsmThemes.driver,
           home: AsmScreenSurface(
-            child: DriverDutySummaryPanel(
-              gateway: _FakeDriverDutyGateway(
-                duty: Future.value(_sampleDuty()),
-              ),
-            ),
+            child: DriverDutySummaryPanel(summary: _sampleDuty()),
           ),
         ),
       );

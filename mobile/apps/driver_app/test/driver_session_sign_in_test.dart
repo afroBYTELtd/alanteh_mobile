@@ -28,8 +28,8 @@ void main() {
         gateway: _Expired(expired),
         tripReference: 'TRIP-1',
       ),
-      'duty summary': () =>
-          Scaffold(body: DriverDutySummaryPanel(gateway: _Expired(expired))),
+      // (Work's duty summary panel no longer fetches: it shows the shell's
+      // summary, B9.)
     };
 
     for (final entry in screens.entries) {

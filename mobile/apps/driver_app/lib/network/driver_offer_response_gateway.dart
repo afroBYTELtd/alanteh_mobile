@@ -11,6 +11,7 @@ const driverOfferAcceptanceFailureMessage =
     'Could not confirm acceptance. Check your connection and try again.';
 const driverOfferDeclineFailureMessage =
     'Could not confirm decline. Check your connection and try again.';
+
 /// A 409: the server already holds a different answer to this offer from
 /// this phone.
 const driverOfferConflictMessage =
@@ -411,8 +412,9 @@ enum DriverOfferResponseFailureType {
   temporarilyUnavailable,
   badResponse,
 
-  /// The offer ended before the response: it expired (404) or is no longer
-  /// waiting for this driver (`offer_not_pending`). Never retried.
+  /// The offer ended before the response: it expired, was cancelled or
+  /// taken back (404), or is no longer waiting for this driver
+  /// (`offer_not_pending`). Never retried.
   offerUnavailable,
 }
 
@@ -616,7 +618,8 @@ final class ApiDriverOfferResponseGateway
       response: firstResponse,
       tripReference: normalizedReference,
       expectedTripStatus: 'driver_declined',
-      unconfirmedMessage: 'The server response could not confirm offer decline.',
+      unconfirmedMessage:
+          'The server response could not confirm offer decline.',
     );
     if (firstReceipt != null) {
       return firstReceipt;
@@ -640,7 +643,8 @@ final class ApiDriverOfferResponseGateway
         response: retryResponse,
         tripReference: normalizedReference,
         expectedTripStatus: 'driver_declined',
-        unconfirmedMessage: 'The server response could not confirm offer decline.',
+        unconfirmedMessage:
+            'The server response could not confirm offer decline.',
       );
       if (retryReceipt != null) {
         return retryReceipt;
@@ -832,9 +836,11 @@ final class ApiDriverOfferResponseGateway
     }
 
     if (statusCode == 404) {
+      // A cancel or a staff release answers 404 too, so this says no more
+      // than that; the offer card says "expired" when its own time ran out.
       return const DriverOfferResponseException(
         type: DriverOfferResponseFailureType.offerUnavailable,
-        message: driverOfferExpiredMessage,
+        message: driverOfferNoLongerAvailableMessage,
       );
     }
 
