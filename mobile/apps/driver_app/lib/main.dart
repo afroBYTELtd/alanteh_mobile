@@ -302,6 +302,7 @@ Widget buildDriverRoot({
           driverOfferResponseControllerFactory,
       driverShiftCheckController: driverShiftCheckController,
       driverReportGateway: driverReportGateway,
+      driverRatingGateway: driverRatingGateway,
       pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
     );
   }
@@ -440,6 +441,7 @@ class DriverApp extends StatelessWidget {
     this.driverOfferResponseControllerFactory,
     this.driverShiftCheckController,
     this.driverReportGateway,
+    this.driverRatingGateway,
     this.driverTrustedContactRepository,
     this.driverSafetyAlertRepository,
     this.pushDeviceRegistrarFactory,
@@ -461,6 +463,7 @@ class DriverApp extends StatelessWidget {
   driverOfferResponseControllerFactory;
   final DriverShiftCheckSubmissionController? driverShiftCheckController;
   final DriverReportGateway? driverReportGateway;
+  final ApiDriverRatingGateway? driverRatingGateway;
   final DriverTrustedContactRepository? driverTrustedContactRepository;
   final DriverSafetyAlertRepository? driverSafetyAlertRepository;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
@@ -559,10 +562,9 @@ class DriverApp extends StatelessWidget {
           baseUrl: apiBaseUrl,
         );
 
-    final ratingGateway = _driverRatingGatewayFor(
-      baseUrl: apiBaseUrl,
-      tokenStore: tokenStore,
-    );
+    final ratingGateway =
+        driverRatingGateway ??
+        _driverRatingGatewayFor(baseUrl: apiBaseUrl, tokenStore: tokenStore);
 
     final home = showLoginShell
         ? DriverLoginShell(
