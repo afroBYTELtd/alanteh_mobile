@@ -2267,7 +2267,7 @@ void main() {
       expect(find.text('Driver duty summary'), findsOneWidget);
       expect(find.text('Driver One'), findsOneWidget);
       expect(find.text('DRV-001'), findsOneWidget);
-      expect(find.text('+233 20 ****001'), findsOneWidget);
+      expect(find.text('+233******001'), findsOneWidget);
       expect(find.text('VEH-009'), findsOneWidget);
       expect(find.text('Yes'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
@@ -3274,7 +3274,7 @@ DriverDutySummary _sampleDuty() {
   return const DriverDutySummary(
     displayName: 'Driver One',
     driverReference: 'DRV-001',
-    phone: '+233200000001',
+    phoneMasked: '+233******001',
     status: 'active',
     assignedVehicleReference: 'VEH-009',
     canReceiveAssignments: true,

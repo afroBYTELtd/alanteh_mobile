@@ -426,7 +426,7 @@ final class DriverDutySummary {
   const DriverDutySummary({
     this.displayName,
     this.driverReference,
-    this.phone,
+    this.phoneMasked,
     this.status,
     this.assignedVehicleReference,
     this.canReceiveAssignments,
@@ -442,7 +442,9 @@ final class DriverDutySummary {
 
   final String? displayName;
   final String? driverReference;
-  final String? phone;
+
+  /// The phone as the server sends it, already masked ("phone_masked").
+  final String? phoneMasked;
   final String? status;
   final String? assignedVehicleReference;
   final bool? canReceiveAssignments;
@@ -462,7 +464,7 @@ final class DriverDutySummary {
     return DriverDutySummary(
       displayName: displayName,
       driverReference: driverReference,
-      phone: phone,
+      phoneMasked: phoneMasked,
       status: status,
       assignedVehicleReference: assignedVehicleReference,
       canReceiveAssignments: canReceiveAssignments,
@@ -496,20 +498,16 @@ final class DriverDutySummary {
         ? driverReferenceValue.trim()
         : null;
 
+    // GET /api/driver/me/ (DriverDutySummaryAPIView) sends the driver's
+    // values inside "driver" and the duty values inside "duty"; nothing
+    // is read from the top level.
     return DriverDutySummary(
-      displayName: _firstString(map, const [
-        'display_name',
-        'driver_display_name',
-        'name',
-        'full_name',
-      ]),
+      displayName: _firstString(driver, const ['display_name']),
       driverReference: driverReference,
-      phone: _firstString(map, const ['phone', 'phone_number', 'mobile']),
-      status: _firstString(map, const ['driver_status', 'status']),
-      assignedVehicleReference: _firstString(map, const [
-        'assigned_vehicle_reference',
+      phoneMasked: _firstString(driver, const ['phone_masked']),
+      status: _firstString(driver, const ['status']),
+      assignedVehicleReference: _firstString(driver, const [
         'vehicle_reference',
-        'vehicle',
       ]),
       canReceiveAssignments: _firstBool(duty, const [
         'can_receive_assignments',
@@ -932,22 +930,6 @@ class _DriverScheduledPickupBadge extends StatelessWidget {
   }
 }
 
-String maskDriverPhone(String? phone) {
-  final normalized = phone?.replaceAll(RegExp(r'[\s-]'), '').trim();
-  if (normalized == null || normalized.isEmpty) {
-    return driverEmptyValue;
-  }
-
-  final match = RegExp(
-    r'^\+(\d{3})(\d{2})(\d{4})(\d{3})$',
-  ).firstMatch(normalized);
-  if (match == null) {
-    return driverEmptyValue;
-  }
-
-  return '+${match.group(1)} ${match.group(2)} ****${match.group(4)}';
-}
-
 String _safeText(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? driverEmptyValue : trimmed;
@@ -1118,7 +1100,7 @@ class _DriverDutySummaryCard extends StatelessWidget {
             'Driver reference',
             _safeText(summary.driverReference),
           ),
-          _DriverDetailRow('Phone', maskDriverPhone(summary.phone)),
+          _DriverDetailRow('Phone', _safeText(summary.phoneMasked)),
           _DriverDetailRow('Status', driverStatusLabel(summary.status)),
           _DriverDetailRow(
             'Vehicle',

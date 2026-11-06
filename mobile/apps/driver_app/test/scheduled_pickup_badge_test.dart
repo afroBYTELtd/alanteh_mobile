@@ -112,7 +112,7 @@ final class _Gateway implements DriverDutyGateway {
     return const DriverDutySummary(
       displayName: 'Driver One',
       driverReference: 'DRV-001',
-      phone: '+233200000001',
+      phoneMasked: '+233******001',
       status: 'active',
       assignedVehicleReference: 'VEH-009',
       canReceiveAssignments: true,
