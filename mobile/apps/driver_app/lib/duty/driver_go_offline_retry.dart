@@ -33,7 +33,6 @@ final class DriverGoOfflineRetry {
   final Future<String?> Function() driverTag;
   final Future<void> Function(Duration delay) _wait;
 
-  bool _cancelled = false;
   bool _stopped = false;
   Future<void>? _running;
 
@@ -49,7 +48,6 @@ final class DriverGoOfflineRetry {
 
   /// Keeps a GO OFFLINE to send (one per driver).
   Future<void> remember() async {
-    _cancelled = false;
     final tag = await _tag();
     if (tag == null) {
       return;
@@ -67,16 +65,21 @@ final class DriverGoOfflineRetry {
     );
   }
 
+  /// A kept GO OFFLINE for the signed-in driver that is still to send (a
+  /// queue that cannot delete marks a cancelled one failed for good).
   Future<bool> isPending() async {
     final tag = await _tag();
-    return tag != null && await queue.eventById(_id(tag)) != null;
+    if (tag == null) {
+      return false;
+    }
+    final event = await queue.eventById(_id(tag));
+    return event != null &&
+        event.syncStatus != QueueSyncStatus.permanentlyFailed &&
+        event.syncStatus != QueueSyncStatus.synced;
   }
 
   /// The driver went online: no more tries, and the record goes.
-  Future<void> cancel() async {
-    _cancelled = true;
-    await _forget();
-  }
+  Future<void> cancel() => _forget();
 
   /// The screen went away: tries stop, the record stays for next time.
   void stop() => _stopped = true;
@@ -125,7 +128,7 @@ final class DriverGoOfflineRetry {
       await _wait(driverGoOfflineRetryDelays.first);
       attempt = 1;
     }
-    while (!_cancelled && !_stopped && await isPending()) {
+    while (!_stopped && await isPending()) {
       try {
         final transition = await gateway.updateDutyStatus(
           DriverOperationalDutyStatus.offline,

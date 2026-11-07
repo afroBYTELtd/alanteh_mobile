@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:asm_design_system/asm_design_system.dart';
@@ -132,6 +133,39 @@ void main() {
 
       expect(status.calls, 1);
       expect(await retry.isPending(), isFalse);
+    });
+
+    test('another kind of failure (a timeout) is retried too', () async {
+      final status = _ThrowingOnce(TimeoutException('no answer'));
+      await retry.remember();
+
+      await retry.runUntilLanded(
+        status,
+        onLanded: (_) {},
+        onSessionEnded: () {},
+      );
+
+      expect(status.calls, 2);
+      expect(await retry.isPending(), isFalse);
+    });
+
+    test('a queue that cannot delete: cancelled stays cancelled', () async {
+      final plain = _PlainQueue();
+      final kept = DriverGoOfflineRetry(
+        queue: plain,
+        driverTag: () async => _me,
+      );
+      await kept.remember();
+
+      await kept.cancel();
+      await kept.runUntilLanded(
+        status,
+        onLanded: (_) => fail('must not land'),
+        onSessionEnded: () {},
+      );
+
+      expect(await kept.isPending(), isFalse);
+      expect(status.calls, 0);
     });
 
     test('nothing pending: nothing sent', () async {
@@ -353,8 +387,7 @@ final class _Duty implements DriverDutyGateway, DriverDutyStatusGateway {
   }
 }
 
-final class _Queue
-    implements DriverTripActionPersistentQueue, DriverQueueCleanup {
+class _PlainQueue implements DriverTripActionPersistentQueue {
   final events = <String, QueuedEvent>{};
 
   @override
@@ -389,11 +422,34 @@ final class _Queue
       syncStatus: QueueSyncStatus.permanentlyFailed,
     );
   }
+}
 
+final class _Queue extends _PlainQueue implements DriverQueueCleanup {
   @override
   Future<int> removeWhere(bool Function(QueuedEvent event) test) async {
     final ids = events.values.where(test).map((e) => e.id).toList();
     ids.forEach(events.remove);
     return ids.length;
+  }
+}
+
+final class _ThrowingOnce implements DriverDutyStatusGateway {
+  _ThrowingOnce(this.error);
+
+  final Object error;
+  int calls = 0;
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    calls += 1;
+    if (calls == 1) {
+      throw error;
+    }
+    return DriverDutyTransition(
+      dutyStatus: status.wireValue,
+      since: DateTime.utc(2026, 11, 7, 9),
+    );
   }
 }
