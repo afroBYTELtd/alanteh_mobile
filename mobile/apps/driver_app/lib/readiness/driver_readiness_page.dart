@@ -109,7 +109,6 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
 
     final controller = widget.submissionController;
     DriverShiftCheckSubmissionDisposition disposition;
-    String? staleMessage;
 
     if (controller == null) {
       disposition = DriverShiftCheckSubmissionDisposition.queued;
@@ -117,7 +116,6 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
       try {
         final result = await controller.submit(submission);
         disposition = result.disposition;
-        staleMessage = result.message;
       } on Object {
         disposition = DriverShiftCheckSubmissionDisposition.queued;
       }
@@ -128,8 +126,10 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
     }
 
     if (disposition == DriverShiftCheckSubmissionDisposition.stale) {
-      // A3: refused as a check from an earlier day. Not "submitted": the
-      // driver reads the server's words and does today's check.
+      // A3: refused as a check from an earlier day. Not "submitted". This
+      // page only sends a check made just now, with the phone's own time,
+      // so a stale answer means the phone's clock is wrong (lead, 7 Nov):
+      // say that, not "do today's check", which would be refused again.
       setState(() {
         _submissionState = DriverReadinessSubmissionState.idle;
       });
@@ -137,7 +137,7 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           key: const Key('driver-shift-check-stale'),
-          content: Text(staleMessage ?? driverShiftCheckStaleMessage),
+          content: const Text(driverShiftCheckPhoneClockMessage),
           actions: [
             TextButton(
               key: const Key('driver-shift-check-stale-ok'),

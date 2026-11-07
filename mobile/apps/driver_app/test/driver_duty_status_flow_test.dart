@@ -1412,7 +1412,18 @@ void main() {
     await tester.tap(find.byKey(const Key('readiness-ready')));
     await tester.pumpAndSettle();
 
-    expect(find.text(staleText), findsOneWidget);
+    // Lead, 7 Nov: a DIRECT check refused as stale means the phone's own
+    // clock is wrong (its submitted_at is the phone's "now"), so the driver
+    // is told to fix the clock, not to do the check again (that would be
+    // refused the same way for ever).
+    expect(
+      find.text(
+        "Your phone's date or time looks wrong. Set it to automatic and try "
+        'again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(staleText), findsNothing);
     expect(find.text('Shift check submitted'), findsNothing);
     await tester.tap(find.byKey(const Key('driver-shift-check-stale-ok')));
     await tester.pumpAndSettle();

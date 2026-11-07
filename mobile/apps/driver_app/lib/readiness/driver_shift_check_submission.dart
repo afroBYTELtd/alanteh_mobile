@@ -146,6 +146,12 @@ bool _isStale(ApiResponse<Object?> response) {
       body['code'] == 'shift_check_stale';
 }
 
+/// What the driver reads when a check made just now is refused as stale:
+/// it carried the phone's own time, so the phone's clock is wrong (lead,
+/// 7 Nov).
+const driverShiftCheckPhoneClockMessage =
+    "Your phone's date or time looks wrong. Set it to automatic and try again.";
+
 /// What the driver reads when the server refuses a check as stale (S5).
 const driverShiftCheckStaleMessage =
     "This shift check was done on an earlier day. Do today's shift check.";
