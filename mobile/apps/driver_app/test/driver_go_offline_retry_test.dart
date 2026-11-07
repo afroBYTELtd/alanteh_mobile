@@ -462,6 +462,46 @@ void main() {
         expect(queue.removals, 1, reason: 'the record goes exactly once');
       },
     );
+
+    // Lead, 7 Nov (delta 8): an older run that fails (here its queue
+    // throws) neither stops nor fails the new run, and nothing is left as
+    // an uncaught async error (that would fail this test by itself).
+    test('it fails: its own caller gets the error, the new run still '
+        'sends', () async {
+      final queue = _FailingReadQueue();
+      final retry = DriverGoOfflineRetry(
+        queue: queue,
+        driverTag: () async => _me,
+        wait: (_) async {},
+      );
+      final status = _Status();
+      await retry.remember();
+      final hold = Completer<void>();
+      queue
+        ..failNextRead = true
+        ..hold = hold;
+      final landedBy = <String>[];
+
+      final oldRun = retry.runUntilLanded(
+        status,
+        onLanded: (_) => landedBy.add('old'),
+        onSessionEnded: () {},
+      );
+      final oldFailed = expectLater(oldRun, throwsA(isA<StateError>()));
+      await pumpEventQueue();
+      final newRun = retry.runUntilLanded(
+        status,
+        onLanded: (_) => landedBy.add('new'),
+        onSessionEnded: () {},
+      );
+      hold.complete();
+      await oldFailed;
+      await newRun;
+
+      expect(status.calls, 1);
+      expect(landedBy, ['new']);
+      expect(await retry.isPending(), isFalse);
+    });
   });
 
   // Lead, 7 Nov (a): through the real DriverApp, the same retry serves the
@@ -593,6 +633,26 @@ void main() {
       final duty = await pumpShell(tester, online: true, queue: queue);
 
       expect(duty.offlineCalls, 1);
+      expect(find.text('GO OFFLINE'), findsNothing);
+      expect(queue.events, isEmpty);
+    });
+
+    // Lead, 7 Nov (delta 8): Work starts runs without waiting for them; a
+    // run that fails must not become an uncaught error in the app (that
+    // would fail this test by itself), and the next GO OFFLINE retries.
+    testWidgets('a run that fails is no uncaught error; the next GO OFFLINE '
+        'still retries', (tester) async {
+      final queue = _FailingReadQueue()..failNextRead = true;
+      final duty = await pumpShell(tester, online: true, queue: queue);
+      expect(queue.failNextRead, isFalse, reason: 'the start run read it');
+      duty.answers.addAll([_noAnswer, null]);
+
+      await tester.tap(find.text('GO OFFLINE'));
+      await tester.pumpAndSettle();
+      await tester.pump(driverGoOfflineRetryDelays.first);
+      await tester.pumpAndSettle();
+
+      expect(duty.offlineCalls, 2);
       expect(find.text('GO OFFLINE'), findsNothing);
       expect(queue.events, isEmpty);
     });
@@ -748,6 +808,26 @@ final class _Queue extends _PlainQueue implements DriverQueueCleanup {
     final ids = events.values.where(test).map((e) => e.id).toList();
     ids.forEach(events.remove);
     return ids.length;
+  }
+}
+
+/// A queue whose next read throws (after [hold] completes, when set).
+final class _FailingReadQueue extends _Queue {
+  bool failNextRead = false;
+  Completer<void>? hold;
+
+  @override
+  Future<QueuedEvent?> eventById(String id) async {
+    if (!failNextRead) {
+      return super.eventById(id);
+    }
+    failNextRead = false;
+    final wait = hold;
+    hold = null;
+    if (wait != null) {
+      await wait.future;
+    }
+    throw StateError('the queue could not be read');
   }
 }
 

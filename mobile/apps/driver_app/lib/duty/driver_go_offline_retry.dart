@@ -148,12 +148,16 @@ final class DriverGoOfflineRetry {
     final generation = _generation;
     _interruptWaits();
     final previous = _running ?? Future<void>.value();
-    final run = previous.then(
-      (_) => _run(gateway, generation: generation, waitFirst: waitFirst),
-    );
+    // An older run's error is its own caller's: it neither stops nor fails
+    // this run (lead, 7 Nov).
+    final run = previous
+        .then<void>((_) {}, onError: (Object _) {})
+        .then(
+          (_) => _run(gateway, generation: generation, waitFirst: waitFirst),
+        );
     _running = run;
     unawaited(
-      run.whenComplete(() {
+      run.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
         if (identical(_running, run)) {
           _running = null;
         }
