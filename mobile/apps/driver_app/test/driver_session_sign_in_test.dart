@@ -3,6 +3,7 @@ import 'package:asm_auth/asm_auth.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // A "Session expired" panel used to offer only Refresh, which cannot work
@@ -83,6 +84,73 @@ void main() {
     expect(await tokens.readRefreshToken(), isNull);
   });
 
+  // Lead, 24 Oct (checklist item 17): a sign-out closes every pushed
+  // screen. On the driver app the only way to sign in again from a pushed
+  // screen is an ended session (Sign out is on Work and Account); this pins
+  // that it leaves only the sign-in screen and Back leaves the app.
+  testWidgets('through the app: Sign in from a pushed trip screen leaves only '
+      'the sign-in screen; Back leaves the app', (tester) async {
+    final tokens = MemoryAuthTokenStore();
+    final platformCalls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformCalls.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: _LoginApi(),
+          tokenStore: tokens,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: tokens,
+        driverDutyGateway: _TripThenExpired(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('driver-phone-field')),
+      '+233000000001',
+    );
+    await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
+    await tester.tap(find.byKey(const Key('driver-sign-in')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Trips'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Near Accra Mall'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('driver-trip-detail-session-expired')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('driver-session-sign-in')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    expect(
+      find.byKey(const Key('driver-trip-detail-session-expired')),
+      findsNothing,
+    );
+    expect(
+      tester.state<NavigatorState>(find.byType(Navigator).first).canPop(),
+      isFalse,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(platformCalls, contains('SystemNavigator.pop'));
+  });
+
   testWidgets('the app sets Sign in while it is shown and clears it after', (
     tester,
   ) async {
@@ -146,4 +214,35 @@ final class _LoginApi implements AuthApiGateway {
     'account_type': 'driver',
     'account': <String, Object?>{},
   }, statusCode: 200);
+}
+
+/// Work loads; the Trips list has one trip; its detail answers 401.
+final class _TripThenExpired implements DriverDutyGateway {
+  static const _expired = DriverDutyApiException(
+    DriverDutyApiFailureType.sessionExpired,
+    driverSessionExpiredMessage,
+  );
+
+  @override
+  Future<DriverDutySummary> fetchDuty() async => DriverDutySummary(
+    driverReference: 'DRV-1',
+    dutyStatus: 'online',
+    dutySince: DateTime(2026, 10, 9, 8),
+    shiftCheckToday: true,
+    canReceiveAssignments: true,
+  );
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() async => const [
+    DriverAssignedTrip(
+      reference: 'TRIP-ITEM17-1',
+      status: 'assigned',
+      pickupLocation: 'Near Accra Mall',
+      destination: 'Airport, Terminal 3',
+    ),
+  ];
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) async =>
+      throw _expired;
 }

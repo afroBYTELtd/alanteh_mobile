@@ -734,6 +734,9 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     if (!mounted) {
       return;
     }
+    // Lead, 24 Oct (item 17): close every pushed screen (the trip screen
+    // stayed on top of the sign-in screen), so only sign-in is left.
+    Navigator.of(context).popUntil((route) => route.isFirst);
     _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {

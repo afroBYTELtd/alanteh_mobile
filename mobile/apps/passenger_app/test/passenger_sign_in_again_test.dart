@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_maps/testing.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/booking/booking_draft.dart';
 import 'package:passenger_app/booking/booking_submission.dart';
@@ -87,6 +88,43 @@ void main() {
       {'refresh': refresh, 'installation_id': 'install-1'},
     ]);
     expect(await tokens.readRefreshToken(), isNull);
+  });
+
+  // Lead, 24 Oct (checklist item 17), from phone session 3: after "Sign in
+  // again" the trip screen stayed on top of the sign-in screen. Sign-out
+  // closes every pushed screen.
+  testWidgets('after Sign in again only the sign-in screen is left; Back '
+      'leaves the app', (tester) async {
+    await bookAndOpenTheTripScreen(tester);
+    final platformCalls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        platformCalls.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await signInAgain(tester);
+
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(find.byKey(_banner), findsNothing);
+    final navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    expect(navigator.canPop(), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(platformCalls, contains('SystemNavigator.pop'));
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
   });
 }
 
