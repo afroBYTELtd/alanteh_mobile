@@ -257,6 +257,7 @@ void main() {
   });
 
   test('the app wires the tag and the clock into the real controller', () {
+    // Source check, not a behavioural test (pre-launch assembly list).
     final source = File('lib/main.dart').readAsStringSync();
     final factory = source.substring(
       source.indexOf(

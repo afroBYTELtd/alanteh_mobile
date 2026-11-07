@@ -234,6 +234,7 @@ void main() {
   });
 
   test("the app gives Work a retry on its own queue", () {
+    // Source check, not a behavioural test (pre-launch assembly list).
     final source = File('lib/main.dart').readAsStringSync();
 
     expect(source, contains('goOfflineRetry: widget.goOfflineRetry'));
