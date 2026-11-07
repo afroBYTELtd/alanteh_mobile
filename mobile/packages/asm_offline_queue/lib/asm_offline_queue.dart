@@ -341,6 +341,19 @@ final class QueueManager {
 
   Future<void> clearSynced() => _store.deleteSynced();
 
+  /// Deletes every event [test] matches, whatever its status, and returns
+  /// how many. For events the app must never send (sign-in build A3).
+  Future<int> deleteWhere(bool Function(QueuedEvent event) test) async {
+    var deleted = 0;
+    for (final event in await _store.allOrdered()) {
+      if (test(event)) {
+        await _store.deleteById(event.id);
+        deleted += 1;
+      }
+    }
+    return deleted;
+  }
+
   Future<void> syncPending(OfflineQueueSyncClient client) async {
     final events = await pendingEvents();
     for (final event in events) {
@@ -370,6 +383,7 @@ abstract interface class _OfflineQueueStore {
   Future<QueuedEvent?> findById(String id);
   Future<List<QueuedEvent>> allOrdered();
   Future<void> deleteSynced();
+  Future<void> deleteById(String id);
   Future<void> close();
 }
 
@@ -447,6 +461,11 @@ CREATE TABLE $_table (
       where: 'sync_status = ?',
       whereArgs: [QueueSyncStatus.synced.name],
     );
+  }
+
+  @override
+  Future<void> deleteById(String id) async {
+    await _database.delete(_table, where: 'id = ?', whereArgs: [id]);
   }
 
   @override

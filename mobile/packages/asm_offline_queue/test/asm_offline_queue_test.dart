@@ -353,6 +353,42 @@ void main() {
       ]);
     });
   });
+
+  // Sign-in build A3: the driver app removes queued events it must never
+  // send (another driver's shift checks, events older than 7 days).
+  group('deleteWhere', () {
+    test('deletes the matching events only and says how many', () async {
+      final manager = await QueueManager.openInMemory();
+      addTearDown(manager.close);
+      await manager.enqueue(testEvent(id: 'keep-1', driverId: 'user:1'));
+      await manager.enqueue(testEvent(id: 'drop-1', driverId: 'user:2'));
+      await manager.enqueue(
+        testEvent(
+          id: 'drop-2',
+          driverId: 'user:2',
+          syncStatus: QueueSyncStatus.failed,
+        ),
+      );
+
+      final deleted = await manager.deleteWhere(
+        (event) => event.driverId == 'user:2',
+      );
+
+      expect(deleted, 2);
+      expect(await manager.eventById('drop-1'), isNull);
+      expect(await manager.eventById('drop-2'), isNull);
+      expect(await manager.eventById('keep-1'), isNotNull);
+    });
+
+    test('nothing matching: nothing deleted', () async {
+      final manager = await QueueManager.openInMemory();
+      addTearDown(manager.close);
+      await manager.enqueue(testEvent(id: 'keep-1'));
+
+      expect(await manager.deleteWhere((_) => false), 0);
+      expect(await manager.eventById('keep-1'), isNotNull);
+    });
+  });
 }
 
 QueuedEvent testEvent({
