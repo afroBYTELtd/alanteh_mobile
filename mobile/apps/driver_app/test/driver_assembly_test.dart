@@ -175,6 +175,14 @@ void _signInAssemblyTests() {
     skip: _skip != false,
   );
 
+  // What this proves, and what it does not (lead, 7 Nov): the registrar is
+  // built here by hand and given SecureInstallationIdStore() by the test,
+  // so it proves the production gateway and the request body only. It does
+  // not prove the wiring main() uses (FirebasePushDeviceRegistrar
+  // .withDefaultClient): that default's id store is pinned by "the default
+  // registrar sends the id kept in secure storage" in
+  // push_device_registration_test.dart, and main()'s assembly is verified
+  // on the phone only.
   test(
     'push registration: production gateway, installation id in the body',
     () async {
