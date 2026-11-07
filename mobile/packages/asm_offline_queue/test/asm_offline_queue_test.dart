@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -378,6 +380,29 @@ void main() {
       expect(await manager.eventById('drop-1'), isNull);
       expect(await manager.eventById('drop-2'), isNull);
       expect(await manager.eventById('keep-1'), isNotNull);
+    });
+
+    // Lead, 7 Nov: the real SQLite store on a database file (not in
+    // memory): a deleted event is gone after the queue is closed and
+    // opened again.
+    test('on a database file, a deleted event stays deleted', () async {
+      final dir = await Directory.systemTemp.createTemp('asm-queue-delete');
+      addTearDown(() => dir.delete(recursive: true));
+      final path = '${dir.path}/queue.sqlite';
+      final first = await QueueManager.open(databasePath: path);
+      await first.enqueue(testEvent(id: 'keep-1', driverId: 'user:1'));
+      await first.enqueue(testEvent(id: 'drop-1', driverId: 'user:2'));
+
+      final deleted = await first.deleteWhere(
+        (event) => event.driverId == 'user:2',
+      );
+      await first.close();
+      final reopened = await QueueManager.open(databasePath: path);
+      addTearDown(reopened.close);
+
+      expect(deleted, 1);
+      expect(await reopened.eventById('drop-1'), isNull);
+      expect(await reopened.eventById('keep-1'), isNotNull);
     });
 
     test('nothing matching: nothing deleted', () async {
