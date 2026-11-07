@@ -633,6 +633,11 @@ class DriverApp extends StatelessWidget {
 }
 
 /// The driver app's navigator, for the offer card that sits above it.
+/// What the driver sees when the server refuses sign-out because of an
+/// active trip and its answer carries no text of its own (S2's wording).
+const driverSignOutActiveTripText =
+    'You have an active trip. Call dispatch before signing out.';
+
 final driverNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Where the offer card goes: over the tabs or over a pushed screen.
@@ -962,6 +967,9 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _restoreStoredSession() async {
+    // A sign-out the server has not heard of yet: sent now if no one is
+    // signed in (A1 checks; it never fires during a session).
+    unawaited(_sendPendingSignOuts());
     final rawAccessToken = await widget.authTokenStore.readAccessToken();
     final rawRefreshToken = await widget.authTokenStore.readRefreshToken();
     final accessToken = rawAccessToken?.trim();
@@ -1267,7 +1275,102 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() => _loginError = null);
   }
 
+  Future<void> _sendPendingSignOuts() async {
+    try {
+      await widget.authService.sendPendingSignOuts();
+    } on Object {
+      // Kept for the next start.
+    }
+  }
+
+  bool _signingOut = false;
+
+  /// Sign-out (A1/A3): the server is told first, within 5 s, under a
+  /// "Signing out…" dialog. On 409 active_trip the driver stays signed in
+  /// and sees the server's words; Work reloads. Otherwise the session ends
+  /// on the phone (a sign-out the server did not get is kept pending).
   Future<void> _signOut() async {
+    if (_signingOut) {
+      return;
+    }
+    _signingOut = true;
+    SignOutResult? result;
+    try {
+      result = await _whileSigningOut(
+        widget.authService.signOut(
+          deviceToken: _pushDeviceRegistrar?.deviceToken,
+        ),
+      );
+    } on Object {
+      // Storage failed: end the session on the phone anyway.
+      result = null;
+    } finally {
+      _signingOut = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (result?.outcome == SignOutOutcome.activeTrip) {
+      await _showSignOutRefused(result?.message ?? driverSignOutActiveTripText);
+      _tripsChanged.ping();
+      return;
+    }
+    await _endSessionOnPhone();
+  }
+
+  Future<T> _whileSigningOut<T>(Future<T> work) async {
+    final navigator = Navigator.of(context);
+    var showing = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            key: Key('driver-signing-out'),
+            content: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: AsmSpacing.space16),
+                Text('Signing out…'),
+              ],
+            ),
+          ),
+        ),
+      ).whenComplete(() => showing = false),
+    );
+    try {
+      return await work;
+    } finally {
+      if (showing && navigator.mounted) {
+        navigator.pop();
+      }
+    }
+  }
+
+  Future<void> _showSignOutRefused(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('driver-sign-out-refused'),
+        title: const Text('Still signed in'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            key: const Key('driver-sign-out-refused-ok'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _endSessionOnPhone() async {
     _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
