@@ -1,4 +1,5 @@
 import 'package:asm_app_config/asm_app_config.dart';
+import 'package:asm_auth/asm_auth.dart' show authSignInEndsSoonMessage;
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:flutter/material.dart';
 
@@ -38,6 +39,7 @@ class DriverHome extends StatelessWidget {
     required this.localQaEnabled,
     this.dutySummary,
     this.onRefreshDuty,
+    this.signInEndsSoon = false,
     required this.onOpenAssignedTrips,
     required this.onOpenShiftSummary,
     this.onSignOut,
@@ -70,6 +72,9 @@ class DriverHome extends StatelessWidget {
 
   /// Asks the shell to reload [dutySummary].
   final VoidCallback? onRefreshDuty;
+
+  /// Shows the "sign-in ends soon" banner with Sign in again (A3).
+  final bool signInEndsSoon;
   final VoidCallback onOpenAssignedTrips;
   final VoidCallback onOpenShiftSummary;
   final VoidCallback? onSignOut;
@@ -137,6 +142,10 @@ class DriverHome extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (signInEndsSoon) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            _DriverSignInEndsSoonBanner(onSignInAgain: onSignOut),
+          ],
           if (onlineWithoutShiftCheck) ...[
             const SizedBox(height: AsmSpacing.space16),
             _DriverShiftCheckNeededBanner(onStart: onOpenReadiness),
@@ -471,6 +480,56 @@ class _DriverHomeBrandHeader extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _DriverSignInEndsSoonBanner extends StatelessWidget {
+  const _DriverSignInEndsSoonBanner({required this.onSignInAgain});
+
+  final VoidCallback? onSignInAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('driver-sign-in-ends-banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: AsmColors.driverCard,
+        borderRadius: BorderRadius.circular(AsmRadii.radius24),
+        border: Border.all(color: AsmColors.driverWarningSurface),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lock_clock_outlined,
+                color: AsmColors.driverWarningSurface,
+              ),
+              SizedBox(width: AsmSpacing.space12),
+              Expanded(
+                child: Text(
+                  authSignInEndsSoonMessage,
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+          if (onSignInAgain != null) ...[
+            const SizedBox(height: AsmSpacing.space12),
+            TextButton.icon(
+              key: const Key('driver-sign-in-ends-banner-renew'),
+              onPressed: onSignInAgain,
+              icon: const Icon(Icons.login_outlined),
+              label: const Text('Sign in again'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

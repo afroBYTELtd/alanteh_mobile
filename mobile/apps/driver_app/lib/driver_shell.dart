@@ -67,6 +67,13 @@ String _startupGateDiagSanitizedErrorMessage(Object error) {
 /// At the shift check, a sign-in ending sooner than this is renewed first.
 const driverSignInRenewalWindow = Duration(hours: 12);
 
+/// Work's "sign-in ends soon" banner (A3): shown when the app opens or
+/// comes back to the front with less than this left...
+const driverSignInBannerOnOpen = Duration(hours: 12);
+
+/// ...and, during a shift, when Work's timer finds less than this left.
+const driverSignInBannerDuringShift = Duration(hours: 2);
+
 /// How often Work, in front, asks the server for the duty summary again.
 const driverDutyReloadInterval = Duration(minutes: 3);
 
@@ -168,6 +175,9 @@ class _DriverShellState extends State<DriverShell> {
   bool _appInFront = true;
   AppLifecycleListener? _lifecycle;
   Timer? _workReloadTimer;
+
+  /// The sign-in ends soon: Work shows the banner (not during a trip).
+  bool _signInEndsSoon = false;
   Timer? _dayChangeTimer;
 
   /// Tells an open Trips list to reload quietly.
@@ -220,9 +230,16 @@ class _DriverShellState extends State<DriverShell> {
       onResume: () {
         unawaited(_reloadDutyQuietly());
         _tripsReload.ping();
+        unawaited(_checkSignInEndsSoon(driverSignInBannerOnOpen));
       },
     );
+    unawaited(_checkSignInEndsSoon(driverSignInBannerOnOpen));
     _workReloadTimer = Timer.periodic(driverDutyReloadInterval, (_) {
+      if (_isOnline) {
+        unawaited(
+          _checkSignInEndsSoon(driverSignInBannerDuringShift, onlyShow: true),
+        );
+      }
       final tabInFront =
           _appInFront && (ModalRoute.of(context)?.isCurrent ?? true);
       if (tabInFront && _selectedIndex == 0) {
@@ -233,6 +250,33 @@ class _DriverShellState extends State<DriverShell> {
     });
     _setDayChangeTimer();
     widget.reloadSignal?.addListener(_reloadOnSignal);
+  }
+
+  /// Reads how long the sign-in has left. Under [threshold] shows Work's
+  /// banner; otherwise hides it, unless [onlyShow] (the shift timer only
+  /// adds the banner, it never takes back one shown on open).
+  Future<void> _checkSignInEndsSoon(
+    Duration threshold, {
+    bool onlyShow = false,
+  }) async {
+    final timeLeft = widget.signInTimeLeft;
+    if (timeLeft == null) {
+      return;
+    }
+    final Duration? left;
+    try {
+      left = await timeLeft();
+    } on Object {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final soon = left != null && left <= threshold;
+    if (soon == _signInEndsSoon || (!soon && onlyShow)) {
+      return;
+    }
+    setState(() => _signInEndsSoon = soon);
   }
 
   /// A3: an ended session on Work goes to the sign-in screen at once
@@ -1200,6 +1244,9 @@ class _DriverShellState extends State<DriverShell> {
       onOpenShiftSummary: _openShiftSummary,
       onSignOut: widget.onSignOut == null ? null : _signOut,
       pendingOffersPanelBuilder: widget.pendingOffersPanelBuilder,
+      // Never during an active trip; it shows again when the trip ends.
+      signInEndsSoon:
+          _signInEndsSoon && (_dutySummary?.activeTripCount ?? 0) == 0,
     );
   }
 
