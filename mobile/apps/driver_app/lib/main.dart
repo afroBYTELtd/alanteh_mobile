@@ -654,7 +654,6 @@ class DriverApp extends StatelessWidget {
   }
 }
 
-/// The driver app's navigator, for the offer card that sits above it.
 /// Queue housekeeping (A3): at app start without a driver, at sign-in with
 /// the new driver's tag.
 typedef DriverQueueHousekeeping = Future<void> Function({String? signedInTag});
@@ -664,6 +663,7 @@ typedef DriverQueueHousekeeping = Future<void> Function({String? signedInTag});
 const driverSignOutActiveTripText =
     'You have an active trip. Call dispatch before signing out.';
 
+/// The driver app's navigator, for the offer card that sits above it.
 final driverNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Where the offer card goes: over the tabs or over a pushed screen.
