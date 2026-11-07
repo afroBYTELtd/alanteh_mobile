@@ -53,7 +53,7 @@ abstract interface class DriverTripActionPersistentQueue
 }
 
 final class PersistentDriverTripActionQueue
-    implements DriverTripActionPersistentQueue {
+    implements DriverTripActionPersistentQueue, DriverQueueCleanup {
   PersistentDriverTripActionQueue({
     Future<QueueManager> Function()? managerFactory,
   }) : _managerFactory = managerFactory ?? (() => QueueManager.open());
@@ -69,6 +69,12 @@ final class PersistentDriverTripActionQueue
   Future<QueuedEvent> enqueue(QueuedEvent event) async {
     final manager = await _openManager();
     return manager.enqueue(event);
+  }
+
+  @override
+  Future<int> removeWhere(bool Function(QueuedEvent event) test) async {
+    final manager = await _openManager();
+    return manager.deleteWhere(test);
   }
 
   @override

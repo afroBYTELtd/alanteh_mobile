@@ -7,6 +7,7 @@ import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:driver_app/readiness/driver_readiness_check.dart';
 import 'package:driver_app/readiness/driver_shift_check_submission.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 // Sign-in build A3, the shift check queue and the server's day:
 // - a queued shift check carries the signed-in driver (user:<id> from the
@@ -227,6 +228,31 @@ void main() {
       await driverQueueHousekeeping(queue, now: now, signedInTag: _me);
 
       expect(await queue.eventById('a'), isNotNull);
+    });
+  });
+
+  group("the app's real queue", () {
+    setUpAll(() {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    });
+
+    test('can delete, so housekeeping and stale checks really go', () async {
+      final queue = PersistentDriverTripActionQueue(
+        managerFactory: QueueManager.openInMemory,
+      );
+      final h = _Harness();
+      final now = DateTime.utc(2026, 11, 7, 9);
+      await queue.enqueue(
+        h.queued(now, driver: driverShiftCheckQueueDriverIdentity, id: 'old'),
+      );
+      await queue.enqueue(h.queued(now, driver: _me, id: 'mine'));
+
+      expect(queue, isA<DriverQueueCleanup>());
+      await driverQueueHousekeeping(queue, now: now, signedInTag: _me);
+
+      expect(await queue.eventById('old'), isNull);
+      expect(await queue.eventById('mine'), isNotNull);
     });
   });
 
