@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'concern/driver_concern_page.dart';
 import 'driver_back_to_work.dart';
 import 'driver_duty_trips.dart';
+import 'duty/driver_go_offline_retry.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_home.dart';
 import 'driver_reload_signal.dart';
@@ -109,6 +110,7 @@ class DriverShell extends StatefulWidget {
     this.pendingOffersPanelBuilder,
     this.onDutyChanged,
     this.signInTimeLeft,
+    this.goOfflineRetry,
     this.reloadSignal,
     super.key,
   });
@@ -139,6 +141,9 @@ class DriverShell extends StatefulWidget {
   /// How long the sign-in has left (the refresh token's own expiry); null
   /// when unknown. Checked when the shift check opens.
   final Future<Duration?> Function()? signInTimeLeft;
+
+  /// A3: a failed GO OFFLINE, kept and retried until it lands.
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   /// Pinged when the driver's trips may have changed (the pending offers
   /// changed, or a trip push arrived in front): Work's duty summary and the
@@ -277,6 +282,50 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
     setState(() => _signInEndsSoon = soon);
+  }
+
+  Future<void> _rememberGoOffline() async {
+    final retry = widget.goOfflineRetry;
+    if (retry == null) {
+      return;
+    }
+    await retry.remember();
+    _retryGoOffline(waitFirst: true);
+  }
+
+  /// Sends a kept GO OFFLINE until it lands (A3).
+  void _retryGoOffline({bool waitFirst = false}) {
+    final retry = widget.goOfflineRetry;
+    final gateway = widget.driverDutyGateway;
+    if (retry == null || gateway is! DriverDutyStatusGateway) {
+      return;
+    }
+    unawaited(
+      retry.runUntilLanded(
+        gateway as DriverDutyStatusGateway,
+        onLanded: (transition) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _dutySummary = (_dutySummary ?? DriverDutySummary.empty())
+                .withDutyTransition(transition);
+            _startupGateDiagDutySummary(
+              _dutySummary,
+              reason: 'go_offline_retry_landed',
+            );
+            _goOfflineError = null;
+          });
+        },
+        waitFirst: waitFirst,
+        onSessionEnded: () => _signInIfSessionEnded(
+          const DriverDutyApiException(
+            DriverDutyApiFailureType.sessionExpired,
+            driverSessionExpiredMessage,
+          ),
+        ),
+      ),
+    );
   }
 
   /// A3: an ended session on Work goes to the sign-in screen at once
@@ -437,6 +486,7 @@ class _DriverShellState extends State<DriverShell> {
 
   @override
   void dispose() {
+    widget.goOfflineRetry?.stop();
     if (DriverBackToWork.selectWorkTab == _selectWorkTab) {
       DriverBackToWork.selectWorkTab = null;
     }
@@ -529,6 +579,8 @@ class _DriverShellState extends State<DriverShell> {
       });
 
       _openStartupShiftCheckIfRequired();
+      // A3: a GO OFFLINE kept from before (e.g. before a restart) goes now.
+      _retryGoOffline();
     } on Object catch (error) {
       _startupGateDiag(
         'load_duty failure '
@@ -1013,6 +1065,8 @@ class _DriverShellState extends State<DriverShell> {
         _showOnlineTransition = true;
         _confirmingShiftCheck = false;
       });
+      // A3: online after the shift check cancels a kept GO OFFLINE.
+      unawaited(widget.goOfflineRetry?.cancel());
 
       await Future<void>.delayed(widget.onlineTransitionDuration);
 
@@ -1065,6 +1119,14 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
 
+    if (status == DriverOperationalDutyStatus.online) {
+      // A3: going online cancels a GO OFFLINE still being retried.
+      await widget.goOfflineRetry?.cancel();
+      if (!mounted) {
+        return;
+      }
+    }
+
     _dutyGeneration += 1;
     setState(() {
       _dutyActionInFlight = true;
@@ -1074,6 +1136,10 @@ class _DriverShellState extends State<DriverShell> {
 
     try {
       final transition = await statusGateway.updateDutyStatus(status);
+      if (status == DriverOperationalDutyStatus.offline) {
+        // Landed (perhaps by the Retry button): nothing left to retry.
+        await widget.goOfflineRetry?.cancel();
+      }
 
       if (!mounted) {
         return;
@@ -1113,6 +1179,10 @@ class _DriverShellState extends State<DriverShell> {
       final sessionEnded =
           error is DriverDutyApiException && error.isSessionExpired;
       _signInIfSessionEnded(error);
+      if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {
+        // A3: kept and retried until it lands.
+        unawaited(_rememberGoOffline());
+      }
       setState(() {
         _dutyActionInFlight = false;
         if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {

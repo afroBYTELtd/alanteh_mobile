@@ -14,6 +14,7 @@ import 'driver_duty_trips.dart';
 import 'driver_reload_signal.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_shell.dart';
+import 'duty/driver_go_offline_retry.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
@@ -591,6 +592,14 @@ class DriverApp extends StatelessWidget {
             apiBaseUrl: apiBaseUrl,
             offerCoordinator: offerCoordinator,
             offerCardControllerFactory: offerCardControllerFactory,
+            goOfflineRetry: sharedPersistentQueue == null
+                ? null
+                : DriverGoOfflineRetry(
+                    queue: sharedPersistentQueue,
+                    driverTag: () async => driverQueueTagFromToken(
+                      await tokenStore.readRefreshToken(),
+                    ),
+                  ),
             queueHousekeeping:
                 queueHousekeeping ??
                 (sharedPersistentQueue == null
@@ -681,6 +690,7 @@ class DriverLoginShell extends StatefulWidget {
     this.offerCoordinator,
     this.offerCardControllerFactory,
     this.queueHousekeeping,
+    this.goOfflineRetry,
     super.key,
   });
 
@@ -704,6 +714,9 @@ class DriverLoginShell extends StatefulWidget {
 
   /// A3: queue housekeeping at start and at sign-in.
   final DriverQueueHousekeeping? queueHousekeeping;
+
+  /// A3: a failed GO OFFLINE, kept and retried until it lands.
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   /// Tests only; built from [apiBaseUrl] otherwise.
   final DriverOfferCoordinator? offerCoordinator;
@@ -1524,6 +1537,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        goOfflineRetry: widget.goOfflineRetry,
         signInTimeLeft: _signedIn
             ? () async => authTokenTimeLeft(
                 await widget.authTokenStore.readRefreshToken(),
