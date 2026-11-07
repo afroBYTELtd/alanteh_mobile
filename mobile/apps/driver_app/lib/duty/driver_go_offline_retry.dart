@@ -91,9 +91,14 @@ final class DriverGoOfflineRetry {
   Future<void> cancel() => _forget();
 
   /// Work went away: the current run ends at its next step (a wait is cut
-  /// short), and the record stays for the next run.
+  /// short), its callbacks are dropped, and the record stays for the next
+  /// run.
   void stop() {
     _generation += 1;
+    // Nothing may call back into the Work that went away; a newer run
+    // brings its own Work's callbacks.
+    _onLanded = null;
+    _onSessionEnded = null;
     _interruptWaits();
   }
 

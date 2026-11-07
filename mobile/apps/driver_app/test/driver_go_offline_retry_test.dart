@@ -289,6 +289,62 @@ void main() {
       },
     );
 
+    test(
+      'after stop, a late landing never calls the Work that went away',
+      () async {
+        final queue = _Queue();
+        final retry = DriverGoOfflineRetry(
+          queue: queue,
+          driverTag: () async => _me,
+          wait: (_) async {},
+        );
+        final status = _HeldStatus();
+        await retry.remember();
+        final calledBack = <String>[];
+
+        final oldRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => calledBack.add('landed'),
+          onSessionEnded: () => calledBack.add('session ended'),
+        );
+        await pumpEventQueue();
+        retry.stop();
+        status.answer(null);
+        await oldRun;
+
+        expect(calledBack, isEmpty);
+        expect(await retry.isPending(), isFalse);
+        expect(queue.removals, 1);
+      },
+    );
+
+    test(
+      'after stop, a late "session ended" never calls the Work that went away',
+      () async {
+        final queue = _Queue();
+        final retry = DriverGoOfflineRetry(
+          queue: queue,
+          driverTag: () async => _me,
+          wait: (_) async {},
+        );
+        final status = _HeldStatus();
+        await retry.remember();
+        final calledBack = <String>[];
+
+        final oldRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => calledBack.add('landed'),
+          onSessionEnded: () => calledBack.add('session ended'),
+        );
+        await pumpEventQueue();
+        retry.stop();
+        status.answer(_expired);
+        await oldRun;
+
+        expect(calledBack, isEmpty);
+      },
+    );
+
     test('a second failure while a run waits: the next try waits the first '
         'delay', () async {
       final queue = _Queue();
@@ -403,6 +459,7 @@ void main() {
         expect(status.calls, 1);
         expect(landedBy, ['new']);
         expect(await retry.isPending(), isFalse);
+        expect(queue.removals, 1, reason: 'the record goes exactly once');
       },
     );
   });
@@ -682,8 +739,12 @@ class _PlainQueue implements DriverTripActionPersistentQueue {
 }
 
 final class _Queue extends _PlainQueue implements DriverQueueCleanup {
+  /// How many times anything was deleted.
+  int removals = 0;
+
   @override
   Future<int> removeWhere(bool Function(QueuedEvent event) test) async {
+    removals += 1;
     final ids = events.values.where(test).map((e) => e.id).toList();
     ids.forEach(events.remove);
     return ids.length;
