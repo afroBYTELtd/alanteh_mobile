@@ -720,6 +720,20 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _returnToSignIn() async {
+    // A4: "Sign in again" on the trip screen is a sign-out the passenger
+    // asked for, so the server is told first (as for Account's Sign out).
+    // A session the server already refused has no tokens left, and then
+    // nothing is sent.
+    try {
+      await _whileSigningOut(
+        _authService.signOut(deviceToken: _pushDeviceRegistrar?.deviceToken),
+      );
+    } on Object {
+      // Storage failed: end the session on the phone anyway.
+    }
+    if (!mounted) {
+      return;
+    }
     _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
