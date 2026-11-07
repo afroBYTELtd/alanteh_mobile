@@ -47,6 +47,9 @@ const driverTripActionTelemetryQaEnabled = bool.fromEnvironment(
 
 enum DriverDutyApiFailureType {
   sessionExpired,
+
+  /// GO ONLINE refused: today's shift check is not on the server (A3).
+  shiftCheckRequired,
   notFound,
   unavailable,
   badResponse,
@@ -67,6 +70,9 @@ final class DriverDutyApiException implements Exception {
   final bool noAnswer;
 
   bool get isSessionExpired => type == DriverDutyApiFailureType.sessionExpired;
+
+  bool get isShiftCheckRequired =>
+      type == DriverDutyApiFailureType.shiftCheckRequired;
 
   @override
   String toString() => 'DriverDutyApiException(type=$type)';
@@ -288,6 +294,19 @@ final class AsmDriverDutyGateway
   DriverDutyApiException _dutyExceptionFromResponse(
     ApiResponse<DriverDutyTransition> response,
   ) {
+    final body = response.error?.cause;
+    if (response.statusCode == 409 &&
+        body is Map &&
+        body['code'] == 'shift_check_required') {
+      final detail = body['detail'];
+      return DriverDutyApiException(
+        DriverDutyApiFailureType.shiftCheckRequired,
+        detail is String && detail.trim().isNotEmpty
+            ? detail
+            : 'Do today’s shift check before going online.',
+      );
+    }
+
     if (response.statusCode == 401 ||
         response.error?.type == AsmApiExceptionType.authentication) {
       return const DriverDutyApiException(
@@ -459,6 +478,23 @@ final class DriverDutySummary {
       dutyStatus == 'online' || dutyStatus == 'offline';
 
   bool get isOnline => dutyStatus == 'online';
+
+  /// The same summary with today's shift check not done (A3: the server
+  /// refused GO ONLINE for it).
+  DriverDutySummary withoutShiftCheckToday() {
+    return DriverDutySummary(
+      displayName: displayName,
+      driverReference: driverReference,
+      phoneMasked: phoneMasked,
+      status: status,
+      assignedVehicleReference: assignedVehicleReference,
+      canReceiveAssignments: canReceiveAssignments,
+      activeTripCount: activeTripCount,
+      assignedTripCount: assignedTripCount,
+      dutyStatus: dutyStatus,
+      dutySince: dutySince,
+    );
+  }
 
   DriverDutySummary withDutyTransition(DriverDutyTransition transition) {
     return DriverDutySummary(

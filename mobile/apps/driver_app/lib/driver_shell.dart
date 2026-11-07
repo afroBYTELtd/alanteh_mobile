@@ -1051,6 +1051,21 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      if (error is DriverDutyApiException && error.isShiftCheckRequired) {
+        // A3: the server has no shift check for today (the day changed on
+        // the server): Work shows "shift check needed", not an error.
+        setState(() {
+          _dutyActionInFlight = false;
+          _dutySummary = (_dutySummary ?? DriverDutySummary.empty())
+              .withoutShiftCheckToday();
+          _startupGateDiagDutySummary(
+            _dutySummary,
+            reason: 'go_online_shift_check_required',
+          );
+        });
+        return;
+      }
+
       final sessionEnded =
           error is DriverDutyApiException && error.isSessionExpired;
       _signInIfSessionEnded(error);
