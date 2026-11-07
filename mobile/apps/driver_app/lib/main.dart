@@ -448,6 +448,7 @@ class DriverApp extends StatelessWidget {
     this.pushMessageSource,
     this.offerCoordinator,
     this.offerCardControllerFactory,
+    this.queueHousekeeping,
     super.key,
   });
 
@@ -472,6 +473,9 @@ class DriverApp extends StatelessWidget {
   /// Tests only: the pending-offer coordinator and the card's Accept/Decline.
   final DriverOfferCoordinator? offerCoordinator;
   final DriverOfferResponseControllerFactory? offerCardControllerFactory;
+
+  /// Tests only: queue housekeeping (the app's own runs on its queue).
+  final DriverQueueHousekeeping? queueHousekeeping;
 
   @override
   Widget build(BuildContext context) {
@@ -587,6 +591,15 @@ class DriverApp extends StatelessWidget {
             apiBaseUrl: apiBaseUrl,
             offerCoordinator: offerCoordinator,
             offerCardControllerFactory: offerCardControllerFactory,
+            queueHousekeeping:
+                queueHousekeeping ??
+                (sharedPersistentQueue == null
+                    ? null
+                    : ({signedInTag}) => driverQueueHousekeeping(
+                        sharedPersistentQueue,
+                        now: DateTime.now(),
+                        signedInTag: signedInTag,
+                      )),
           )
         : DriverShell(
             configuration: configuration,
@@ -633,6 +646,10 @@ class DriverApp extends StatelessWidget {
 }
 
 /// The driver app's navigator, for the offer card that sits above it.
+/// Queue housekeeping (A3): at app start without a driver, at sign-in with
+/// the new driver's tag.
+typedef DriverQueueHousekeeping = Future<void> Function({String? signedInTag});
+
 /// What the driver sees when the server refuses sign-out because of an
 /// active trip and its answer carries no text of its own (S2's wording).
 const driverSignOutActiveTripText =
@@ -663,6 +680,7 @@ class DriverLoginShell extends StatefulWidget {
     this.apiBaseUrl,
     this.offerCoordinator,
     this.offerCardControllerFactory,
+    this.queueHousekeeping,
     super.key,
   });
 
@@ -683,6 +701,9 @@ class DriverLoginShell extends StatefulWidget {
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
   final String? apiBaseUrl;
+
+  /// A3: queue housekeeping at start and at sign-in.
+  final DriverQueueHousekeeping? queueHousekeeping;
 
   /// Tests only; built from [apiBaseUrl] otherwise.
   final DriverOfferCoordinator? offerCoordinator;
@@ -970,6 +991,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     // A sign-out the server has not heard of yet: sent now if no one is
     // signed in (A1 checks; it never fires during a session).
     unawaited(_sendPendingSignOuts());
+    unawaited(_houseKeepQueue());
     final rawAccessToken = await widget.authTokenStore.readAccessToken();
     final rawRefreshToken = await widget.authTokenStore.readRefreshToken();
     final accessToken = rawAccessToken?.trim();
@@ -1179,6 +1201,15 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
       if (state.isAuthenticated &&
           state.session?.accountType == AuthAccountType.driver) {
+        // A3: before Work opens, drop another driver's queued checks.
+        await _houseKeepQueue(
+          signedInTag: driverQueueTagFromToken(
+            state.session?.tokens.refreshToken,
+          ),
+        );
+        if (!mounted) {
+          return;
+        }
         // A new session, perhaps another driver: start with nothing from
         // the last one except a push tap made on this sign-in screen.
         final tap = _offers?.takeTap();
@@ -1273,6 +1304,14 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     _pinController.clear();
     _formKey.currentState?.reset();
     setState(() => _loginError = null);
+  }
+
+  Future<void> _houseKeepQueue({String? signedInTag}) async {
+    try {
+      await widget.queueHousekeeping?.call(signedInTag: signedInTag);
+    } on Object {
+      // Housekeeping never stops the app; it runs again next time.
+    }
   }
 
   Future<void> _sendPendingSignOuts() async {
@@ -1994,6 +2033,11 @@ DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({
     ),
     isOnline: () => reachability.isOnline,
     connectivitySource: const PluginGhanaConnectivitySource(),
+    // A3: checks carry the signed-in driver; a check from an earlier day
+    // is not sent.
+    currentDriverTag: () async =>
+        driverQueueTagFromToken(await tokenStore.readRefreshToken()),
+    now: DateTime.now,
   );
 }
 

@@ -1376,6 +1376,51 @@ void main() {
       expect(signIns, 0);
     });
   });
+  // Sign-in build A3: the server refused the shift check as one from an
+  // earlier day (the phone clock is a day behind): the driver reads the
+  // server's words, nothing says "submitted", and Work still asks for the
+  // shift check.
+  testWidgets('a stale shift check is not submitted (A3)', (tester) async {
+    const staleText =
+        "This shift check was done on an earlier day. Do today's shift check.";
+    final gateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'offline',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _StaleShiftCheckGateway(staleText),
+      isOnline: () async => true,
+    );
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: gateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pumpAndSettle();
+
+    expect(find.text(staleText), findsOneWidget);
+    expect(find.text('Shift check submitted'), findsNothing);
+    await tester.tap(find.byKey(const Key('driver-shift-check-stale-ok')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('START SHIFT CHECK'), findsOneWidget);
+    expect(gateway.transitionStatuses, isEmpty);
+    await controller.stopAutomaticSync();
+  });
 }
 
 Widget _testApp(Widget home) {
@@ -1664,4 +1709,23 @@ final class _FailingDutyApiClient
       ),
     );
   }
+}
+
+final class _StaleShiftCheckGateway implements DriverShiftCheckGateway {
+  _StaleShiftCheckGateway(this.text);
+
+  final String text;
+
+  @override
+  Future<ApiResponse<Object?>> submit({
+    required Map<String, Object?> body,
+    required String idempotencyKey,
+  }) async => ApiResponse.apiFailure(
+    AsmApiException(
+      type: AsmApiExceptionType.badResponse,
+      message: 'conflict',
+      statusCode: 409,
+      cause: <String, Object?>{'detail': text, 'code': 'shift_check_stale'},
+    ),
+  );
 }

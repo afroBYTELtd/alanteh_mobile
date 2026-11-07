@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -46,6 +47,8 @@ void main() {
     driverDutyGateway: duty,
     pushDeviceRegistrarFactory: (_) => _Registrar(),
     pushMessageSource: _NoPushes(),
+    queueHousekeeping: ({signedInTag}) async =>
+        events.add('housekeeping ${signedInTag ?? 'none'}'),
   );
 
   Future<void> signIn(WidgetTester tester) async {
@@ -186,6 +189,34 @@ void main() {
     expect(await pending.read(), hasLength(1));
   });
 
+  group('queue housekeeping (A3)', () {
+    testWidgets('at start: old and untagged events, no driver named', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+
+      expect(events, contains('housekeeping none'));
+    });
+
+    testWidgets("at sign-in: the new driver's tag, before Work loads duty", (
+      tester,
+    ) async {
+      api.refreshToken = _jwt({'user_id': 42});
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      events.clear();
+
+      await signIn(tester);
+
+      expect(events.indexOf('housekeeping user:42'), isNonNegative);
+      expect(
+        events.indexOf('housekeeping user:42'),
+        lessThan(events.indexOf('duty')),
+      );
+    });
+  });
+
   testWidgets('after a new sign-in the pending sign-out goes before Work '
       'loads duty, then is gone', (tester) async {
     api.logoutAnswer = () async => ApiResponse.clientException(
@@ -203,7 +234,11 @@ void main() {
 
     await signIn(tester);
 
-    expect(events.take(3), ['sign-in', 'logout refresh-old', 'duty']);
+    final signInAt = events.indexOf('sign-in');
+    final logoutAt = events.indexOf('logout refresh-old');
+    expect(signInAt, isNonNegative);
+    expect(logoutAt, greaterThan(signInAt));
+    expect(events.indexOf('duty'), greaterThan(logoutAt));
     expect(await pending.read(), isEmpty);
   });
 }
@@ -218,6 +253,7 @@ final class _AuthApi implements AuthApiGateway {
 
   final List<String> events;
   final logouts = <Map<String, Object?>>[];
+  String refreshToken = 'driver-refresh';
   Future<ApiResponse<Map<String, Object?>>> Function()? logoutAnswer;
 
   @override
@@ -233,7 +269,7 @@ final class _AuthApi implements AuthApiGateway {
     events.add('sign-in');
     return ApiResponse<Map<String, Object?>>.success(<String, Object?>{
       'access': 'driver-access',
-      'refresh': 'driver-refresh',
+      'refresh': refreshToken,
       'account_type': 'driver',
       'account': <String, Object?>{},
     }, statusCode: 200);
@@ -300,3 +336,6 @@ final class _NoPushes implements DriverPushMessageSource {
   @override
   Future<RemoteMessage?> getInitialMessage() async => null;
 }
+
+String _jwt(Map<String, Object?> payload) =>
+    'e30.${base64Url.encode(utf8.encode(jsonEncode(payload))).replaceAll('=', '')}.sig';

@@ -109,6 +109,7 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
 
     final controller = widget.submissionController;
     DriverShiftCheckSubmissionDisposition disposition;
+    String? staleMessage;
 
     if (controller == null) {
       disposition = DriverShiftCheckSubmissionDisposition.queued;
@@ -116,12 +117,39 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
       try {
         final result = await controller.submit(submission);
         disposition = result.disposition;
+        staleMessage = result.message;
       } on Object {
         disposition = DriverShiftCheckSubmissionDisposition.queued;
       }
     }
 
     if (!mounted) {
+      return;
+    }
+
+    if (disposition == DriverShiftCheckSubmissionDisposition.stale) {
+      // A3: refused as a check from an earlier day. Not "submitted": the
+      // driver reads the server's words and does today's check.
+      setState(() {
+        _submissionState = DriverReadinessSubmissionState.idle;
+      });
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: const Key('driver-shift-check-stale'),
+          content: Text(staleMessage ?? driverShiftCheckStaleMessage),
+          actions: [
+            TextButton(
+              key: const Key('driver-shift-check-stale-ok'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) {
+        Navigator.of(context).pop(disposition);
+      }
       return;
     }
 
