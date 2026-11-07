@@ -17,7 +17,10 @@ import 'dart:io';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:driver_app/main.dart';
+import 'package:driver_app/notifications/push_device_registration.dart';
 import 'package:driver_app/safety/driver_trip_safety.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _assemblyBaseUrl = 'https://assembly-test.alanteh.invalid';
@@ -99,6 +102,131 @@ void main() {
     },
     skip: _skip != false,
   );
+
+  _signInAssemblyTests();
+}
+
+void _signInAssemblyTests() {
+  // Sign-in build A1/A2/A3: logout and push registration exactly as the app
+  // builds them, down to the HTTP request.
+  testWidgets(
+    'sign-out: the app\'s own AuthService posts logout with the install id',
+    (tester) async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.5;
+      addTearDown(tester.view.reset);
+      _http.answer = (request) => request.url.path == AuthService.logoutPath
+          ? (
+              status: 200,
+              body: const <String, Object?>{'detail': 'Signed out.'},
+            )
+          : (
+              status: 200,
+              body: const <String, Object?>{'access': 'assembly-access-2'},
+            );
+      final tokens = MemoryAuthTokenStore();
+      await tokens.saveTokens(
+        AuthTokens(
+          accessToken: 'assembly-access',
+          refreshToken: 'assembly-ref',
+        ),
+      );
+      await tester.pumpWidget(
+        DriverApp(showLoginShell: true, authTokenStore: tokens),
+      );
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Account'));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const Key('driver-account-sign-out'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      for (
+        var i = 0;
+        i < 200 &&
+            !_http.requests.any(
+              (request) => request.url.path == AuthService.logoutPath,
+            );
+        i += 1
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await tester.pumpAndSettle();
+
+      final logout = _http.requests.singleWhere(
+        (request) => request.url.path == AuthService.logoutPath,
+      );
+      expect(logout.method, 'POST');
+      expect(logout.url.host, 'assembly-test.alanteh.invalid');
+      final body = jsonDecode(utf8.decode(logout.body)) as Map;
+      expect(body['refresh'], 'assembly-ref');
+      expect(
+        body['installation_id'],
+        await SecureInstallationIdStore().readOrCreate(),
+      );
+      expect(await tokens.readRefreshToken(), isNull);
+    },
+    skip: _skip != false,
+  );
+
+  test(
+    'push registration: production gateway, installation id in the body',
+    () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      _http.answer = (_) => (
+        status: 201,
+        body: const <String, Object?>{
+          'device_token_registered': true,
+          'platform': 'android',
+          'active': true,
+        },
+      );
+      final tokens = MemoryAuthTokenStore();
+      await tokens.saveTokens(
+        AuthTokens(
+          accessToken: 'assembly-access',
+          refreshToken: 'assembly-ref',
+        ),
+      );
+      final registrar = FirebasePushDeviceRegistrar(
+        tokenSource: _OneToken(),
+        apiGateway: AsmPushDeviceRegistrationApiGateway(
+          AsmApiClient(baseUrl: AsmApiClient.defaultBaseUrl),
+        ),
+        installationIdStore: SecureInstallationIdStore(),
+      );
+
+      expect(await registrar.registerForAuthenticatedSession(), isTrue);
+
+      final request = _http.requests.single;
+      expect(request.url.path, pushDeviceRegistrationPath);
+      final body = jsonDecode(utf8.decode(request.body)) as Map;
+      expect(body['device_token'], 'fcm-assembly');
+      expect(
+        body['installation_id'],
+        await SecureInstallationIdStore().readOrCreate(),
+      );
+      await registrar.dispose();
+    },
+    skip: _skip != false,
+  );
+}
+
+final class _OneToken implements PushMessagingTokenSource {
+  @override
+  Future<String?> getToken() async => 'fcm-assembly';
+
+  @override
+  Stream<String> get onTokenRefresh => const Stream<String>.empty();
+
+  @override
+  Future<bool> requestNotificationPermission() async => true;
 }
 
 /// The app as production builds it, except the token store (a signed-in
