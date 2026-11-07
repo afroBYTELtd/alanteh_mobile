@@ -1269,6 +1269,113 @@ void main() {
 
     expect(find.text('Good evening, Driver'), findsOneWidget);
   });
+  // Sign-in build A3: a 401 on Work goes to the sign-in screen at once, not
+  // to an offline or "Session expired" panel.
+  group('Work 401 goes to sign-in (A3)', () {
+    const expired = DriverDutyApiException(
+      DriverDutyApiFailureType.sessionExpired,
+      driverSessionExpiredMessage,
+    );
+    var signIns = 0;
+
+    setUp(() {
+      signIns = 0;
+      DriverSessionEnd.signIn = () async => signIns += 1;
+    });
+    tearDown(() => DriverSessionEnd.signIn = null);
+
+    DriverDutySummary online() => DriverDutySummary(
+      driverReference: 'DRV-001',
+      dutyStatus: 'online',
+      dutySince: now.subtract(const Duration(hours: 1)),
+      shiftCheckToday: true,
+    );
+
+    Future<void> pumpShell(
+      WidgetTester tester,
+      _MutableDutyGateway gateway, {
+      DriverShiftCheckSubmissionController? controller,
+    }) async {
+      await tester.pumpWidget(
+        _testApp(
+          DriverShell(
+            driverDutyGateway: gateway,
+            driverShiftCheckController: controller,
+            deviceNow: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the first duty load', (tester) async {
+      final gateway = _MutableDutyGateway(online())..errorNext = expired;
+
+      await pumpShell(tester, gateway);
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('GO OFFLINE', (tester) async {
+      final gateway = _MutableDutyGateway(online());
+      await pumpShell(tester, gateway);
+      gateway.transitionError = expired;
+
+      await tester.tap(find.text('GO OFFLINE'));
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('a quiet reload (Refresh)', (tester) async {
+      final gateway = _MutableDutyGateway(online());
+      await pumpShell(tester, gateway);
+      gateway.errorNext = expired;
+      final refresh = find.byKey(const Key('driver-duty-refresh'));
+      await tester.ensureVisible(refresh);
+      await tester.pumpAndSettle();
+
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('confirming online after the shift check', (tester) async {
+      final gateway = _MutableDutyGateway(
+        DriverDutySummary(
+          driverReference: 'DRV-001',
+          dutyStatus: 'offline',
+          dutySince: DateTime(2026, 8, 6, 8),
+          shiftCheckToday: false,
+        ),
+      );
+      final controller = DriverShiftCheckSubmissionController(
+        queue: _MemoryQueue(),
+        gateway: _SuccessfulShiftCheckGateway(
+          onSubmit: () => gateway.errorNext = expired,
+        ),
+        isOnline: () async => true,
+      );
+      await pumpShell(tester, gateway, controller: controller);
+
+      await _completeReadiness(tester);
+      await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets('another failure keeps Work (no sign-in)', (tester) async {
+      final gateway = _MutableDutyGateway(online())..failNext = true;
+
+      await pumpShell(tester, gateway);
+
+      expect(signIns, 0);
+    });
+  });
 }
 
 Widget _testApp(Widget home) {
@@ -1318,6 +1425,12 @@ final class _MutableDutyGateway
 
   /// When true, the next fetchDuty fails (the network drops).
   bool failNext = false;
+
+  /// When set, the next fetchDuty throws it (A3: a 401).
+  DriverDutyApiException? errorNext;
+
+  /// When set, every duty change throws it.
+  DriverDutyApiException? transitionError;
   final List<DriverOperationalDutyStatus> transitionStatuses =
       <DriverOperationalDutyStatus>[];
 
@@ -1331,6 +1444,11 @@ final class _MutableDutyGateway
     if (hold != null) {
       holdNext = null;
       await hold.future;
+    }
+    final error = errorNext;
+    if (error != null) {
+      errorNext = null;
+      throw error;
     }
     if (failNext) {
       failNext = false;
@@ -1357,6 +1475,10 @@ final class _MutableDutyGateway
     DriverOperationalDutyStatus status,
   ) async {
     transitionStatuses.add(status);
+    final error = transitionError;
+    if (error != null) {
+      throw error;
+    }
 
     final transition = DriverDutyTransition(
       dutyStatus: status.wireValue,

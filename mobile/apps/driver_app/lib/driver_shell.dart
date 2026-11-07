@@ -235,6 +235,19 @@ class _DriverShellState extends State<DriverShell> {
     widget.reloadSignal?.addListener(_reloadOnSignal);
   }
 
+  /// A3: an ended session on Work goes to the sign-in screen at once
+  /// (the app's "Sign in", which clears the session). True when it did.
+  bool _signInIfSessionEnded(Object error) {
+    final signIn = DriverSessionEnd.signIn;
+    if (signIn == null ||
+        error is! DriverDutyApiException ||
+        !error.isSessionExpired) {
+      return false;
+    }
+    unawaited(signIn());
+    return true;
+  }
+
   void _reloadOnSignal() {
     unawaited(_reloadDutyQuietly());
     _tripsReload.ping();
@@ -285,6 +298,9 @@ class _DriverShellState extends State<DriverShell> {
       });
     } on Object catch (error) {
       if (!mounted || generation != _dutyGeneration) {
+        return;
+      }
+      if (_signInIfSessionEnded(error)) {
         return;
       }
       if (error is DriverDutyApiException && error.isSessionExpired) {
@@ -478,6 +494,7 @@ class _DriverShellState extends State<DriverShell> {
       if (!mounted) {
         return;
       }
+      _signInIfSessionEnded(error);
 
       final previousDutyLoading = _dutyLoading;
       setState(() {
@@ -966,6 +983,7 @@ class _DriverShellState extends State<DriverShell> {
       if (!mounted) {
         return;
       }
+      _signInIfSessionEnded(error);
 
       final oldDutyLoading = _dutyLoading;
       setState(() {
@@ -1035,6 +1053,7 @@ class _DriverShellState extends State<DriverShell> {
 
       final sessionEnded =
           error is DriverDutyApiException && error.isSessionExpired;
+      _signInIfSessionEnded(error);
       setState(() {
         _dutyActionInFlight = false;
         if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {
