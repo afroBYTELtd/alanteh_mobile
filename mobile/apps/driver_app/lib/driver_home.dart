@@ -23,6 +23,11 @@ const driverShiftCheckNeededMessage =
     "You're online, but today's shift check isn't done. You won't get "
     'automatic trips until you do it.';
 
+/// A saved shift check was dropped as stale (30 Oct design; lead, 7 Nov).
+const driverSavedShiftCheckStaleMessage =
+    "Your saved shift check is from an earlier day, so it doesn't count "
+    "today. Please do today's shift check.";
+
 /// Said with every "Sign in again" offer (lead, 7 Nov): sign-out goes
 /// through the server, which takes the driver offline.
 const driverSignInAgainGoesOfflineNote =
@@ -45,6 +50,7 @@ class DriverHome extends StatelessWidget {
     this.dutySummary,
     this.onRefreshDuty,
     this.signInEndsSoon = false,
+    this.savedShiftCheckStale = false,
     required this.onOpenAssignedTrips,
     required this.onOpenShiftSummary,
     this.onSignOut,
@@ -80,6 +86,10 @@ class DriverHome extends StatelessWidget {
 
   /// Shows the "sign-in ends soon" banner with Sign in again (A3).
   final bool signInEndsSoon;
+
+  /// A saved shift check was dropped as stale: a note above the shift check
+  /// button until today's is done.
+  final bool savedShiftCheckStale;
   final VoidCallback onOpenAssignedTrips;
   final VoidCallback onOpenShiftSummary;
   final VoidCallback? onSignOut;
@@ -150,6 +160,10 @@ class DriverHome extends StatelessWidget {
           if (signInEndsSoon) ...[
             const SizedBox(height: AsmSpacing.space16),
             _DriverSignInEndsSoonBanner(onSignInAgain: onSignOut),
+          ],
+          if (savedShiftCheckStale && !shiftCheckCompletedToday) ...[
+            const SizedBox(height: AsmSpacing.space16),
+            const _DriverSavedShiftCheckStaleNote(),
           ],
           if (onlineWithoutShiftCheck) ...[
             const SizedBox(height: AsmSpacing.space16),
@@ -237,6 +251,38 @@ class DriverHome extends StatelessWidget {
           DriverDutySummaryPanel(
             summary: dutySummary,
             onRefresh: onRefreshDuty,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A saved shift check was dropped as stale: the 30 Oct note.
+class _DriverSavedShiftCheckStaleNote extends StatelessWidget {
+  const _DriverSavedShiftCheckStaleNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('driver-saved-shift-check-stale-note'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AsmSpacing.space16),
+      decoration: BoxDecoration(
+        color: AsmColors.driverCardElevated,
+        borderRadius: BorderRadius.circular(AsmRadii.radius24),
+        border: Border.all(color: AsmColors.driverWarningSurface),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.history, color: AsmColors.driverWarningSurface),
+          SizedBox(width: AsmSpacing.space12),
+          Expanded(
+            child: Text(
+              driverSavedShiftCheckStaleMessage,
+              style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+            ),
           ),
         ],
       ),

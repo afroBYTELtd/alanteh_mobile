@@ -222,6 +222,7 @@ class _DriverShellState extends State<DriverShell> {
 
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
+      controller.savedCheckDroppedAsStale.addListener(_staleNoteChanged);
       unawaited(controller.startAutomaticSync());
     }
 
@@ -282,6 +283,12 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
     setState(() => _signInEndsSoon = soon);
+  }
+
+  void _staleNoteChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _rememberGoOffline() async {
@@ -426,11 +433,13 @@ class _DriverShellState extends State<DriverShell> {
         widget.driverShiftCheckController) {
       final previous = oldWidget.driverShiftCheckController;
       if (previous != null) {
+        previous.savedCheckDroppedAsStale.removeListener(_staleNoteChanged);
         unawaited(previous.stopAutomaticSync());
       }
 
       final current = widget.driverShiftCheckController;
       if (current != null) {
+        current.savedCheckDroppedAsStale.addListener(_staleNoteChanged);
         unawaited(current.startAutomaticSync());
       }
     }
@@ -495,6 +504,7 @@ class _DriverShellState extends State<DriverShell> {
     }
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
+      controller.savedCheckDroppedAsStale.removeListener(_staleNoteChanged);
       unawaited(controller.stopAutomaticSync());
     }
     _lifecycle?.dispose();
@@ -1325,6 +1335,9 @@ class _DriverShellState extends State<DriverShell> {
       // Never during an active trip; it shows again when the trip ends.
       signInEndsSoon:
           _signInEndsSoon && (_dutySummary?.activeTripCount ?? 0) == 0,
+      savedShiftCheckStale:
+          widget.driverShiftCheckController?.savedCheckDroppedAsStale.value ??
+          false,
     );
   }
 

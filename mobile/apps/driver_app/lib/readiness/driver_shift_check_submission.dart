@@ -5,6 +5,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 import '../network/driver_access_token_refresh_guard.dart';
 import '../network/driver_trip_action_gateway.dart';
@@ -295,6 +296,25 @@ final class DriverShiftCheckSubmissionController {
     }
   }
 
+  /// True when a saved (queued) check of the signed-in driver's was
+  /// dropped as stale (from an earlier day, or refused stale by the server)
+  /// and the driver has not done today's since: Work shows
+  /// `driverSavedShiftCheckStaleMessage` (30 Oct design; lead, 7 Nov). For
+  /// this app session only; Work's first sync at start raises it for a
+  /// check still in the queue.
+  ValueListenable<bool> get savedCheckDroppedAsStale => _savedCheckDropped;
+  final _savedCheckDropped = ValueNotifier<bool>(false);
+
+  /// Over [driverQueueMaxAge] a record is housekeeping's, whoever drops it
+  /// first: no note (lead, 7 Nov).
+  bool _withinQueueAge(QueuedEvent event) {
+    final clock = now;
+    return clock == null ||
+        !event.createdAt.toUtc().isBefore(
+          clock().toUtc().subtract(driverQueueMaxAge),
+        );
+  }
+
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Future<DriverShiftCheckSubmissionResult>? _submissionInFlight;
   Future<void>? _syncInFlight;
@@ -340,6 +360,8 @@ final class DriverShiftCheckSubmissionController {
     );
 
     if (!await _canSubmitNow()) {
+      // Today's check is done (saved to send): the note goes.
+      _savedCheckDropped.value = false;
       return DriverShiftCheckSubmissionResult(
         disposition: DriverShiftCheckSubmissionDisposition.queued,
         event: event,
@@ -363,6 +385,7 @@ final class DriverShiftCheckSubmissionController {
 
       if (response.isSuccess || response.statusCode == 409) {
         await queue.markSynced(event.id);
+        _savedCheckDropped.value = false;
         return DriverShiftCheckSubmissionResult(
           disposition: DriverShiftCheckSubmissionDisposition.submitted,
           event: event,
@@ -375,6 +398,7 @@ final class DriverShiftCheckSubmissionController {
     }
 
     _scheduleFailedDeliveryRetries();
+    _savedCheckDropped.value = false;
 
     return DriverShiftCheckSubmissionResult(
       disposition: DriverShiftCheckSubmissionDisposition.queued,
@@ -412,6 +436,8 @@ final class DriverShiftCheckSubmissionController {
   }
 
   Future<void> stopAutomaticSync() async {
+    // Work went away (sign-out): the next driver must not see the note.
+    _savedCheckDropped.value = false;
     final subscription = _connectivitySubscription;
     _connectivitySubscription = null;
     await subscription?.cancel();
@@ -446,6 +472,8 @@ final class DriverShiftCheckSubmissionController {
       (event) => _isShiftCheckEvent(event) && event.driverId == tag,
     );
     var failedDelivery = false;
+    var droppedStale = false;
+    var delivered = false;
 
     for (final event in shiftCheckEvents) {
       final storedEvent = await queue.eventById(event.id);
@@ -459,6 +487,7 @@ final class DriverShiftCheckSubmissionController {
       if (_tooOldToSend(storedEvent)) {
         // The server would refuse it as stale: never sent (A3).
         await _remove(event.id);
+        droppedStale |= _withinQueueAge(storedEvent);
         continue;
       }
 
@@ -470,8 +499,10 @@ final class DriverShiftCheckSubmissionController {
 
         if (_isStale(response)) {
           await _remove(event.id);
+          droppedStale |= _withinQueueAge(storedEvent);
         } else if (response.isSuccess || response.statusCode == 409) {
           await _markSyncedExactlyOnce(event.id);
+          delivered = true;
         } else {
           await _markInitialFailureExactlyOnce(event.id);
           failedDelivery = true;
@@ -480,6 +511,13 @@ final class DriverShiftCheckSubmissionController {
         await _markInitialFailureExactlyOnce(event.id);
         failedDelivery = true;
       }
+    }
+
+    if (delivered) {
+      _savedCheckDropped.value = false;
+    } else if (droppedStale && !await _hasQueuedShiftCheck()) {
+      // A check of today's still waiting to send means today's is done.
+      _savedCheckDropped.value = true;
     }
 
     if (failedDelivery) {

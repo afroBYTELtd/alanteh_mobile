@@ -1429,10 +1429,126 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('START SHIFT CHECK'), findsOneWidget);
+    expect(find.byKey(_staleNote), findsNothing, reason: 'not a saved check');
     expect(gateway.transitionStatuses, isEmpty);
     await controller.stopAutomaticSync();
   });
+
+  // Lead, 7 Nov (the 30 Oct design): a SAVED check dropped as stale (here
+  // by Work's first sync, because it is from an earlier day) gets a note on
+  // Work above START SHIFT CHECK.
+  group('a saved shift check dropped as stale', () {
+    QueuedEvent yesterdays() {
+      final yesterday = now.subtract(const Duration(days: 1));
+      return QueuedEvent(
+        id: 'driver-shift-check:old',
+        eventType: driverShiftCheckPath,
+        tripReference: driverShiftCheckQueueReference,
+        driverId: 'user:7',
+        payloadJson: const <String, Object?>{},
+        idempotencyKey: 'DRIVER-SHIFT-CHECK-old',
+        deviceTimestamp: yesterday,
+        createdAt: yesterday,
+      );
+    }
+
+    Future<DriverShiftCheckSubmissionController> pumpWork(
+      WidgetTester tester, {
+      required bool shiftCheckToday,
+      _MemoryQueue? queue,
+    }) async {
+      if (queue == null) {
+        queue = _MemoryQueue();
+        await queue.enqueue(yesterdays());
+      }
+      final controller = DriverShiftCheckSubmissionController(
+        queue: queue,
+        gateway: _SuccessfulShiftCheckGateway(),
+        isOnline: () async => true,
+        currentDriverTag: () async => 'user:7',
+        now: () => now,
+      );
+      await tester.pumpWidget(
+        _testApp(
+          DriverShell(
+            driverDutyGateway: _MutableDutyGateway(
+              DriverDutySummary(
+                driverReference: 'DRV-001',
+                dutyStatus: 'offline',
+                dutySince: DateTime(2026, 8, 6, 8),
+                shiftCheckToday: shiftCheckToday,
+              ),
+            ),
+            driverShiftCheckController: controller,
+            deviceNow: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      return controller;
+    }
+
+    testWidgets('Work says so above START SHIFT CHECK', (tester) async {
+      final controller = await pumpWork(tester, shiftCheckToday: false);
+      // No check today: Work opens the shift check at start; the driver
+      // comes back to Work.
+      expect(find.text('Shift check'), findsWidgets);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final note = find.byKey(_staleNote);
+      expect(note, findsOneWidget);
+      expect(
+        find.descendant(
+          of: note,
+          matching: find.text(
+            "Your saved shift check is from an earlier day, so it doesn't "
+            "count today. Please do today's shift check.",
+          ),
+        ),
+        findsOneWidget,
+      );
+      final start = find.text('START SHIFT CHECK');
+      expect(start, findsOneWidget);
+      expect(
+        tester.getBottomLeft(note).dy,
+        lessThanOrEqualTo(tester.getTopLeft(start).dy),
+      );
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets('raised while Work is open: shown at once', (tester) async {
+      final queue = _MemoryQueue();
+      final controller = await pumpWork(
+        tester,
+        shiftCheckToday: false,
+        queue: queue,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_staleNote), findsNothing);
+
+      await queue.enqueue(yesterdays());
+      await controller.syncQueuedSubmissions();
+      await tester.pump();
+
+      expect(find.byKey(_staleNote), findsOneWidget);
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets("not once today's check is done", (tester) async {
+      final controller = await pumpWork(tester, shiftCheckToday: true);
+
+      expect(controller.savedCheckDroppedAsStale.value, isTrue);
+      expect(find.text('GO ONLINE'), findsOneWidget);
+      expect(find.byKey(_staleNote), findsNothing);
+      await controller.stopAutomaticSync();
+    });
+  });
 }
+
+const _staleNote = Key('driver-saved-shift-check-stale-note');
 
 Widget _testApp(Widget home) {
   return MaterialApp(theme: AsmThemes.driver, home: home);

@@ -150,6 +150,157 @@ void main() {
     );
   });
 
+  // Lead, 7 Nov (the 30 Oct design): a SAVED (queued) check of the
+  // signed-in driver's that is dropped as stale raises the note Work shows
+  // above START SHIFT CHECK, until the driver does today's check. In this
+  // app session only; Work's first sync at start raises it too.
+  group('the note when a saved check is dropped as stale', () {
+    final yesterday = DateTime.utc(2026, 11, 6, 20);
+
+    test('from an earlier day, dropped unsent: raised', () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+
+      await h.controller.syncQueuedSubmissions();
+
+      expect(await h.queue.eventById('old'), isNull);
+      expect(h.controller.savedCheckDroppedAsStale.value, isTrue);
+    });
+
+    test('refused as stale by the server when sent: raised', () async {
+      final h = _Harness()..gateway.answer = _stale();
+      await h.queue.enqueue(h.queued(h.now, driver: _me, id: 'mine'));
+
+      await h.controller.syncQueuedSubmissions();
+
+      expect(h.controller.savedCheckDroppedAsStale.value, isTrue);
+    });
+
+    test('a check made just now refused as stale: no note (the phone-clock '
+        'dialog says it)', () async {
+      final h = _Harness()..gateway.answer = _stale();
+
+      final result = await h.controller.submit(h.submission(h.now));
+
+      expect(result.stale, isTrue);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test("today's check submitted: the note goes", () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+      await h.controller.syncQueuedSubmissions();
+
+      await h.controller.submit(h.submission(h.now));
+
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test("today's check saved to send (no network): the note goes", () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+      await h.controller.syncQueuedSubmissions();
+      h.online = false;
+
+      final result = await h.controller.submit(h.submission(h.now));
+
+      expect(result.queued, isTrue);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test(
+      "today's check failing to send (kept to retry): the note goes",
+      () async {
+        final h = _Harness();
+        await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+        await h.controller.syncQueuedSubmissions();
+        h.gateway.answer = ApiResponse.clientException(
+          const AsmApiException(
+            type: AsmApiExceptionType.network,
+            message: 'The API request could not reach the network.',
+          ),
+        );
+
+        final result = await h.controller.submit(h.submission(h.now));
+
+        expect(result.queued, isTrue);
+        expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+      },
+    );
+
+    test("today's saved check delivered in the same sync: no note", () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+      await h.queue.enqueue(h.queued(h.now, driver: _me, id: 'today'));
+
+      await h.controller.syncQueuedSubmissions();
+
+      expect(h.gateway.keys, ['today']);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test("today's saved check still waiting to send: no note", () async {
+      final h = _Harness()
+        ..gateway.answer = ApiResponse.clientException(
+          const AsmApiException(
+            type: AsmApiExceptionType.network,
+            message: 'The API request could not reach the network.',
+          ),
+        );
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+      await h.queue.enqueue(h.queued(h.now, driver: _me, id: 'today'));
+
+      await h.controller.syncQueuedSubmissions();
+
+      expect(await h.queue.eventById('old'), isNull);
+      expect(await h.queue.eventById('today'), isNotNull);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test('over 7 days old: dropped without the note', () async {
+      final h = _Harness();
+      final eightDays = h.now.subtract(const Duration(days: 8));
+      await h.queue.enqueue(
+        h.queued(eightDays, driver: _me, id: 'old', createdAt: eightDays),
+      );
+
+      await h.controller.syncQueuedSubmissions();
+
+      expect(await h.queue.eventById('old'), isNull);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test("another driver's or an untagged one: no note", () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _other, id: 'theirs'));
+      await h.queue.enqueue(
+        h.queued(
+          yesterday,
+          driver: driverShiftCheckQueueDriverIdentity,
+          id: 'old-build',
+        ),
+      );
+
+      await h.controller.syncQueuedSubmissions();
+      await driverQueueHousekeeping(h.queue, now: h.now, signedInTag: _me);
+      await h.controller.syncQueuedSubmissions();
+
+      expect(h.queue.events, isEmpty);
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+
+    test('Work went away (sign-out): the note goes', () async {
+      final h = _Harness();
+      await h.queue.enqueue(h.queued(yesterday, driver: _me, id: 'old'));
+      await h.controller.syncQueuedSubmissions();
+      expect(h.controller.savedCheckDroppedAsStale.value, isTrue);
+
+      await h.controller.stopAutomaticSync();
+
+      expect(h.controller.savedCheckDroppedAsStale.value, isFalse);
+    });
+  });
+
   group('housekeeping', () {
     final now = DateTime.utc(2026, 11, 7, 9);
 
@@ -304,7 +455,7 @@ final class _Harness {
     controller = DriverShiftCheckSubmissionController(
       queue: this.queue,
       gateway: gateway,
-      isOnline: () async => true,
+      isOnline: () async => online,
       retryDelay: retry.call,
       currentDriverTag: () async => _me,
       now: () => this.now,
@@ -313,6 +464,7 @@ final class _Harness {
 
   final DateTime now;
   final _CleanableQueue queue;
+  bool online = true;
   final gateway = _Gateway();
   final retry = _Retry();
   late final DriverShiftCheckSubmissionController controller;
