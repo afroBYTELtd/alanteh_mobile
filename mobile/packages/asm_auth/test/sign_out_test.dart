@@ -8,6 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 // Sign-in build A1: sign-out tells the server (5 s limit), clears the tokens
 // either way, and keeps a pending sign-out when the server could not be told.
+// Lead decision (b), 7 Nov: a pending record is sent at app start only while
+// no one is signed in (kept until 200, dropped after 31 days); right after a
+// new sign-in it is sent once and dropped whatever the answer.
+
+final _now = DateTime.utc(2026, 11, 7, 12);
 
 ApiResponse<Map<String, Object?>> _ok() => ApiResponse.success(
   const <String, Object?>{'detail': 'Signed out.'},
@@ -38,6 +43,28 @@ ApiResponse<Map<String, Object?>> _activeTrip() => _status(409, {
   'code': 'active_trip',
 });
 
+/// Every kind of answer a logout can get; null never answers.
+final _everyAnswer = <String, ApiResponse<Map<String, Object?>>? Function()>{
+  '200': _ok,
+  '409 active_trip': _activeTrip,
+  '429': () => _status(429),
+  '500': () => _status(500),
+  'network': _network,
+  'no answer within the limit': () => null,
+};
+
+PendingSignOut _record(
+  String refresh, {
+  DateTime? at,
+  String? deviceToken = 'fcm-1',
+  String? installationId = 'install-1',
+}) => PendingSignOut(
+  refresh: refresh,
+  createdAt: at ?? _now,
+  deviceToken: deviceToken,
+  installationId: installationId,
+);
+
 class _Call {
   _Call(this.path, this.body);
 
@@ -48,8 +75,12 @@ class _Call {
 class _Gateway implements AuthApiGateway {
   final calls = <_Call>[];
 
-  /// Answers in order; the last one repeats. A null answer never completes.
+  /// Logout answers in order; the last one repeats. A null answer never
+  /// completes.
   final answers = <ApiResponse<Map<String, Object?>>?>[];
+
+  /// The sign-in answer; a 200 with new tokens unless set.
+  ApiResponse<Map<String, Object?>>? signInAnswer;
 
   /// Runs when a call arrives, before it is answered.
   void Function()? onCall;
@@ -63,11 +94,12 @@ class _Gateway implements AuthApiGateway {
     onCall?.call();
     if (path == AuthService.tokenPath) {
       return Future.value(
-        ApiResponse.success(<String, Object?>{
-          'access': 'access-new',
-          'refresh': 'refresh-new',
-          'account_type': 'driver',
-        }, statusCode: 200),
+        signInAnswer ??
+            ApiResponse.success(<String, Object?>{
+              'access': 'access-new',
+              'refresh': 'refresh-new',
+              'account_type': 'driver',
+            }, statusCode: 200),
       );
     }
     final index = min(
@@ -86,13 +118,14 @@ class _Gateway implements AuthApiGateway {
 }
 
 class _Harness {
-  _Harness() {
+  _Harness({Duration limit = const Duration(milliseconds: 50)}) {
     service = AuthService(
       apiGateway: gateway,
       tokenStore: tokens,
       pendingSignOutStore: pending,
       installationIdStore: installation,
-      logoutTimeout: const Duration(milliseconds: 50),
+      logoutTimeout: limit,
+      now: () => clock,
     );
   }
 
@@ -100,6 +133,7 @@ class _Harness {
   final tokens = MemoryAuthTokenStore();
   final pending = MemoryPendingSignOutStore();
   final installation = MemoryInstallationIdStore('install-1');
+  DateTime clock = _now;
   late final AuthService service;
 
   Future<void> signedIn([String refresh = 'refresh-1']) => tokens.saveTokens(
@@ -184,11 +218,12 @@ void main() {
           expect(result.outcome, SignOutOutcome.signedOutPending);
           expect(await h.tokens.readRefreshToken(), isNull);
           final kept = await h.pending.read();
-          expect(kept.single.toJson(), {
+          expect(kept.single.toBody(), {
             'refresh': 'refresh-1',
             'device_token': 'fcm-1',
             'installation_id': 'install-1',
           });
+          expect(kept.single.createdAt, _now);
         },
       );
     }
@@ -269,18 +304,14 @@ void main() {
     );
   });
 
-  group('sendPendingSignOuts (at start, with network)', () {
+  group('sendPendingSignOuts (app start, no one signed in)', () {
     Future<_Harness> withPending(List<PendingSignOut> records) async {
       final h = _Harness();
       await h.pending.write(records);
       return h;
     }
 
-    const record = PendingSignOut(
-      refresh: 'refresh-old',
-      deviceToken: 'fcm-1',
-      installationId: 'install-1',
-    );
+    final record = _record('refresh-old');
 
     test('200: sent once with the stored fields, then dropped', () async {
       final h = await withPending([record]);
@@ -289,7 +320,7 @@ void main() {
       await h.service.sendPendingSignOuts();
 
       expect(left, 0);
-      expect(h.gateway.logouts.single.body, record.toJson());
+      expect(h.gateway.logouts.single.body, record.toBody());
       expect(await h.pending.read(), isEmpty);
     });
 
@@ -316,10 +347,7 @@ void main() {
     test(
       'each record stands alone: only the answered one is dropped',
       () async {
-        final h = await withPending([
-          record,
-          const PendingSignOut(refresh: 'refresh-older'),
-        ]);
+        final h = await withPending([record, _record('refresh-older')]);
         h.gateway.answers
           ..add(_ok())
           ..add(_network());
@@ -331,13 +359,49 @@ void main() {
       },
     );
 
-    test('does not touch the current sign-in', () async {
+    test('never sent while someone is signed in; kept', () async {
       final h = await withPending([record]);
       await h.signedIn('refresh-now');
 
-      await h.service.sendPendingSignOuts();
+      final left = await h.service.sendPendingSignOuts();
 
+      expect(h.gateway.logouts, isEmpty);
+      expect(left, 1);
       expect(await h.tokens.readRefreshToken(), 'refresh-now');
+    });
+
+    test('older than 31 days: dropped without sending', () async {
+      final h = await withPending([
+        _record(
+          'refresh-expired',
+          at: _now.subtract(const Duration(days: 31, minutes: 1)),
+        ),
+        _record('refresh-30-days', at: _now.subtract(const Duration(days: 30))),
+      ]);
+
+      final left = await h.service.sendPendingSignOuts();
+
+      expect(left, 0);
+      expect(h.gateway.logouts.map((c) => c.body['refresh']), [
+        'refresh-30-days',
+      ]);
+      expect(await h.pending.read(), isEmpty);
+    });
+
+    test('an expired record goes even when the network is down', () async {
+      final h = await withPending([
+        _record('refresh-expired', at: _now.subtract(const Duration(days: 40))),
+      ]);
+      h.gateway.answers.add(_network());
+
+      final left = await h.service.sendPendingSignOuts();
+
+      expect(left, 0);
+      expect(await h.pending.read(), isEmpty);
+    });
+
+    test('the age limit is 31 days', () {
+      expect(AuthService.pendingSignOutMaxAge, const Duration(days: 31));
     });
 
     test('two starts at once send one request', () async {
@@ -352,39 +416,146 @@ void main() {
     });
   });
 
-  group('a new sign-in', () {
-    test('a pending sign-out then sends only the refresh token', () async {
-      final h = _Harness();
-      await h.pending.write(const [
-        PendingSignOut(
-          refresh: 'refresh-old',
-          deviceToken: 'fcm-1',
-          installationId: 'install-1',
-        ),
+  group('right after a new sign-in', () {
+    for (final answer in _everyAnswer.entries) {
+      test(
+        '${answer.key}: each record sent once (refresh only), then gone',
+        () async {
+          final h = _Harness();
+          await h.pending.write([
+            _record('refresh-old'),
+            _record('refresh-older', deviceToken: null),
+          ]);
+          h.gateway.answers.add(answer.value());
+
+          final state = await h.service.login('+233000000001', '1234');
+          final atStartLater = await h.service.sendPendingSignOuts();
+
+          expect(state.status, AuthStatus.authenticated);
+          expect(h.gateway.logouts.map((c) => c.body), [
+            {'refresh': 'refresh-old'},
+            {'refresh': 'refresh-older'},
+          ]);
+          expect(await h.pending.read(), isEmpty);
+          expect(atStartLater, 0);
+          expect(await h.tokens.readRefreshToken(), 'refresh-new');
+        },
+      );
+    }
+
+    test('sign-in finishes only after the sends (before duty loads)', () async {
+      final h = _Harness(limit: const Duration(seconds: 5));
+      await h.pending.write([_record('refresh-old')]);
+      final logoutAnswer = Completer<ApiResponse<Map<String, Object?>>>();
+      final gateway = _ControlledGateway(h.gateway, logoutAnswer.future);
+      final service = AuthService(
+        apiGateway: gateway,
+        tokenStore: h.tokens,
+        pendingSignOutStore: h.pending,
+        installationIdStore: h.installation,
+        now: () => h.clock,
+      );
+      var signedIn = false;
+
+      final signingIn = service
+          .login('+233000000001', '1234')
+          .then((_) => signedIn = true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final beforeAnswer = signedIn;
+      logoutAnswer.complete(_ok());
+      await signingIn;
+
+      expect(h.gateway.calls.map((c) => c.path), [
+        AuthService.tokenPath,
+        AuthService.logoutPath,
       ]);
-
-      final state = await h.service.login('+233000000001', '1234');
-      await h.service.sendPendingSignOuts();
-
-      expect(state.status, AuthStatus.authenticated);
-      expect(h.gateway.logouts.single.body, {'refresh': 'refresh-old'});
+      expect(beforeAnswer, isFalse);
+      expect(signedIn, isTrue);
     });
 
-    test('a failed sign-in leaves the pending record as it was', () async {
+    test(
+      'the sends run side by side: sign-in waits at most about one limit',
+      () async {
+        final h = _Harness(limit: const Duration(milliseconds: 200));
+        await h.pending.write([
+          _record('refresh-a'),
+          _record('refresh-b'),
+          _record('refresh-c'),
+        ]);
+        h.gateway.answers.add(null); // never answers
+        final watch = Stopwatch()..start();
+
+        await h.service.login('+233000000001', '1234');
+
+        expect(h.gateway.logouts, hasLength(3));
+        expect(watch.elapsedMilliseconds, lessThan(450));
+        expect(await h.pending.read(), isEmpty);
+      },
+    );
+
+    test('nothing pending: no logout call at sign-in', () async {
       final h = _Harness();
-      const record = PendingSignOut(
-        refresh: 'refresh-old',
-        deviceToken: 'fcm-1',
-        installationId: 'install-1',
+
+      await h.service.login('+233000000001', '1234');
+
+      expect(h.gateway.logouts, isEmpty);
+    });
+
+    test('a refused sign-in leaves the records as they were', () async {
+      final h = _Harness();
+      final records = [_record('refresh-old')];
+      await h.pending.write(records);
+      h.gateway.signInAnswer = _status(401, {'detail': 'Invalid credentials'});
+
+      final state = await h.service.login('+233000000001', '1234');
+
+      expect(state.status, AuthStatus.unauthenticated);
+      expect(h.gateway.logouts, isEmpty);
+      expect(
+        (await h.pending.read()).map((r) => r.toJson()),
+        records.map((r) => r.toJson()),
       );
-      await h.pending.write(const [record]);
+    });
+
+    test(
+      'a sign-in whose tokens cannot be saved leaves the records as they were',
+      () async {
+        final h = _Harness();
+        final records = [_record('refresh-old')];
+        await h.pending.write(records);
+        final service = AuthService(
+          apiGateway: h.gateway,
+          tokenStore: _FailingSaveTokenStore(),
+          pendingSignOutStore: h.pending,
+          now: () => h.clock,
+        );
+
+        final state = await service.login('+233000000001', '1234');
+
+        expect(state.status, AuthStatus.unauthenticated);
+        expect(h.gateway.logouts, isEmpty);
+        expect(
+          (await h.pending.read()).map((r) => r.toJson()),
+          records.map((r) => r.toJson()),
+        );
+      },
+    );
+
+    test('an invalid sign-in form leaves the records as they were', () async {
+      final h = _Harness();
+      final records = [_record('refresh-old')];
+      await h.pending.write(records);
 
       await expectLater(
         h.service.login('not-a-phone', '1234'),
         throwsA(isA<AuthException>()),
       );
 
-      expect((await h.pending.read()).single.toJson(), record.toJson());
+      expect(h.gateway.logouts, isEmpty);
+      expect(
+        (await h.pending.read()).map((r) => r.toJson()),
+        records.map((r) => r.toJson()),
+      );
     });
   });
 
@@ -421,38 +592,79 @@ void main() {
   });
 
   group('secure pending store', () {
-    test('round trip, and a damaged value reads as nothing pending', () async {
-      FlutterSecureStorage.setMockInitialValues(<String, String>{});
-      const storage = FlutterSecureStorage();
-      final store = SecurePendingSignOutStore();
-      const records = [
-        PendingSignOut(refresh: 'r1', deviceToken: 'd1', installationId: 'i1'),
-        PendingSignOut(refresh: 'r2'),
-      ];
+    test(
+      'round trip with the date; a damaged value reads as nothing pending',
+      () async {
+        FlutterSecureStorage.setMockInitialValues(<String, String>{});
+        const storage = FlutterSecureStorage();
+        final store = SecurePendingSignOutStore();
+        final records = [
+          _record('r1', deviceToken: 'd1', installationId: 'i1'),
+          _record(
+            'r2',
+            at: _now.subtract(const Duration(days: 3)),
+            deviceToken: null,
+            installationId: null,
+          ),
+        ];
 
-      await store.write(records);
-      final back = await store.read();
-      await storage.write(
-        key: SecurePendingSignOutStore.key,
-        value: '{not json',
-      );
-      final damaged = await store.read();
-      await store.write(const []);
+        await store.write(records);
+        final back = await store.read();
+        await storage.write(
+          key: SecurePendingSignOutStore.key,
+          value: '{not json',
+        );
+        final damaged = await store.read();
+        await store.write(const []);
 
-      expect(back.map((r) => r.toJson()), records.map((r) => r.toJson()));
-      expect(damaged, isEmpty);
-      expect(await store.read(), isEmpty);
+        expect(back.map((r) => r.toJson()), records.map((r) => r.toJson()));
+        expect(back.last.createdAt, _now.subtract(const Duration(days: 3)));
+        expect(damaged, isEmpty);
+        expect(await store.read(), isEmpty);
+      },
+    );
+
+    test('a stored record without a date is not kept', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{
+        SecurePendingSignOutStore.key: '[{"refresh": "r1"}]',
+      });
+
+      expect(await SecurePendingSignOutStore().read(), isEmpty);
     });
 
     test('kept across clearTokens', () async {
       FlutterSecureStorage.setMockInitialValues(<String, String>{});
-      await SecurePendingSignOutStore().write(const [
-        PendingSignOut(refresh: 'r1'),
-      ]);
+      await SecurePendingSignOutStore().write([_record('r1')]);
 
       await SecureAuthTokenStore().clearTokens();
 
       expect(await SecurePendingSignOutStore().read(), hasLength(1));
     });
   });
+}
+
+/// Passes sign-in to [inner]; holds every logout until [answer] completes.
+class _ControlledGateway implements AuthApiGateway {
+  _ControlledGateway(this.inner, this.answer);
+
+  final _Gateway inner;
+  final Future<ApiResponse<Map<String, Object?>>> answer;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) {
+    if (path == AuthService.logoutPath) {
+      inner.calls.add(_Call(path, Map.of(body)));
+      return answer;
+    }
+    return inner.post(path, body: body);
+  }
+}
+
+class _FailingSaveTokenStore extends MemoryAuthTokenStore {
+  @override
+  Future<void> saveTokens(AuthTokens tokens) =>
+      Future.error(StateError('storage unavailable'));
 }
