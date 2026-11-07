@@ -168,6 +168,25 @@ void main() {
       expect(status.calls, 0);
     });
 
+    test('stopped (Work went away): tries end, the record stays', () async {
+      status.answers.addAll([_noAnswer, _noAnswer, _noAnswer]);
+      await retry.remember();
+      retry = DriverGoOfflineRetry(
+        queue: queue,
+        driverTag: () async => _me,
+        wait: (delay) async => retry.stop(),
+      );
+
+      await retry.runUntilLanded(
+        status,
+        onLanded: (_) => fail('must not land'),
+        onSessionEnded: () {},
+      );
+
+      expect(status.calls, 1);
+      expect(await retry.isPending(), isTrue);
+    });
+
     test('nothing pending: nothing sent', () async {
       await retry.runUntilLanded(
         status,
