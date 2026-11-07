@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
+import 'package:driver_app/main.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:driver_app/driver_duty_trips.dart';
-import 'package:driver_app/driver_shell.dart';
 import 'package:driver_app/duty/driver_go_offline_retry.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
 import 'package:flutter/material.dart';
@@ -241,6 +243,199 @@ void main() {
     );
   });
 
+  // Lead, 7 Nov: stop() must not be permanent, and a run left over from a
+  // disposed Work must neither keep sending nor send beside the new run.
+  group('a run left over from a Work that went away', () {
+    test(
+      'waiting on its delay: it ends, and the new run sends alone',
+      () async {
+        final queue = _Queue();
+        final waits = <Completer<void>>[];
+        final retry = DriverGoOfflineRetry(
+          queue: queue,
+          driverTag: () async => _me,
+          wait: (_) {
+            final wait = Completer<void>();
+            waits.add(wait);
+            return wait.future;
+          },
+        );
+        final status = _Status()..answers.addAll([_noAnswer, null]);
+        await retry.remember();
+        final landedBy = <String>[];
+
+        final oldRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => landedBy.add('old'),
+          onSessionEnded: () {},
+        );
+        await pumpEventQueue();
+        expect(status.calls, 1);
+        expect(waits, hasLength(1));
+
+        retry.stop();
+        final newRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => landedBy.add('new'),
+          onSessionEnded: () {},
+        );
+        await oldRun;
+        await newRun;
+
+        expect(waits.single.isCompleted, isFalse);
+        expect(status.calls, 2);
+        expect(landedBy, ['new']);
+        expect(await retry.isPending(), isFalse);
+      },
+    );
+
+    test('a request in flight: no second request beside it', () async {
+      final queue = _Queue();
+      final retry = DriverGoOfflineRetry(
+        queue: queue,
+        driverTag: () async => _me,
+        wait: (_) async {},
+      );
+      final status = _HeldStatus();
+      await retry.remember();
+      final landedBy = <String>[];
+
+      final oldRun = retry.runUntilLanded(
+        status,
+        onLanded: (_) => landedBy.add('old'),
+        onSessionEnded: () {},
+      );
+      await pumpEventQueue();
+      expect(status.calls, 1);
+
+      retry.stop();
+      final newRun = retry.runUntilLanded(
+        status,
+        onLanded: (_) => landedBy.add('new'),
+        onSessionEnded: () {},
+      );
+      await pumpEventQueue();
+      expect(status.calls, 1, reason: 'no request beside the one in flight');
+
+      status.answer(_noAnswer);
+      await pumpEventQueue();
+      expect(status.calls, 2, reason: 'the new run sends after the old ends');
+      status.answer(null);
+      await oldRun;
+      await newRun;
+
+      expect(landedBy, ['new']);
+      expect(await retry.isPending(), isFalse);
+    });
+
+    test(
+      'its request lands after the new Work started: the new Work is told',
+      () async {
+        final queue = _Queue();
+        final retry = DriverGoOfflineRetry(
+          queue: queue,
+          driverTag: () async => _me,
+          wait: (_) async {},
+        );
+        final status = _HeldStatus();
+        await retry.remember();
+        final landedBy = <String>[];
+
+        final oldRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => landedBy.add('old'),
+          onSessionEnded: () {},
+        );
+        await pumpEventQueue();
+        retry.stop();
+        final newRun = retry.runUntilLanded(
+          status,
+          onLanded: (_) => landedBy.add('new'),
+          onSessionEnded: () {},
+        );
+        status.answer(null);
+        await oldRun;
+        await newRun;
+
+        expect(status.calls, 1);
+        expect(landedBy, ['new']);
+        expect(await retry.isPending(), isFalse);
+      },
+    );
+  });
+
+  // Lead, 7 Nov (a): through the real DriverApp, the same retry serves the
+  // Work of a second sign-in in the same app process.
+  testWidgets('after sign-out and a new sign-in, a failed GO OFFLINE is '
+      'retried again', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.5;
+    addTearDown(tester.view.reset);
+    final tokens = MemoryAuthTokenStore();
+    final queue = _Queue();
+    final duty = _AppDuty();
+    await tester.pumpWidget(
+      DriverApp(
+        showLoginShell: true,
+        authService: AuthService(
+          apiGateway: _AuthApi(),
+          tokenStore: tokens,
+          appContext: AuthAppContext.driver,
+        ),
+        authTokenStore: tokens,
+        driverDutyGateway: duty,
+        goOfflineRetry: DriverGoOfflineRetry(
+          queue: queue,
+          driverTag: () async => _me,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> signIn() async {
+      await tester.enterText(
+        find.byKey(const Key('driver-phone-field')),
+        '+233000000001',
+      );
+      await tester.enterText(find.byKey(const Key('driver-pin-field')), '9876');
+      await tester.tap(find.byKey(const Key('driver-sign-in')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> goOfflineFailsThenRetryLands() async {
+      duty.offlineAnswers.addAll([_noAnswer, null]);
+      await tester.tap(find.text('GO OFFLINE'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('driver-go-offline-error')), findsOneWidget);
+      await tester.pump(driverGoOfflineRetryDelays.first);
+      await tester.pumpAndSettle();
+    }
+
+    await signIn();
+    await goOfflineFailsThenRetryLands();
+    expect(duty.offlineCalls, 2);
+    expect(find.text('GO OFFLINE'), findsNothing);
+
+    await tester.tap(find.text('GO ONLINE'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    final signOut = find.byKey(const Key('driver-account-sign-out'));
+    await tester.ensureVisible(signOut);
+    await tester.pumpAndSettle();
+    await tester.tap(signOut);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+
+    duty.online = true;
+    await signIn();
+    await goOfflineFailsThenRetryLands();
+
+    expect(duty.offlineCalls, 4);
+    expect(find.text('GO OFFLINE'), findsNothing);
+    expect(queue.events, isEmpty);
+  });
+
   group('Work', () {
     final now = DateTime(2026, 11, 7, 9);
 
@@ -471,4 +666,93 @@ final class _ThrowingOnce implements DriverDutyStatusGateway {
       since: DateTime.utc(2026, 11, 7, 9),
     );
   }
+}
+
+/// GO OFFLINE requests held until the test answers each one.
+final class _HeldStatus implements DriverDutyStatusGateway {
+  int calls = 0;
+  final _pending = <Completer<DriverDutyTransition>>[];
+
+  void answer(DriverDutyApiException? error) {
+    final next = _pending.removeAt(0);
+    if (error == null) {
+      next.complete(
+        DriverDutyTransition(
+          dutyStatus: 'offline',
+          since: DateTime.utc(2026, 11, 7, 9),
+        ),
+      );
+    } else {
+      next.completeError(error);
+    }
+  }
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) {
+    calls += 1;
+    final pending = Completer<DriverDutyTransition>();
+    _pending.add(pending);
+    return pending.future;
+  }
+}
+
+/// Duty for the whole-app test: online until GO OFFLINE lands.
+final class _AppDuty implements DriverDutyGateway, DriverDutyStatusGateway {
+  bool online = true;
+  final offlineAnswers = <DriverDutyApiException?>[];
+  int offlineCalls = 0;
+
+  @override
+  Future<DriverDutySummary> fetchDuty() async => DriverDutySummary(
+    driverReference: 'DRV-001',
+    dutyStatus: online ? 'online' : 'offline',
+    dutySince: DateTime(2026, 11, 7, 8),
+    shiftCheckToday: true,
+  );
+
+  @override
+  Future<List<DriverAssignedTrip>> fetchTrips() async =>
+      const <DriverAssignedTrip>[];
+
+  @override
+  Future<DriverAssignedTrip> fetchTripDetail(String tripReference) =>
+      throw StateError('not used');
+
+  @override
+  Future<DriverDutyTransition> updateDutyStatus(
+    DriverOperationalDutyStatus status,
+  ) async {
+    if (status == DriverOperationalDutyStatus.offline) {
+      offlineCalls += 1;
+      final error = offlineAnswers.isEmpty ? null : offlineAnswers.removeAt(0);
+      if (error != null) {
+        throw error;
+      }
+    }
+    online = status == DriverOperationalDutyStatus.online;
+    return DriverDutyTransition(
+      dutyStatus: status.wireValue,
+      since: DateTime(2026, 11, 7, 9),
+    );
+  }
+}
+
+final class _AuthApi implements AuthApiGateway {
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> body,
+  }) async => ApiResponse<Map<String, Object?>>.success(
+    path == AuthService.logoutPath
+        ? <String, Object?>{'detail': 'Signed out.'}
+        : <String, Object?>{
+            'access': 'driver-access',
+            'refresh': 'driver-refresh',
+            'account_type': 'driver',
+            'account': <String, Object?>{},
+          },
+    statusCode: 200,
+  );
 }

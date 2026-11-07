@@ -450,6 +450,7 @@ class DriverApp extends StatelessWidget {
     this.offerCoordinator,
     this.offerCardControllerFactory,
     this.queueHousekeeping,
+    this.goOfflineRetry,
     super.key,
   });
 
@@ -477,6 +478,9 @@ class DriverApp extends StatelessWidget {
 
   /// Tests only: queue housekeeping (the app's own runs on its queue).
   final DriverQueueHousekeeping? queueHousekeeping;
+
+  /// Tests only: the GO OFFLINE retry (the app builds one on its queue).
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -592,14 +596,16 @@ class DriverApp extends StatelessWidget {
             apiBaseUrl: apiBaseUrl,
             offerCoordinator: offerCoordinator,
             offerCardControllerFactory: offerCardControllerFactory,
-            goOfflineRetry: sharedPersistentQueue == null
-                ? null
-                : DriverGoOfflineRetry(
-                    queue: sharedPersistentQueue,
-                    driverTag: () async => driverQueueTagFromToken(
-                      await tokenStore.readRefreshToken(),
-                    ),
-                  ),
+            goOfflineRetry:
+                goOfflineRetry ??
+                (sharedPersistentQueue == null
+                    ? null
+                    : DriverGoOfflineRetry(
+                        queue: sharedPersistentQueue,
+                        driverTag: () async => driverQueueTagFromToken(
+                          await tokenStore.readRefreshToken(),
+                        ),
+                      )),
             queueHousekeeping:
                 queueHousekeeping ??
                 (sharedPersistentQueue == null

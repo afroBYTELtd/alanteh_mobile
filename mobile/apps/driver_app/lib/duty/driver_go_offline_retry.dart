@@ -33,8 +33,17 @@ final class DriverGoOfflineRetry {
   final Future<String?> Function() driverTag;
   final Future<void> Function(Duration delay) _wait;
 
-  bool _stopped = false;
+  /// Each run, and each stop, takes a new number; a run whose number is no
+  /// longer current ends at its next step. Nothing here is permanent: the
+  /// next run (a new Work after sign-in) works again (lead, 7 Nov).
+  int _generation = 0;
+  Completer<void> _interrupt = Completer<void>();
   Future<void>? _running;
+
+  /// The newest Work's callbacks: a run that lands after a new Work started
+  /// tells that Work, not the one that went away.
+  void Function(DriverDutyTransition transition)? _onLanded;
+  void Function()? _onSessionEnded;
 
   static String _id(String tag) => 'driver-go-offline:$tag';
 
@@ -81,8 +90,25 @@ final class DriverGoOfflineRetry {
   /// The driver went online: no more tries, and the record goes.
   Future<void> cancel() => _forget();
 
-  /// The screen went away: tries stop, the record stays for next time.
-  void stop() => _stopped = true;
+  /// Work went away: the current run ends at its next step (a wait is cut
+  /// short), and the record stays for the next run.
+  void stop() {
+    _generation += 1;
+    _interruptWaits();
+  }
+
+  void _interruptWaits() {
+    final interrupt = _interrupt;
+    _interrupt = Completer<void>();
+    if (!interrupt.isCompleted) {
+      interrupt.complete();
+    }
+  }
+
+  Future<void> _waitOrInterrupt(Duration delay) {
+    final interrupted = _interrupt.future;
+    return Future.any(<Future<void>>[_wait(delay), interrupted]);
+  }
 
   Future<void> _forget() async {
     final tag = await _tag();
@@ -102,51 +128,68 @@ final class DriverGoOfflineRetry {
   /// Sends the kept GO OFFLINE until the server confirms ([onLanded]), the
   /// session ends ([onSessionEnded]; the record goes), or it is cancelled.
   /// [waitFirst]: right after a failed try, wait the first delay before
-  /// trying again. One run at a time.
+  /// trying again. A new run ends the older one (its wait is cut short) and
+  /// starts only when the older one has ended, so two requests never go
+  /// side by side.
   Future<void> runUntilLanded(
     DriverDutyStatusGateway gateway, {
     required void Function(DriverDutyTransition transition) onLanded,
     required void Function() onSessionEnded,
     bool waitFirst = false,
   }) {
-    return _running ??= _run(
-      gateway,
-      onLanded: onLanded,
-      onSessionEnded: onSessionEnded,
-      waitFirst: waitFirst,
-    ).whenComplete(() => _running = null);
+    _onLanded = onLanded;
+    _onSessionEnded = onSessionEnded;
+    _generation += 1;
+    final generation = _generation;
+    _interruptWaits();
+    final previous = _running ?? Future<void>.value();
+    final run = previous.then(
+      (_) => _run(gateway, generation: generation, waitFirst: waitFirst),
+    );
+    _running = run;
+    unawaited(
+      run.whenComplete(() {
+        if (identical(_running, run)) {
+          _running = null;
+        }
+      }),
+    );
+    return run;
   }
 
   Future<void> _run(
     DriverDutyStatusGateway gateway, {
-    required void Function(DriverDutyTransition transition) onLanded,
-    required void Function() onSessionEnded,
+    required int generation,
     required bool waitFirst,
   }) async {
+    bool current() => generation == _generation;
     var attempt = 0;
     if (waitFirst) {
-      await _wait(driverGoOfflineRetryDelays.first);
+      await _waitOrInterrupt(driverGoOfflineRetryDelays.first);
       attempt = 1;
     }
-    while (!_stopped && await isPending()) {
+    while (current() && await isPending()) {
       try {
         final transition = await gateway.updateDutyStatus(
           DriverOperationalDutyStatus.offline,
         );
         await _forget();
-        onLanded(transition);
+        _onLanded?.call(transition);
         return;
       } on DriverDutyApiException catch (error) {
         if (error.isSessionExpired) {
           await _forget();
-          onSessionEnded();
+          _onSessionEnded?.call();
           return;
         }
       } on Object {
         // Not confirmed: try again.
       }
+      if (!current()) {
+        return;
+      }
       final delays = driverGoOfflineRetryDelays;
-      await _wait(delays[min(attempt, delays.length - 1)]);
+      await _waitOrInterrupt(delays[min(attempt, delays.length - 1)]);
       attempt += 1;
     }
   }
