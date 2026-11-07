@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_offline_queue/asm_offline_queue.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 import '../network/driver_access_token_refresh_guard.dart';
 import '../network/driver_trip_action_gateway.dart';
@@ -62,18 +64,119 @@ final class DriverShiftCheckSubmission {
       'battery_attention_flag': batteryAttentionFlag,
       'phone_app_check': phoneAppCheck,
       'safety_check': safetyCheck,
-      'submitted_at': submittedAt.toIso8601String(),
+      // UTC with "Z" (A3): the server reads the moment, not the phone's zone.
+      'submitted_at': submittedAt.toUtc().toIso8601String(),
     };
   }
 }
 
-enum DriverShiftCheckSubmissionDisposition { submitted, queued }
+enum DriverShiftCheckSubmissionDisposition { submitted, queued, stale }
+
+/// The driver a queued shift check belongs to (A3): `user:<user_id>` from
+/// a sign-in token's payload, or null when the token does not say.
+String? driverQueueTagFromToken(String? token) {
+  final parts = token?.trim().split('.');
+  if (parts == null || parts.length != 3) {
+    return null;
+  }
+  try {
+    final payload = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
+    final userId = payload is Map ? payload['user_id'] : null;
+    if (userId is int || (userId is String && userId.trim().isNotEmpty)) {
+      return 'user:${'$userId'.trim()}';
+    }
+  } on Object {
+    // Not a token the app can read.
+  }
+  return null;
+}
+
+/// Queued events older than this are deleted (A3), whatever they are.
+const driverQueueMaxAge = Duration(days: 7);
+
+/// The server accepts a shift check from before today's start by this much
+/// (S5's tolerance); older ones are refused as stale, so the app does not
+/// send them.
+const driverShiftCheckDayGrace = Duration(minutes: 10);
+
+/// Housekeeping at app start and at sign-in (A3): deletes every event older
+/// than [driverQueueMaxAge], untagged shift checks from builds before the
+/// tag, and, with [signedInTag], another driver's shift checks. A queue
+/// that cannot delete is left as it is.
+Future<void> driverQueueHousekeeping(
+  DriverTripActionPersistentQueue queue, {
+  required DateTime now,
+  String? signedInTag,
+}) async {
+  if (queue is! DriverQueueCleanup) {
+    return;
+  }
+  final oldest = now.toUtc().subtract(driverQueueMaxAge);
+  await (queue as DriverQueueCleanup).removeWhere((event) {
+    if (event.createdAt.toUtc().isBefore(oldest)) {
+      return true;
+    }
+    if (!_isShiftCheckRecord(event)) {
+      return false;
+    }
+    return event.driverId == driverShiftCheckQueueDriverIdentity ||
+        (signedInTag != null && event.driverId != signedInTag);
+  });
+}
+
+bool _isShiftCheckRecord(QueuedEvent event) =>
+    event.eventType == driverShiftCheckPath &&
+    event.tripReference == driverShiftCheckQueueReference;
+
+/// True when [submittedAt] is before the start of [now]'s day (UTC, the
+/// server's Accra day) by more than the server's grace.
+bool _fromAnEarlierDay(DateTime submittedAt, DateTime now) {
+  final utcNow = now.toUtc();
+  final dayStart = DateTime.utc(utcNow.year, utcNow.month, utcNow.day);
+  return submittedAt.toUtc().isBefore(
+    dayStart.subtract(driverShiftCheckDayGrace),
+  );
+}
+
+bool _isStale(ApiResponse<Object?> response) {
+  final body = response.error?.cause;
+  return response.statusCode == 409 &&
+      body is Map &&
+      body['code'] == 'shift_check_stale';
+}
+
+/// What the driver reads when a check made just now is refused as stale:
+/// it carried the phone's own time, so the phone's clock is wrong (lead,
+/// 7 Nov).
+const driverShiftCheckPhoneClockMessage =
+    "Your phone's date or time looks wrong. Set it to automatic and try again.";
+
+/// What the driver reads when the server refuses a check as stale (S5).
+const driverShiftCheckStaleMessage =
+    "This shift check was done on an earlier day. Do today's shift check.";
+
+String _staleMessage(ApiResponse<Object?> response) {
+  final body = response.error?.cause;
+  final detail = body is Map ? body['detail'] : null;
+  return detail is String && detail.trim().isNotEmpty
+      ? detail
+      : driverShiftCheckStaleMessage;
+}
 
 final class DriverShiftCheckSubmissionResult {
   const DriverShiftCheckSubmissionResult({
     required this.disposition,
     required this.event,
+    this.message,
   });
+
+  /// The server's words for [stale].
+  final String? message;
+
+  /// The server refused it as a check from an earlier day: not submitted.
+  bool get stale => disposition == DriverShiftCheckSubmissionDisposition.stale;
 
   final DriverShiftCheckSubmissionDisposition disposition;
   final QueuedEvent event;
@@ -148,6 +251,8 @@ final class DriverShiftCheckSubmissionController {
     required this.isOnline,
     this.connectivitySource,
     DriverShiftCheckRetryDelay? retryDelay,
+    this.currentDriverTag,
+    this.now,
   }) : _retryDelay = retryDelay ?? ((delay) => Future<void>.delayed(delay));
 
   final DriverTripActionPersistentQueue queue;
@@ -155,6 +260,60 @@ final class DriverShiftCheckSubmissionController {
   final DriverShiftCheckOnlineCheck isOnline;
   final GhanaConnectivitySource? connectivitySource;
   final DriverShiftCheckRetryDelay _retryDelay;
+
+  /// The signed-in driver's tag (A3). Without it (older wiring and tests)
+  /// checks use the old untagged identity.
+  final Future<String?> Function()? currentDriverTag;
+
+  /// The clock for the server-day rule (A3); without it the rule is off.
+  final DateTime Function()? now;
+
+  Future<String> _driverTag() async {
+    final read = currentDriverTag;
+    if (read == null) {
+      return driverShiftCheckQueueDriverIdentity;
+    }
+    try {
+      return await read() ?? 'unknown-driver';
+    } on Object {
+      return 'unknown-driver';
+    }
+  }
+
+  bool _tooOldToSend(QueuedEvent event) {
+    final clock = now;
+    return clock != null && _fromAnEarlierDay(event.deviceTimestamp, clock());
+  }
+
+  Future<void> _remove(String eventId) async {
+    final queue = this.queue;
+    if (queue is DriverQueueCleanup) {
+      await (queue as DriverQueueCleanup).removeWhere(
+        (event) => event.id == eventId,
+      );
+    } else {
+      await queue.markPermanentlyFailed(eventId);
+    }
+  }
+
+  /// True when a saved (queued) check of the signed-in driver's was
+  /// dropped as stale (from an earlier day, or refused stale by the server)
+  /// and the driver has not done today's since: Work shows
+  /// `driverSavedShiftCheckStaleMessage` (30 Oct design; lead, 7 Nov). For
+  /// this app session only; Work's first sync at start raises it for a
+  /// check still in the queue.
+  ValueListenable<bool> get savedCheckDroppedAsStale => _savedCheckDropped;
+  final _savedCheckDropped = ValueNotifier<bool>(false);
+
+  /// Over [driverQueueMaxAge] a record is housekeeping's, whoever drops it
+  /// first: no note (lead, 7 Nov).
+  bool _withinQueueAge(QueuedEvent event) {
+    final clock = now;
+    return clock == null ||
+        !event.createdAt.toUtc().isBefore(
+          clock().toUtc().subtract(driverQueueMaxAge),
+        );
+  }
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Future<DriverShiftCheckSubmissionResult>? _submissionInFlight;
@@ -193,7 +352,7 @@ final class DriverShiftCheckSubmissionController {
         id: 'driver-shift-check:$timestampIdentity',
         eventType: driverShiftCheckPath,
         tripReference: driverShiftCheckQueueReference,
-        driverId: driverShiftCheckQueueDriverIdentity,
+        driverId: await _driverTag(),
         payloadJson: submission.toJson(),
         idempotencyKey: idempotencyKey,
         deviceTimestamp: timestamp,
@@ -201,6 +360,8 @@ final class DriverShiftCheckSubmissionController {
     );
 
     if (!await _canSubmitNow()) {
+      // Today's check is done (saved to send): the note goes.
+      _savedCheckDropped.value = false;
       return DriverShiftCheckSubmissionResult(
         disposition: DriverShiftCheckSubmissionDisposition.queued,
         event: event,
@@ -213,8 +374,18 @@ final class DriverShiftCheckSubmissionController {
         idempotencyKey: event.idempotencyKey,
       );
 
+      if (_isStale(response)) {
+        await _remove(event.id);
+        return DriverShiftCheckSubmissionResult(
+          disposition: DriverShiftCheckSubmissionDisposition.stale,
+          event: event,
+          message: _staleMessage(response),
+        );
+      }
+
       if (response.isSuccess || response.statusCode == 409) {
         await queue.markSynced(event.id);
+        _savedCheckDropped.value = false;
         return DriverShiftCheckSubmissionResult(
           disposition: DriverShiftCheckSubmissionDisposition.submitted,
           event: event,
@@ -227,6 +398,7 @@ final class DriverShiftCheckSubmissionController {
     }
 
     _scheduleFailedDeliveryRetries();
+    _savedCheckDropped.value = false;
 
     return DriverShiftCheckSubmissionResult(
       disposition: DriverShiftCheckSubmissionDisposition.queued,
@@ -264,6 +436,8 @@ final class DriverShiftCheckSubmissionController {
   }
 
   Future<void> stopAutomaticSync() async {
+    // Work went away (sign-out): the next driver must not see the note.
+    _savedCheckDropped.value = false;
     final subscription = _connectivitySubscription;
     _connectivitySubscription = null;
     await subscription?.cancel();
@@ -292,9 +466,14 @@ final class DriverShiftCheckSubmissionController {
       return;
     }
 
+    final tag = await _driverTag();
     final events = await queue.pendingEvents();
-    final shiftCheckEvents = events.where(_isShiftCheckEvent);
+    final shiftCheckEvents = events.where(
+      (event) => _isShiftCheckEvent(event) && event.driverId == tag,
+    );
     var failedDelivery = false;
+    var droppedStale = false;
+    var delivered = false;
 
     for (final event in shiftCheckEvents) {
       final storedEvent = await queue.eventById(event.id);
@@ -305,14 +484,25 @@ final class DriverShiftCheckSubmissionController {
         continue;
       }
 
+      if (_tooOldToSend(storedEvent)) {
+        // The server would refuse it as stale: never sent (A3).
+        await _remove(event.id);
+        droppedStale |= _withinQueueAge(storedEvent);
+        continue;
+      }
+
       try {
         final response = await gateway.submit(
           body: event.payloadJson,
           idempotencyKey: event.idempotencyKey,
         );
 
-        if (response.isSuccess || response.statusCode == 409) {
+        if (_isStale(response)) {
+          await _remove(event.id);
+          droppedStale |= _withinQueueAge(storedEvent);
+        } else if (response.isSuccess || response.statusCode == 409) {
           await _markSyncedExactlyOnce(event.id);
+          delivered = true;
         } else {
           await _markInitialFailureExactlyOnce(event.id);
           failedDelivery = true;
@@ -323,16 +513,19 @@ final class DriverShiftCheckSubmissionController {
       }
     }
 
+    if (delivered) {
+      _savedCheckDropped.value = false;
+    } else if (droppedStale && !await _hasQueuedShiftCheck()) {
+      // A check of today's still waiting to send means today's is done.
+      _savedCheckDropped.value = true;
+    }
+
     if (failedDelivery) {
       _scheduleFailedDeliveryRetries();
     }
   }
 
-  bool _isShiftCheckEvent(QueuedEvent event) {
-    return event.eventType == driverShiftCheckPath &&
-        event.tripReference == driverShiftCheckQueueReference &&
-        event.driverId == driverShiftCheckQueueDriverIdentity;
-  }
+  bool _isShiftCheckEvent(QueuedEvent event) => _isShiftCheckRecord(event);
 
   Future<void> _markInitialFailureExactlyOnce(String eventId) async {
     final storedEvent = await queue.eventById(eventId);
@@ -389,7 +582,10 @@ final class DriverShiftCheckSubmissionController {
   }
 
   Future<bool> _hasQueuedShiftCheck() async {
+    final tag = await _driverTag();
     final events = await queue.pendingEvents();
-    return events.any(_isShiftCheckEvent);
+    return events.any(
+      (event) => _isShiftCheckEvent(event) && event.driverId == tag,
+    );
   }
 }

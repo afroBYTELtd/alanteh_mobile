@@ -14,6 +14,7 @@ import 'driver_duty_trips.dart';
 import 'driver_reload_signal.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_shell.dart';
+import 'duty/driver_go_offline_retry.dart';
 import 'foundation/driver_foundation_widgets.dart';
 import 'network/driver_offer_response_gateway.dart';
 import 'network/driver_offer_response_resilience.dart';
@@ -448,6 +449,8 @@ class DriverApp extends StatelessWidget {
     this.pushMessageSource,
     this.offerCoordinator,
     this.offerCardControllerFactory,
+    this.queueHousekeeping,
+    this.goOfflineRetry,
     super.key,
   });
 
@@ -472,6 +475,12 @@ class DriverApp extends StatelessWidget {
   /// Tests only: the pending-offer coordinator and the card's Accept/Decline.
   final DriverOfferCoordinator? offerCoordinator;
   final DriverOfferResponseControllerFactory? offerCardControllerFactory;
+
+  /// Tests only: queue housekeeping (the app's own runs on its queue).
+  final DriverQueueHousekeeping? queueHousekeeping;
+
+  /// Tests only: the GO OFFLINE retry (the app builds one on its queue).
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -587,6 +596,25 @@ class DriverApp extends StatelessWidget {
             apiBaseUrl: apiBaseUrl,
             offerCoordinator: offerCoordinator,
             offerCardControllerFactory: offerCardControllerFactory,
+            goOfflineRetry:
+                goOfflineRetry ??
+                (sharedPersistentQueue == null
+                    ? null
+                    : DriverGoOfflineRetry(
+                        queue: sharedPersistentQueue,
+                        driverTag: () async => driverQueueTagFromToken(
+                          await tokenStore.readRefreshToken(),
+                        ),
+                      )),
+            queueHousekeeping:
+                queueHousekeeping ??
+                (sharedPersistentQueue == null
+                    ? null
+                    : ({signedInTag}) => driverQueueHousekeeping(
+                        sharedPersistentQueue,
+                        now: DateTime.now(),
+                        signedInTag: signedInTag,
+                      )),
           )
         : DriverShell(
             configuration: configuration,
@@ -632,6 +660,15 @@ class DriverApp extends StatelessWidget {
   }
 }
 
+/// Queue housekeeping (A3): at app start without a driver, at sign-in with
+/// the new driver's tag.
+typedef DriverQueueHousekeeping = Future<void> Function({String? signedInTag});
+
+/// What the driver sees when the server refuses sign-out because of an
+/// active trip and its answer carries no text of its own (S2's wording).
+const driverSignOutActiveTripText =
+    'You have an active trip. Call dispatch before signing out.';
+
 /// The driver app's navigator, for the offer card that sits above it.
 final driverNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -658,6 +695,8 @@ class DriverLoginShell extends StatefulWidget {
     this.apiBaseUrl,
     this.offerCoordinator,
     this.offerCardControllerFactory,
+    this.queueHousekeeping,
+    this.goOfflineRetry,
     super.key,
   });
 
@@ -678,6 +717,12 @@ class DriverLoginShell extends StatefulWidget {
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
   final DriverPushMessageSource? pushMessageSource;
   final String? apiBaseUrl;
+
+  /// A3: queue housekeeping at start and at sign-in.
+  final DriverQueueHousekeeping? queueHousekeeping;
+
+  /// A3: a failed GO OFFLINE, kept and retried until it lands.
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   /// Tests only; built from [apiBaseUrl] otherwise.
   final DriverOfferCoordinator? offerCoordinator;
@@ -962,6 +1007,10 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   }
 
   Future<void> _restoreStoredSession() async {
+    // A sign-out the server has not heard of yet: sent now if no one is
+    // signed in (A1 checks; it never fires during a session).
+    unawaited(_sendPendingSignOuts());
+    unawaited(_houseKeepQueue());
     final rawAccessToken = await widget.authTokenStore.readAccessToken();
     final rawRefreshToken = await widget.authTokenStore.readRefreshToken();
     final accessToken = rawAccessToken?.trim();
@@ -1171,6 +1220,15 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
 
       if (state.isAuthenticated &&
           state.session?.accountType == AuthAccountType.driver) {
+        // A3: before Work opens, drop another driver's queued checks.
+        await _houseKeepQueue(
+          signedInTag: driverQueueTagFromToken(
+            state.session?.tokens.refreshToken,
+          ),
+        );
+        if (!mounted) {
+          return;
+        }
         // A new session, perhaps another driver: start with nothing from
         // the last one except a push tap made on this sign-in screen.
         final tap = _offers?.takeTap();
@@ -1267,7 +1325,110 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     setState(() => _loginError = null);
   }
 
+  Future<void> _houseKeepQueue({String? signedInTag}) async {
+    try {
+      await widget.queueHousekeeping?.call(signedInTag: signedInTag);
+    } on Object {
+      // Housekeeping never stops the app; it runs again next time.
+    }
+  }
+
+  Future<void> _sendPendingSignOuts() async {
+    try {
+      await widget.authService.sendPendingSignOuts();
+    } on Object {
+      // Kept for the next start.
+    }
+  }
+
+  bool _signingOut = false;
+
+  /// Sign-out (A1/A3): the server is told first, within 5 s, under a
+  /// "Signing out…" dialog. On 409 active_trip the driver stays signed in
+  /// and sees the server's words; Work reloads. Otherwise the session ends
+  /// on the phone (a sign-out the server did not get is kept pending).
   Future<void> _signOut() async {
+    if (_signingOut) {
+      return;
+    }
+    _signingOut = true;
+    SignOutResult? result;
+    try {
+      result = await _whileSigningOut(
+        widget.authService.signOut(
+          deviceToken: _pushDeviceRegistrar?.deviceToken,
+        ),
+      );
+    } on Object {
+      // Storage failed: end the session on the phone anyway.
+      result = null;
+    } finally {
+      _signingOut = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (result?.outcome == SignOutOutcome.activeTrip) {
+      await _showSignOutRefused(result?.message ?? driverSignOutActiveTripText);
+      _tripsChanged.ping();
+      return;
+    }
+    await _endSessionOnPhone();
+  }
+
+  Future<T> _whileSigningOut<T>(Future<T> work) async {
+    final navigator = Navigator.of(context);
+    var showing = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            key: Key('driver-signing-out'),
+            content: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: AsmSpacing.space16),
+                Text('Signing out…'),
+              ],
+            ),
+          ),
+        ),
+      ).whenComplete(() => showing = false),
+    );
+    try {
+      return await work;
+    } finally {
+      if (showing && navigator.mounted) {
+        navigator.pop();
+      }
+    }
+  }
+
+  Future<void> _showSignOutRefused(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('driver-sign-out-refused'),
+        title: const Text('Still signed in'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            key: const Key('driver-sign-out-refused-ok'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _endSessionOnPhone() async {
     _forgetOffers();
     _pushDeviceRegistrar?.endAuthenticatedSession();
     widget.driverReportGateway?.clearSessionCache();
@@ -1382,6 +1543,7 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
             widget.driverTripActionControllerFactory,
         driverOfferResponseControllerFactory:
             _sessionAwareOfferResponseControllerFactory,
+        goOfflineRetry: widget.goOfflineRetry,
         signInTimeLeft: _signedIn
             ? () async => authTokenTimeLeft(
                 await widget.authTokenStore.readRefreshToken(),
@@ -1891,6 +2053,11 @@ DriverShiftCheckSubmissionController? _driverShiftCheckControllerFor({
     ),
     isOnline: () => reachability.isOnline,
     connectivitySource: const PluginGhanaConnectivitySource(),
+    // A3: checks carry the signed-in driver; a check from an earlier day
+    // is not sent.
+    currentDriverTag: () async =>
+        driverQueueTagFromToken(await tokenStore.readRefreshToken()),
+    now: DateTime.now,
   );
 }
 

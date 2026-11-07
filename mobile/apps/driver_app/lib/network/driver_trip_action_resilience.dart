@@ -37,6 +37,12 @@ abstract interface class DriverTripActionQueue {
   Future<QueuedEvent> enqueue(QueuedEvent event);
 }
 
+/// A queue that can delete events (sign-in build A3). The real queue does;
+/// code that needs it checks for it, so other queues keep working.
+abstract interface class DriverQueueCleanup {
+  Future<int> removeWhere(bool Function(QueuedEvent event) test);
+}
+
 abstract interface class DriverTripActionPersistentQueue
     implements DriverTripActionQueue {
   Future<List<QueuedEvent>> pendingEvents();
@@ -47,7 +53,7 @@ abstract interface class DriverTripActionPersistentQueue
 }
 
 final class PersistentDriverTripActionQueue
-    implements DriverTripActionPersistentQueue {
+    implements DriverTripActionPersistentQueue, DriverQueueCleanup {
   PersistentDriverTripActionQueue({
     Future<QueueManager> Function()? managerFactory,
   }) : _managerFactory = managerFactory ?? (() => QueueManager.open());
@@ -63,6 +69,12 @@ final class PersistentDriverTripActionQueue
   Future<QueuedEvent> enqueue(QueuedEvent event) async {
     final manager = await _openManager();
     return manager.enqueue(event);
+  }
+
+  @override
+  Future<int> removeWhere(bool Function(QueuedEvent event) test) async {
+    final manager = await _openManager();
+    return manager.deleteWhere(test);
   }
 
   @override

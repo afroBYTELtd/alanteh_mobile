@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'concern/driver_concern_page.dart';
 import 'driver_back_to_work.dart';
 import 'driver_duty_trips.dart';
+import 'duty/driver_go_offline_retry.dart';
 import 'network/driver_rating_gateway.dart';
 import 'driver_home.dart';
 import 'driver_reload_signal.dart';
@@ -67,6 +68,13 @@ String _startupGateDiagSanitizedErrorMessage(Object error) {
 /// At the shift check, a sign-in ending sooner than this is renewed first.
 const driverSignInRenewalWindow = Duration(hours: 12);
 
+/// Work's "sign-in ends soon" banner (A3): shown when the app opens or
+/// comes back to the front with less than this left...
+const driverSignInBannerOnOpen = Duration(hours: 12);
+
+/// ...and, during a shift, when Work's timer finds less than this left.
+const driverSignInBannerDuringShift = Duration(hours: 2);
+
 /// How often Work, in front, asks the server for the duty summary again.
 const driverDutyReloadInterval = Duration(minutes: 3);
 
@@ -102,6 +110,7 @@ class DriverShell extends StatefulWidget {
     this.pendingOffersPanelBuilder,
     this.onDutyChanged,
     this.signInTimeLeft,
+    this.goOfflineRetry,
     this.reloadSignal,
     super.key,
   });
@@ -132,6 +141,9 @@ class DriverShell extends StatefulWidget {
   /// How long the sign-in has left (the refresh token's own expiry); null
   /// when unknown. Checked when the shift check opens.
   final Future<Duration?> Function()? signInTimeLeft;
+
+  /// A3: a failed GO OFFLINE, kept and retried until it lands.
+  final DriverGoOfflineRetry? goOfflineRetry;
 
   /// Pinged when the driver's trips may have changed (the pending offers
   /// changed, or a trip push arrived in front): Work's duty summary and the
@@ -168,6 +180,9 @@ class _DriverShellState extends State<DriverShell> {
   bool _appInFront = true;
   AppLifecycleListener? _lifecycle;
   Timer? _workReloadTimer;
+
+  /// The sign-in ends soon: Work shows the banner (not during a trip).
+  bool _signInEndsSoon = false;
   Timer? _dayChangeTimer;
 
   /// Tells an open Trips list to reload quietly.
@@ -207,6 +222,7 @@ class _DriverShellState extends State<DriverShell> {
 
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
+      controller.savedCheckDroppedAsStale.addListener(_staleNoteChanged);
       unawaited(controller.startAutomaticSync());
     }
 
@@ -220,9 +236,16 @@ class _DriverShellState extends State<DriverShell> {
       onResume: () {
         unawaited(_reloadDutyQuietly());
         _tripsReload.ping();
+        unawaited(_checkSignInEndsSoon(driverSignInBannerOnOpen));
       },
     );
+    unawaited(_checkSignInEndsSoon(driverSignInBannerOnOpen));
     _workReloadTimer = Timer.periodic(driverDutyReloadInterval, (_) {
+      if (_isOnline) {
+        unawaited(
+          _checkSignInEndsSoon(driverSignInBannerDuringShift, onlyShow: true),
+        );
+      }
       final tabInFront =
           _appInFront && (ModalRoute.of(context)?.isCurrent ?? true);
       if (tabInFront && _selectedIndex == 0) {
@@ -233,6 +256,96 @@ class _DriverShellState extends State<DriverShell> {
     });
     _setDayChangeTimer();
     widget.reloadSignal?.addListener(_reloadOnSignal);
+  }
+
+  /// Reads how long the sign-in has left. Under [threshold] shows Work's
+  /// banner; otherwise hides it, unless [onlyShow] (the shift timer only
+  /// adds the banner, it never takes back one shown on open).
+  Future<void> _checkSignInEndsSoon(
+    Duration threshold, {
+    bool onlyShow = false,
+  }) async {
+    final timeLeft = widget.signInTimeLeft;
+    if (timeLeft == null) {
+      return;
+    }
+    final Duration? left;
+    try {
+      left = await timeLeft();
+    } on Object {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final soon = left != null && left <= threshold;
+    if (soon == _signInEndsSoon || (!soon && onlyShow)) {
+      return;
+    }
+    setState(() => _signInEndsSoon = soon);
+  }
+
+  void _staleNoteChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _rememberGoOffline() async {
+    final retry = widget.goOfflineRetry;
+    if (retry == null) {
+      return;
+    }
+    await retry.remember();
+    _retryGoOffline(waitFirst: true);
+  }
+
+  /// Sends a kept GO OFFLINE until it lands (A3).
+  void _retryGoOffline({bool waitFirst = false}) {
+    final retry = widget.goOfflineRetry;
+    final gateway = widget.driverDutyGateway;
+    if (retry == null || gateway is! DriverDutyStatusGateway) {
+      return;
+    }
+    unawaited(
+      retry.runUntilLanded(
+        gateway as DriverDutyStatusGateway,
+        onLanded: (transition) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _dutySummary = (_dutySummary ?? DriverDutySummary.empty())
+                .withDutyTransition(transition);
+            _startupGateDiagDutySummary(
+              _dutySummary,
+              reason: 'go_offline_retry_landed',
+            );
+            _goOfflineError = null;
+          });
+        },
+        waitFirst: waitFirst,
+        onSessionEnded: () => _signInIfSessionEnded(
+          const DriverDutyApiException(
+            DriverDutyApiFailureType.sessionExpired,
+            driverSessionExpiredMessage,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A3: an ended session on Work goes to the sign-in screen at once
+  /// (the app's "Sign in", which clears the session). True when it did.
+  bool _signInIfSessionEnded(Object error) {
+    final signIn = DriverSessionEnd.signIn;
+    if (signIn == null ||
+        error is! DriverDutyApiException ||
+        !error.isSessionExpired) {
+      return false;
+    }
+    unawaited(signIn());
+    return true;
   }
 
   void _reloadOnSignal() {
@@ -287,6 +400,9 @@ class _DriverShellState extends State<DriverShell> {
       if (!mounted || generation != _dutyGeneration) {
         return;
       }
+      if (_signInIfSessionEnded(error)) {
+        return;
+      }
       if (error is DriverDutyApiException && error.isSessionExpired) {
         setState(() => _dutyError = error);
       }
@@ -317,11 +433,13 @@ class _DriverShellState extends State<DriverShell> {
         widget.driverShiftCheckController) {
       final previous = oldWidget.driverShiftCheckController;
       if (previous != null) {
+        previous.savedCheckDroppedAsStale.removeListener(_staleNoteChanged);
         unawaited(previous.stopAutomaticSync());
       }
 
       final current = widget.driverShiftCheckController;
       if (current != null) {
+        current.savedCheckDroppedAsStale.addListener(_staleNoteChanged);
         unawaited(current.startAutomaticSync());
       }
     }
@@ -377,6 +495,7 @@ class _DriverShellState extends State<DriverShell> {
 
   @override
   void dispose() {
+    widget.goOfflineRetry?.stop();
     if (DriverBackToWork.selectWorkTab == _selectWorkTab) {
       DriverBackToWork.selectWorkTab = null;
     }
@@ -385,6 +504,7 @@ class _DriverShellState extends State<DriverShell> {
     }
     final controller = widget.driverShiftCheckController;
     if (controller != null) {
+      controller.savedCheckDroppedAsStale.removeListener(_staleNoteChanged);
       unawaited(controller.stopAutomaticSync());
     }
     _lifecycle?.dispose();
@@ -469,6 +589,8 @@ class _DriverShellState extends State<DriverShell> {
       });
 
       _openStartupShiftCheckIfRequired();
+      // A3: a GO OFFLINE kept from before (e.g. before a restart) goes now.
+      _retryGoOffline();
     } on Object catch (error) {
       _startupGateDiag(
         'load_duty failure '
@@ -478,6 +600,7 @@ class _DriverShellState extends State<DriverShell> {
       if (!mounted) {
         return;
       }
+      _signInIfSessionEnded(error);
 
       final previousDutyLoading = _dutyLoading;
       setState(() {
@@ -740,7 +863,15 @@ class _DriverShellState extends State<DriverShell> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        content: const Text(authSignInEndsSoonMessage),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(authSignInEndsSoonMessage),
+            SizedBox(height: AsmSpacing.space8),
+            Text(driverSignInAgainGoesOfflineNote),
+          ],
+        ),
         actions: [
           TextButton(
             key: const Key('driver-renew-sign-in-later'),
@@ -952,6 +1083,8 @@ class _DriverShellState extends State<DriverShell> {
         _showOnlineTransition = true;
         _confirmingShiftCheck = false;
       });
+      // A3: online after the shift check cancels a kept GO OFFLINE.
+      unawaited(widget.goOfflineRetry?.cancel());
 
       await Future<void>.delayed(widget.onlineTransitionDuration);
 
@@ -966,6 +1099,7 @@ class _DriverShellState extends State<DriverShell> {
       if (!mounted) {
         return;
       }
+      _signInIfSessionEnded(error);
 
       final oldDutyLoading = _dutyLoading;
       setState(() {
@@ -1003,6 +1137,14 @@ class _DriverShellState extends State<DriverShell> {
       return;
     }
 
+    if (status == DriverOperationalDutyStatus.online) {
+      // A3: going online cancels a GO OFFLINE still being retried.
+      await widget.goOfflineRetry?.cancel();
+      if (!mounted) {
+        return;
+      }
+    }
+
     _dutyGeneration += 1;
     setState(() {
       _dutyActionInFlight = true;
@@ -1012,6 +1154,10 @@ class _DriverShellState extends State<DriverShell> {
 
     try {
       final transition = await statusGateway.updateDutyStatus(status);
+      if (status == DriverOperationalDutyStatus.offline) {
+        // Landed (perhaps by the Retry button): nothing left to retry.
+        await widget.goOfflineRetry?.cancel();
+      }
 
       if (!mounted) {
         return;
@@ -1033,8 +1179,28 @@ class _DriverShellState extends State<DriverShell> {
         return;
       }
 
+      if (error is DriverDutyApiException && error.isShiftCheckRequired) {
+        // A3: the server has no shift check for today (the day changed on
+        // the server): Work shows "shift check needed", not an error.
+        setState(() {
+          _dutyActionInFlight = false;
+          _dutySummary = (_dutySummary ?? DriverDutySummary.empty())
+              .withoutShiftCheckToday();
+          _startupGateDiagDutySummary(
+            _dutySummary,
+            reason: 'go_online_shift_check_required',
+          );
+        });
+        return;
+      }
+
       final sessionEnded =
           error is DriverDutyApiException && error.isSessionExpired;
+      _signInIfSessionEnded(error);
+      if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {
+        // A3: kept and retried until it lands.
+        unawaited(_rememberGoOffline());
+      }
       setState(() {
         _dutyActionInFlight = false;
         if (status == DriverOperationalDutyStatus.offline && !sessionEnded) {
@@ -1166,6 +1332,12 @@ class _DriverShellState extends State<DriverShell> {
       onOpenShiftSummary: _openShiftSummary,
       onSignOut: widget.onSignOut == null ? null : _signOut,
       pendingOffersPanelBuilder: widget.pendingOffersPanelBuilder,
+      // Never during an active trip; it shows again when the trip ends.
+      signInEndsSoon:
+          _signInEndsSoon && (_dutySummary?.activeTripCount ?? 0) == 0,
+      savedShiftCheckStale:
+          widget.driverShiftCheckController?.savedCheckDroppedAsStale.value ??
+          false,
     );
   }
 

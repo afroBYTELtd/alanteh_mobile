@@ -125,6 +125,34 @@ class _DriverReadinessPageState extends State<DriverReadinessPage> {
       return;
     }
 
+    if (disposition == DriverShiftCheckSubmissionDisposition.stale) {
+      // A3: refused as a check from an earlier day. Not "submitted". This
+      // page only sends a check made just now, with the phone's own time,
+      // so a stale answer means the phone's clock is wrong (lead, 7 Nov):
+      // say that, not "do today's check", which would be refused again.
+      setState(() {
+        _submissionState = DriverReadinessSubmissionState.idle;
+      });
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: const Key('driver-shift-check-stale'),
+          content: const Text(driverShiftCheckPhoneClockMessage),
+          actions: [
+            TextButton(
+              key: const Key('driver-shift-check-stale-ok'),
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) {
+        Navigator.of(context).pop(disposition);
+      }
+      return;
+    }
+
     setState(() {
       _submissionState =
           disposition == DriverShiftCheckSubmissionDisposition.submitted

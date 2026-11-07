@@ -49,7 +49,8 @@ void main() {
       'battery_attention_flag': false,
       'phone_app_check': true,
       'safety_check': true,
-      'submitted_at': submittedAt.toIso8601String(),
+      // A3: sent as UTC ending in Z.
+      'submitted_at': submittedAt.toUtc().toIso8601String(),
     });
     expect(
       apiClient.headers.single['Idempotency-Key'],
@@ -232,7 +233,8 @@ void main() {
     expect(submission.submittedAt, same(deviceTimestamp));
     expect(
       submission.toJson()['submitted_at'],
-      deviceTimestamp.toIso8601String(),
+      // A3: sent as UTC ending in Z.
+      deviceTimestamp.toUtc().toIso8601String(),
     );
   });
 

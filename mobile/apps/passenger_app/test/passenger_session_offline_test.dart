@@ -108,6 +108,9 @@ void main() {
     await tester.ensureVisible(signOut);
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(signOut);
+    // A4: sign-out asks the server first; this fake never answers it, so
+    // the phone signs out at the 5 s limit (the sign-out is kept pending).
+    await tester.pump(AuthService.defaultLogoutTimeout);
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
 

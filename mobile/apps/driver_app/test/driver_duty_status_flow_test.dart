@@ -1269,7 +1269,286 @@ void main() {
 
     expect(find.text('Good evening, Driver'), findsOneWidget);
   });
+  // Sign-in build A3: a 401 on Work goes to the sign-in screen at once, not
+  // to an offline or "Session expired" panel.
+  group('Work 401 goes to sign-in (A3)', () {
+    const expired = DriverDutyApiException(
+      DriverDutyApiFailureType.sessionExpired,
+      driverSessionExpiredMessage,
+    );
+    var signIns = 0;
+
+    setUp(() {
+      signIns = 0;
+      DriverSessionEnd.signIn = () async => signIns += 1;
+    });
+    tearDown(() => DriverSessionEnd.signIn = null);
+
+    DriverDutySummary online() => DriverDutySummary(
+      driverReference: 'DRV-001',
+      dutyStatus: 'online',
+      dutySince: now.subtract(const Duration(hours: 1)),
+      shiftCheckToday: true,
+    );
+
+    Future<void> pumpShell(
+      WidgetTester tester,
+      _MutableDutyGateway gateway, {
+      DriverShiftCheckSubmissionController? controller,
+    }) async {
+      await tester.pumpWidget(
+        _testApp(
+          DriverShell(
+            driverDutyGateway: gateway,
+            driverShiftCheckController: controller,
+            deviceNow: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the first duty load', (tester) async {
+      final gateway = _MutableDutyGateway(online())..errorNext = expired;
+
+      await pumpShell(tester, gateway);
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('GO OFFLINE', (tester) async {
+      final gateway = _MutableDutyGateway(online());
+      await pumpShell(tester, gateway);
+      gateway.transitionError = expired;
+
+      await tester.tap(find.text('GO OFFLINE'));
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('a quiet reload (Refresh)', (tester) async {
+      final gateway = _MutableDutyGateway(online());
+      await pumpShell(tester, gateway);
+      gateway.errorNext = expired;
+      final refresh = find.byKey(const Key('driver-duty-refresh'));
+      await tester.ensureVisible(refresh);
+      await tester.pumpAndSettle();
+
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+    });
+
+    testWidgets('confirming online after the shift check', (tester) async {
+      final gateway = _MutableDutyGateway(
+        DriverDutySummary(
+          driverReference: 'DRV-001',
+          dutyStatus: 'offline',
+          dutySince: DateTime(2026, 8, 6, 8),
+          shiftCheckToday: false,
+        ),
+      );
+      final controller = DriverShiftCheckSubmissionController(
+        queue: _MemoryQueue(),
+        gateway: _SuccessfulShiftCheckGateway(
+          onSubmit: () => gateway.errorNext = expired,
+        ),
+        isOnline: () async => true,
+      );
+      await pumpShell(tester, gateway, controller: controller);
+
+      await _completeReadiness(tester);
+      await tester.tap(find.byKey(const Key('readiness-ready')));
+      await tester.pumpAndSettle();
+
+      expect(signIns, 1);
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets('another failure keeps Work (no sign-in)', (tester) async {
+      final gateway = _MutableDutyGateway(online())..failNext = true;
+
+      await pumpShell(tester, gateway);
+
+      expect(signIns, 0);
+    });
+  });
+  // Sign-in build A3: the server refused the shift check as one from an
+  // earlier day (the phone clock is a day behind): the driver reads the
+  // server's words, nothing says "submitted", and Work still asks for the
+  // shift check.
+  testWidgets('a stale shift check is not submitted (A3)', (tester) async {
+    const staleText =
+        "This shift check was done on an earlier day. Do today's shift check.";
+    final gateway = _MutableDutyGateway(
+      DriverDutySummary(
+        driverReference: 'DRV-001',
+        dutyStatus: 'offline',
+        dutySince: DateTime(2026, 8, 6, 8),
+        shiftCheckToday: false,
+      ),
+    );
+    final controller = DriverShiftCheckSubmissionController(
+      queue: _MemoryQueue(),
+      gateway: _StaleShiftCheckGateway(staleText),
+      isOnline: () async => true,
+    );
+    await tester.pumpWidget(
+      _testApp(
+        DriverShell(
+          driverDutyGateway: gateway,
+          driverShiftCheckController: controller,
+          deviceNow: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    await _completeReadiness(tester);
+    await tester.tap(find.byKey(const Key('readiness-ready')));
+    await tester.pumpAndSettle();
+
+    // Lead, 7 Nov: a DIRECT check refused as stale means the phone's own
+    // clock is wrong (its submitted_at is the phone's "now"), so the driver
+    // is told to fix the clock, not to do the check again (that would be
+    // refused the same way for ever).
+    expect(
+      find.text(
+        "Your phone's date or time looks wrong. Set it to automatic and try "
+        'again.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(staleText), findsNothing);
+    expect(find.text('Shift check submitted'), findsNothing);
+    await tester.tap(find.byKey(const Key('driver-shift-check-stale-ok')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('START SHIFT CHECK'), findsOneWidget);
+    expect(find.byKey(_staleNote), findsNothing, reason: 'not a saved check');
+    expect(gateway.transitionStatuses, isEmpty);
+    await controller.stopAutomaticSync();
+  });
+
+  // Lead, 7 Nov (the 30 Oct design): a SAVED check dropped as stale (here
+  // by Work's first sync, because it is from an earlier day) gets a note on
+  // Work above START SHIFT CHECK.
+  group('a saved shift check dropped as stale', () {
+    QueuedEvent yesterdays() {
+      final yesterday = now.subtract(const Duration(days: 1));
+      return QueuedEvent(
+        id: 'driver-shift-check:old',
+        eventType: driverShiftCheckPath,
+        tripReference: driverShiftCheckQueueReference,
+        driverId: 'user:7',
+        payloadJson: const <String, Object?>{},
+        idempotencyKey: 'DRIVER-SHIFT-CHECK-old',
+        deviceTimestamp: yesterday,
+        createdAt: yesterday,
+      );
+    }
+
+    Future<DriverShiftCheckSubmissionController> pumpWork(
+      WidgetTester tester, {
+      required bool shiftCheckToday,
+      _MemoryQueue? queue,
+    }) async {
+      if (queue == null) {
+        queue = _MemoryQueue();
+        await queue.enqueue(yesterdays());
+      }
+      final controller = DriverShiftCheckSubmissionController(
+        queue: queue,
+        gateway: _SuccessfulShiftCheckGateway(),
+        isOnline: () async => true,
+        currentDriverTag: () async => 'user:7',
+        now: () => now,
+      );
+      await tester.pumpWidget(
+        _testApp(
+          DriverShell(
+            driverDutyGateway: _MutableDutyGateway(
+              DriverDutySummary(
+                driverReference: 'DRV-001',
+                dutyStatus: 'offline',
+                dutySince: DateTime(2026, 8, 6, 8),
+                shiftCheckToday: shiftCheckToday,
+              ),
+            ),
+            driverShiftCheckController: controller,
+            deviceNow: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      return controller;
+    }
+
+    testWidgets('Work says so above START SHIFT CHECK', (tester) async {
+      final controller = await pumpWork(tester, shiftCheckToday: false);
+      // No check today: Work opens the shift check at start; the driver
+      // comes back to Work.
+      expect(find.text('Shift check'), findsWidgets);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final note = find.byKey(_staleNote);
+      expect(note, findsOneWidget);
+      expect(
+        find.descendant(
+          of: note,
+          matching: find.text(
+            "Your saved shift check is from an earlier day, so it doesn't "
+            "count today. Please do today's shift check.",
+          ),
+        ),
+        findsOneWidget,
+      );
+      final start = find.text('START SHIFT CHECK');
+      expect(start, findsOneWidget);
+      expect(
+        tester.getBottomLeft(note).dy,
+        lessThanOrEqualTo(tester.getTopLeft(start).dy),
+      );
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets('raised while Work is open: shown at once', (tester) async {
+      final queue = _MemoryQueue();
+      final controller = await pumpWork(
+        tester,
+        shiftCheckToday: false,
+        queue: queue,
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_staleNote), findsNothing);
+
+      await queue.enqueue(yesterdays());
+      await controller.syncQueuedSubmissions();
+      await tester.pump();
+
+      expect(find.byKey(_staleNote), findsOneWidget);
+      await controller.stopAutomaticSync();
+    });
+
+    testWidgets("not once today's check is done", (tester) async {
+      final controller = await pumpWork(tester, shiftCheckToday: true);
+
+      expect(controller.savedCheckDroppedAsStale.value, isTrue);
+      expect(find.text('GO ONLINE'), findsOneWidget);
+      expect(find.byKey(_staleNote), findsNothing);
+      await controller.stopAutomaticSync();
+    });
+  });
 }
+
+const _staleNote = Key('driver-saved-shift-check-stale-note');
 
 Widget _testApp(Widget home) {
   return MaterialApp(theme: AsmThemes.driver, home: home);
@@ -1318,6 +1597,12 @@ final class _MutableDutyGateway
 
   /// When true, the next fetchDuty fails (the network drops).
   bool failNext = false;
+
+  /// When set, the next fetchDuty throws it (A3: a 401).
+  DriverDutyApiException? errorNext;
+
+  /// When set, every duty change throws it.
+  DriverDutyApiException? transitionError;
   final List<DriverOperationalDutyStatus> transitionStatuses =
       <DriverOperationalDutyStatus>[];
 
@@ -1331,6 +1616,11 @@ final class _MutableDutyGateway
     if (hold != null) {
       holdNext = null;
       await hold.future;
+    }
+    final error = errorNext;
+    if (error != null) {
+      errorNext = null;
+      throw error;
     }
     if (failNext) {
       failNext = false;
@@ -1357,6 +1647,10 @@ final class _MutableDutyGateway
     DriverOperationalDutyStatus status,
   ) async {
     transitionStatuses.add(status);
+    final error = transitionError;
+    if (error != null) {
+      throw error;
+    }
 
     final transition = DriverDutyTransition(
       dutyStatus: status.wireValue,
@@ -1542,4 +1836,23 @@ final class _FailingDutyApiClient
       ),
     );
   }
+}
+
+final class _StaleShiftCheckGateway implements DriverShiftCheckGateway {
+  _StaleShiftCheckGateway(this.text);
+
+  final String text;
+
+  @override
+  Future<ApiResponse<Object?>> submit({
+    required Map<String, Object?> body,
+    required String idempotencyKey,
+  }) async => ApiResponse.apiFailure(
+    AsmApiException(
+      type: AsmApiExceptionType.badResponse,
+      message: 'conflict',
+      statusCode: 409,
+      cause: <String, Object?>{'detail': text, 'code': 'shift_check_stale'},
+    ),
+  );
 }

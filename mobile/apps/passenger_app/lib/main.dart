@@ -73,6 +73,7 @@ class PassengerApp extends StatelessWidget {
     this.paymentRatingRepository,
     this.fareEstimateRepository,
     this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     super.key,
   });
 
@@ -88,6 +89,9 @@ class PassengerApp extends StatelessWidget {
   final PassengerPaymentRatingRepository? paymentRatingRepository;
   final PassengerFareEstimateRepository? fareEstimateRepository;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+
+  /// Tests only: where pushes come from (the app uses Firebase).
+  final PassengerPushMessageSource? pushMessageSource;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +174,7 @@ class PassengerApp extends StatelessWidget {
             placesRepository: resolvedPlacesRepository,
             landmarkRepository: resolvedLandmarkRepository,
             pushDeviceRegistrarFactory: pushDeviceRegistrarFactory,
+            pushMessageSource: pushMessageSource,
             localQaEnabled: configuration.localQaEnabled,
           )
         : PassengerShell(
@@ -311,6 +316,7 @@ class PassengerLoginShell extends StatefulWidget {
     this.landmarkRepository,
     this.cancellationGateway,
     this.pushDeviceRegistrarFactory,
+    this.pushMessageSource,
     this.localQaEnabled = false,
     super.key,
   });
@@ -329,6 +335,9 @@ class PassengerLoginShell extends StatefulWidget {
   final PassengerLandmarkRepository? landmarkRepository;
   final PassengerCancellationGateway? cancellationGateway;
   final PushDeviceRegistrarFactory? pushDeviceRegistrarFactory;
+
+  /// Tests only: where pushes come from (the app uses Firebase).
+  final PassengerPushMessageSource? pushMessageSource;
   final bool localQaEnabled;
 
   @override
@@ -390,6 +399,9 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _restoreStoredSession() async {
+    // A4: a sign-out the server has not heard of yet is sent now if no one
+    // is signed in (A1 checks; it never fires during a session).
+    unawaited(_sendPendingSignOuts());
     final rawAccessToken = await _tokenStore.readAccessToken();
     final rawRefreshToken = await _tokenStore.readRefreshToken();
     final accessToken = rawAccessToken?.trim();
@@ -708,6 +720,23 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   }
 
   Future<void> _returnToSignIn() async {
+    // A4: "Sign in again" on the trip screen is a sign-out the passenger
+    // asked for, so the server is told first (as for Account's Sign out).
+    // A session the server already refused has no tokens left, and then
+    // nothing is sent.
+    try {
+      await _whileSigningOut(
+        _authService.signOut(deviceToken: _pushDeviceRegistrar?.deviceToken),
+      );
+    } on Object {
+      // Storage failed: end the session on the phone anyway.
+    }
+    if (!mounted) {
+      return;
+    }
+    // Lead, 24 Oct (item 17): close every pushed screen (the trip screen
+    // stayed on top of the sign-in screen), so only sign-in is left.
+    Navigator.of(context).popUntil((route) => route.isFirst);
     _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
@@ -750,7 +779,80 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  Future<void> _sendPendingSignOuts() async {
+    try {
+      await _authService.sendPendingSignOuts();
+    } on Object {
+      // Kept for the next start.
+    }
+  }
+
+  bool _signingOut = false;
+
+  /// Sign-out (A1/A4): the server is told first, within 5 s, under a
+  /// "Signing out…" dialog. A sign-out the server did not get is kept
+  /// pending (A1). The session then ends on the phone.
   Future<void> _signOut() async {
+    if (_signingOut) {
+      return;
+    }
+    _signingOut = true;
+    SignOutResult? result;
+    try {
+      result = await _whileSigningOut(
+        _authService.signOut(deviceToken: _pushDeviceRegistrar?.deviceToken),
+      );
+    } on Object {
+      // Storage failed: end the session on the phone anyway.
+      result = null;
+    } finally {
+      _signingOut = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (result?.outcome == SignOutOutcome.activeTrip) {
+      // Only drivers get this from the server; kept for safety.
+      return;
+    }
+    await _endSessionOnPhone();
+  }
+
+  Future<T> _whileSigningOut<T>(Future<T> work) async {
+    final navigator = Navigator.of(context);
+    var showing = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
+            key: Key('passenger-signing-out'),
+            content: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: AsmSpacing.space16),
+                Text('Signing out…'),
+              ],
+            ),
+          ),
+        ),
+      ).whenComplete(() => showing = false),
+    );
+    try {
+      return await work;
+    } finally {
+      if (showing && navigator.mounted) {
+        navigator.pop();
+      }
+    }
+  }
+
+  Future<void> _endSessionOnPhone() async {
     _pushDeviceRegistrar?.endAuthenticatedSession();
     await _tokenStore.clearTokens();
     if (!mounted) {
@@ -952,6 +1054,7 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
       );
       return _signedIn && _pushDeviceRegistrar != null
           ? FirebaseForegroundPushListener(
+              messageSource: widget.pushMessageSource,
               onNavigationIntent: _handlePushNavigationIntent,
               child: shell,
             )

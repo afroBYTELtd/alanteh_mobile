@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -415,6 +417,201 @@ class MemoryAuthTokenStore
   }
 }
 
+/// A random id for this app install, sent at push registration and
+/// sign-out so the server can retire this phone's push rows (sign-in build
+/// A1/A2). It is not a secret and survives sign-out; it is lost only when
+/// the app's data is (reinstall).
+abstract interface class InstallationIdStore {
+  Future<String> readOrCreate();
+}
+
+final RegExp _installationIdPattern = RegExp(r'^[0-9a-f]{32}$');
+
+/// 32 lowercase hex characters from a secure random source (the server
+/// takes up to 64).
+String newInstallationId([Random? random]) {
+  final source = random ?? Random.secure();
+  final buffer = StringBuffer();
+  for (var i = 0; i < 16; i++) {
+    buffer.write(source.nextInt(256).toRadixString(16).padLeft(2, '0'));
+  }
+  return buffer.toString();
+}
+
+class SecureInstallationIdStore implements InstallationIdStore {
+  SecureInstallationIdStore({FlutterSecureStorage? storage})
+    : _storage = storage ?? const FlutterSecureStorage();
+
+  static const key = 'asm.auth.installation_id';
+
+  final FlutterSecureStorage _storage;
+  Future<String>? _reading;
+
+  @override
+  Future<String> readOrCreate() =>
+      _reading ??= _readOrCreate().whenComplete(() => _reading = null);
+
+  Future<String> _readOrCreate() async {
+    final stored = (await _storage.read(key: key))?.trim();
+    if (stored != null && _installationIdPattern.hasMatch(stored)) {
+      return stored;
+    }
+    final id = newInstallationId();
+    await _storage.write(key: key, value: id);
+    return id;
+  }
+}
+
+/// In-memory installation id for tests.
+class MemoryInstallationIdStore implements InstallationIdStore {
+  MemoryInstallationIdStore([String? id]) : _id = id;
+
+  String? _id;
+
+  @override
+  Future<String> readOrCreate() async => _id ??= newInstallationId();
+}
+
+/// A sign-out the server has not confirmed yet: sent again at the next app
+/// start until the server answers 200.
+class PendingSignOut {
+  const PendingSignOut({
+    required this.refresh,
+    required this.createdAt,
+    this.deviceToken,
+    this.installationId,
+  });
+
+  final String refresh;
+
+  /// When the sign-out was asked for (UTC).
+  final DateTime createdAt;
+  final String? deviceToken;
+  final String? installationId;
+
+  /// The same sign-out without this phone's push details. After a new
+  /// sign-in on this phone they would retire the new session's push rows.
+  PendingSignOut refreshOnly() =>
+      PendingSignOut(refresh: refresh, createdAt: createdAt);
+
+  /// The logout request body; absent fields are left out.
+  Map<String, Object?> toBody() => <String, Object?>{
+    'refresh': refresh,
+    if (deviceToken != null) 'device_token': deviceToken,
+    if (installationId != null) 'installation_id': installationId,
+  };
+
+  /// The stored form: the body plus the date.
+  Map<String, Object?> toJson() => <String, Object?>{
+    ...toBody(),
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
+
+  static PendingSignOut? tryParse(Object? json) {
+    if (json is! Map) {
+      return null;
+    }
+    final refresh = json['refresh'];
+    if (refresh is! String || refresh.trim().isEmpty) {
+      return null;
+    }
+    String? text(Object? value) =>
+        value is String && value.trim().isNotEmpty ? value : null;
+    final createdAt = DateTime.tryParse('${json['created_at']}')?.toUtc();
+    if (createdAt == null) {
+      return null;
+    }
+    return PendingSignOut(
+      refresh: refresh,
+      createdAt: createdAt,
+      deviceToken: text(json['device_token']),
+      installationId: text(json['installation_id']),
+    );
+  }
+}
+
+/// Where pending sign-outs wait. Kept apart from the tokens: clearing the
+/// tokens must not drop them.
+abstract interface class PendingSignOutStore {
+  Future<List<PendingSignOut>> read();
+
+  Future<void> write(List<PendingSignOut> records);
+}
+
+class SecurePendingSignOutStore implements PendingSignOutStore {
+  SecurePendingSignOutStore({FlutterSecureStorage? storage})
+    : _storage = storage ?? const FlutterSecureStorage();
+
+  static const key = 'asm.auth.pending_sign_outs';
+
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<List<PendingSignOut>> read() async {
+    final raw = await _storage.read(key: key);
+    if (raw == null || raw.isEmpty) {
+      return const <PendingSignOut>[];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return const <PendingSignOut>[];
+      }
+      return decoded
+          .map(PendingSignOut.tryParse)
+          .whereType<PendingSignOut>()
+          .toList(growable: false);
+    } on FormatException {
+      return const <PendingSignOut>[];
+    }
+  }
+
+  @override
+  Future<void> write(List<PendingSignOut> records) async {
+    if (records.isEmpty) {
+      await _storage.delete(key: key);
+      return;
+    }
+    await _storage.write(
+      key: key,
+      value: jsonEncode(records.map((record) => record.toJson()).toList()),
+    );
+  }
+}
+
+/// In-memory pending sign-outs for tests.
+class MemoryPendingSignOutStore implements PendingSignOutStore {
+  List<PendingSignOut> _records = const <PendingSignOut>[];
+
+  @override
+  Future<List<PendingSignOut>> read() async => _records;
+
+  @override
+  Future<void> write(List<PendingSignOut> records) async {
+    _records = List<PendingSignOut>.unmodifiable(records);
+  }
+}
+
+enum SignOutOutcome {
+  /// The server confirmed the sign-out (or there was nothing to sign out).
+  signedOut,
+
+  /// Signed out on the phone; the server is told at a later app start.
+  signedOutPending,
+
+  /// The server refused: the driver holds an active trip. Still signed in.
+  activeTrip,
+}
+
+class SignOutResult {
+  const SignOutResult(this.outcome, {this.message});
+
+  final SignOutOutcome outcome;
+
+  /// The server's own words for [SignOutOutcome.activeTrip].
+  final String? message;
+}
+
 /// Minimal API gateway so auth tests can use mocked responses only.
 abstract interface class AuthApiGateway {
   Future<ApiResponse<Map<String, Object?>>> post(
@@ -469,32 +666,56 @@ class AuthService {
     required AuthTokenStore tokenStore,
     AuthAppContext? appContext,
     AuthRefreshRetry? refreshRetry,
+    PendingSignOutStore? pendingSignOutStore,
+    InstallationIdStore? installationIdStore,
+    Duration logoutTimeout = defaultLogoutTimeout,
+    DateTime Function()? now,
   }) : _apiGateway = apiGateway,
        _tokenStore = tokenStore,
        _appContext = appContext,
-       _refreshRetry = refreshRetry;
+       _refreshRetry = refreshRetry,
+       _pendingSignOutStore = pendingSignOutStore,
+       _installationIdStore = installationIdStore,
+       _logoutTimeout = logoutTimeout,
+       _now = now ?? DateTime.now;
 
   factory AuthService.withApiClient({
     required AsmApiClient client,
     AuthTokenStore? tokenStore,
     AuthAppContext? appContext,
     AuthRefreshRetry? refreshRetry,
+    PendingSignOutStore? pendingSignOutStore,
+    InstallationIdStore? installationIdStore,
   }) {
     return AuthService(
       apiGateway: AsmAuthApiGateway(client),
       tokenStore: tokenStore ?? SecureAuthTokenStore(),
       appContext: appContext,
       refreshRetry: refreshRetry,
+      pendingSignOutStore: pendingSignOutStore ?? SecurePendingSignOutStore(),
+      installationIdStore: installationIdStore ?? SecureInstallationIdStore(),
     );
   }
 
   static const tokenPath = '/api/auth/token/';
   static const refreshPath = '/api/auth/token/refresh/';
+  static const logoutPath = '/api/auth/logout/';
+  static const defaultLogoutTimeout = Duration(seconds: 5);
+  static const maxPendingSignOuts = 5;
+
+  /// A pending sign-out older than this is dropped unsent: its refresh
+  /// token (30 days) has expired by then.
+  static const pendingSignOutMaxAge = Duration(days: 31);
 
   final AuthApiGateway _apiGateway;
   final AuthTokenStore _tokenStore;
   final AuthAppContext? _appContext;
   final AuthRefreshRetry? _refreshRetry;
+  final PendingSignOutStore? _pendingSignOutStore;
+  final InstallationIdStore? _installationIdStore;
+  final Duration _logoutTimeout;
+  final DateTime Function() _now;
+  Future<int>? _sendingPending;
 
   Future<AuthState> login(String phone, String pin) async {
     final cleanPhone = phone.trim();
@@ -528,6 +749,7 @@ class AuthService {
     try {
       final session = _sessionFromLoginResponse(response.data!);
       await _tokenStore.saveTokens(session.tokens);
+      await _sendPendingSignOutsOnceAfterSignIn();
       await _persistPassengerDisplayName(session);
       await _persistPassengerPhoneNumber(session);
       return AuthState.authenticated(session);
@@ -615,6 +837,148 @@ class AuthService {
       await _tokenStore.clearTokens();
       return AuthState.unauthenticated(_parseError(error));
     }
+  }
+
+  /// Signs out on the server (at most [defaultLogoutTimeout]) and on the
+  /// phone. The tokens are cleared whatever the server says, except for a
+  /// 409 active_trip: then the driver stays signed in. If the server could
+  /// not be told, the sign-out is kept and sent by [sendPendingSignOuts].
+  ///
+  /// The pending record is written before the request, so an app killed
+  /// mid-request still tells the server later.
+  Future<SignOutResult> signOut({String? deviceToken}) async {
+    final refresh = (await _tokenStore.readRefreshToken())?.trim();
+    if (refresh == null || refresh.isEmpty) {
+      await _tokenStore.clearTokens();
+      return const SignOutResult(SignOutOutcome.signedOut);
+    }
+    final cleanDeviceToken = deviceToken?.trim();
+    final record = PendingSignOut(
+      refresh: refresh,
+      createdAt: _now().toUtc(),
+      deviceToken: cleanDeviceToken == null || cleanDeviceToken.isEmpty
+          ? null
+          : cleanDeviceToken,
+      installationId: await _installationIdStore?.readOrCreate(),
+    );
+    await _addPendingSignOut(record);
+
+    final response = await _postLogout(record);
+    if (_confirmed(response)) {
+      await _removePendingSignOut(record);
+      await _tokenStore.clearTokens();
+      return const SignOutResult(SignOutOutcome.signedOut);
+    }
+    if (_isActiveTrip(response)) {
+      await _removePendingSignOut(record);
+      return SignOutResult(
+        SignOutOutcome.activeTrip,
+        message: _detail(response),
+      );
+    }
+    await _tokenStore.clearTokens();
+    return const SignOutResult(SignOutOutcome.signedOutPending);
+  }
+
+  /// Sends each pending sign-out once (call at app start, with network).
+  /// A record is dropped on a 200, or unsent when older than
+  /// [pendingSignOutMaxAge]; anything else keeps it for the next start.
+  /// Nothing is sent while someone is signed in: a sign-out must never
+  /// reach the server during a later session (lead decision (b), 7 Nov).
+  /// Returns how many are still pending.
+  Future<int> sendPendingSignOuts() {
+    return _sendingPending ??= _sendPendingSignOuts().whenComplete(() {
+      _sendingPending = null;
+    });
+  }
+
+  Future<int> _sendPendingSignOuts() async {
+    final store = _pendingSignOutStore;
+    if (store == null) {
+      return 0;
+    }
+    final signedInRefresh = (await _tokenStore.readRefreshToken())?.trim();
+    if (signedInRefresh != null && signedInRefresh.isNotEmpty) {
+      return (await store.read()).length;
+    }
+    final oldest = _now().toUtc().subtract(pendingSignOutMaxAge);
+    for (final record in await store.read()) {
+      if (record.createdAt.isBefore(oldest) ||
+          _confirmed(await _postLogout(record))) {
+        await _removePendingSignOut(record);
+      }
+    }
+    return (await store.read()).length;
+  }
+
+  Future<ApiResponse<Map<String, Object?>>?> _postLogout(
+    PendingSignOut record,
+  ) async {
+    try {
+      return await _apiGateway
+          .post(logoutPath, body: record.toBody())
+          .timeout(_logoutTimeout);
+    } on Object {
+      // No answer in time, or no network: the server was not told.
+      return null;
+    }
+  }
+
+  static bool _confirmed(ApiResponse<Map<String, Object?>>? response) =>
+      response != null && response.isSuccess && response.statusCode == 200;
+
+  static bool _isActiveTrip(ApiResponse<Map<String, Object?>>? response) {
+    final body = response?.error?.cause;
+    return response?.statusCode == 409 &&
+        body is Map &&
+        body['code'] == 'active_trip';
+  }
+
+  static String? _detail(ApiResponse<Map<String, Object?>>? response) {
+    final body = response?.error?.cause;
+    final detail = body is Map ? body['detail'] : null;
+    return detail is String && detail.trim().isNotEmpty ? detail : null;
+  }
+
+  Future<void> _addPendingSignOut(PendingSignOut record) async {
+    final store = _pendingSignOutStore;
+    if (store == null) {
+      return;
+    }
+    final records = [...await store.read(), record];
+    await store.write(
+      records.sublist(max(0, records.length - maxPendingSignOuts)),
+    );
+  }
+
+  Future<void> _removePendingSignOut(PendingSignOut record) async {
+    final store = _pendingSignOutStore;
+    if (store == null) {
+      return;
+    }
+    final records = [...await store.read()];
+    records.removeWhere((kept) => kept.refresh == record.refresh);
+    await store.write(records);
+  }
+
+  /// Right after a new sign-in (before the app loads anything for it):
+  /// each pending sign-out is sent once, all side by side so the sign-in
+  /// waits at most one [defaultLogoutTimeout], and dropped whatever the
+  /// answer. Only the refresh token is sent: this phone's push details
+  /// now belong to the new session.
+  Future<void> _sendPendingSignOutsOnceAfterSignIn() async {
+    final store = _pendingSignOutStore;
+    if (store == null) {
+      return;
+    }
+    final records = await store.read();
+    if (records.isEmpty) {
+      return;
+    }
+    await store.write(const <PendingSignOut>[]);
+    await Future.wait(
+      records.map((record) => _postLogout(record.refreshOnly())),
+    );
   }
 
   Future<AuthState> logout() async {
