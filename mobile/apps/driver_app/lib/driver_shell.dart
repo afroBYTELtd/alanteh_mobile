@@ -853,7 +853,15 @@ class _DriverShellState extends State<DriverShell> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        content: const Text(authSignInEndsSoonMessage),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(authSignInEndsSoonMessage),
+            SizedBox(height: AsmSpacing.space8),
+            Text(driverSignInAgainGoesOfflineNote),
+          ],
+        ),
         actions: [
           TextButton(
             key: const Key('driver-renew-sign-in-later'),

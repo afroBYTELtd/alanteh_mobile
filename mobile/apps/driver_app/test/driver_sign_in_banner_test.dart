@@ -1,5 +1,6 @@
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:driver_app/driver_duty_trips.dart';
+import 'package:driver_app/driver_home.dart';
 import 'package:driver_app/driver_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -166,6 +167,20 @@ void main() {
         matching: find.textContaining('Your sign-in ends soon'),
       ),
       findsOneWidget,
+    );
+    // Lead, 7 Nov: say plainly that signing in again takes the driver
+    // offline (sign-out goes through the server).
+    expect(
+      find.descendant(
+        of: find.byKey(_banner),
+        matching: find.text(driverSignInAgainGoesOfflineNote),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      driverSignInAgainGoesOfflineNote,
+      'Signing in again takes you offline. Go online again after you sign '
+      'in.',
     );
     final renew = find.byKey(const Key('driver-sign-in-ends-banner-renew'));
     await tester.ensureVisible(renew);

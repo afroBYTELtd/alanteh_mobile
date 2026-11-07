@@ -23,6 +23,11 @@ const driverShiftCheckNeededMessage =
     "You're online, but today's shift check isn't done. You won't get "
     'automatic trips until you do it.';
 
+/// Said with every "Sign in again" offer (lead, 7 Nov): sign-out goes
+/// through the server, which takes the driver offline.
+const driverSignInAgainGoesOfflineNote =
+    'Signing in again takes you offline. Go online again after you sign in.';
+
 class DriverHome extends StatelessWidget {
   const DriverHome({
     required this.market,
@@ -518,6 +523,14 @@ class _DriverSignInEndsSoonBanner extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AsmSpacing.space8),
+          const Text(
+            driverSignInAgainGoesOfflineNote,
+            style: TextStyle(
+              color: AsmColors.driverTextSecondary,
+              height: 1.35,
+            ),
           ),
           if (onSignInAgain != null) ...[
             const SizedBox(height: AsmSpacing.space12),

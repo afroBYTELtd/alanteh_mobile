@@ -4,6 +4,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:asm_design_system/asm_design_system.dart';
 import 'package:driver_app/driver_duty_trips.dart';
+import 'package:driver_app/driver_home.dart';
 import 'package:driver_app/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +42,8 @@ void main() {
     await pump(tester, const Duration(hours: 11));
 
     expect(find.text(warning), findsOneWidget);
+    // Lead, 7 Nov: signing in again takes the driver offline; say so.
+    expect(find.text(driverSignInAgainGoesOfflineNote), findsOneWidget);
     expect(
       find.byKey(const Key('driver-shift-readiness-screen')),
       findsNothing,
