@@ -289,12 +289,55 @@ void main() {
       },
     );
 
+    test('a second failure while a run waits: the next try waits the first '
+        'delay', () async {
+      final queue = _Queue();
+      final waits = <Completer<void>>[];
+      final retry = DriverGoOfflineRetry(
+        queue: queue,
+        driverTag: () async => _me,
+        wait: (_) {
+          final wait = Completer<void>();
+          waits.add(wait);
+          return wait.future;
+        },
+      );
+      final status = _Status()..answers.add(null);
+      await retry.remember();
+
+      final first = retry.runUntilLanded(
+        status,
+        onLanded: (_) {},
+        onSessionEnded: () {},
+        waitFirst: true,
+      );
+      await pumpEventQueue();
+      // GO OFFLINE (Retry button) failed again: Work starts a new run.
+      final second = retry.runUntilLanded(
+        status,
+        onLanded: (_) {},
+        onSessionEnded: () {},
+        waitFirst: true,
+      );
+      await pumpEventQueue();
+
+      expect(status.calls, 0, reason: 'nothing sent at once');
+      expect(waits, hasLength(2));
+      waits.last.complete();
+      await first;
+      await second;
+      expect(status.calls, 1);
+      expect(await retry.isPending(), isFalse);
+    });
+
     test('a request in flight: no second request beside it', () async {
       final queue = _Queue();
       final retry = DriverGoOfflineRetry(
         queue: queue,
         driverTag: () async => _me,
-        wait: (_) async {},
+        // Waits end only when a run is cut short: an old run that waited
+        // after its failure would hold up the new run.
+        wait: (_) => Completer<void>().future,
       );
       final status = _HeldStatus();
       await retry.remember();
