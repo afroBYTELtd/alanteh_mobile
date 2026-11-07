@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
+import 'package:asm_auth/asm_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passenger_app/notifications/push_device_registration.dart';
 
@@ -196,6 +198,92 @@ void main() {
       await tokens.dispose();
     });
   });
+
+  // Sign-in build A2: registration carries this install's id, so the server
+  // can retire this phone's older rows; sign-out sends the token in use.
+  group('installation id (A2)', () {
+    test('registration and token refresh send the installation id', () async {
+      final tokens = _FakeTokenSource(initialToken: ' FCM-1 ');
+      final gateway = _RecordingGateway();
+      final registrar = FirebasePushDeviceRegistrar(
+        tokenSource: tokens,
+        apiGateway: gateway,
+        installationIdStore: MemoryInstallationIdStore('install-1'),
+      );
+
+      expect(await registrar.registerForAuthenticatedSession(), isTrue);
+      tokens.emitRefresh('FCM-2');
+      await gateway.waitForCallCount(2);
+
+      expect(gateway.bodies, <Map<String, Object?>>[
+        <String, Object?>{
+          'device_token': 'FCM-1',
+          'platform': 'android',
+          'installation_id': 'install-1',
+        },
+        <String, Object?>{
+          'device_token': 'FCM-2',
+          'platform': 'android',
+          'installation_id': 'install-1',
+        },
+      ]);
+
+      await registrar.dispose();
+      await tokens.dispose();
+    });
+
+    test('an id that cannot be read does not stop registration', () async {
+      final tokens = _FakeTokenSource(initialToken: 'FCM-1');
+      final gateway = _RecordingGateway();
+      final registrar = FirebasePushDeviceRegistrar(
+        tokenSource: tokens,
+        apiGateway: gateway,
+        installationIdStore: _FailingInstallationIdStore(),
+      );
+
+      expect(await registrar.registerForAuthenticatedSession(), isTrue);
+      expect(gateway.bodies.single, <String, Object?>{
+        'device_token': 'FCM-1',
+        'platform': 'android',
+      });
+
+      await registrar.dispose();
+      await tokens.dispose();
+    });
+
+    test('deviceToken is the token last sent, for sign-out', () async {
+      final tokens = _FakeTokenSource(initialToken: ' FCM-1 ');
+      final gateway = _RecordingGateway();
+      final registrar = FirebasePushDeviceRegistrar(
+        tokenSource: tokens,
+        apiGateway: gateway,
+      );
+
+      final before = registrar.deviceToken;
+      await registrar.registerForAuthenticatedSession();
+      final afterRegistration = registrar.deviceToken;
+      tokens.emitRefresh('FCM-2');
+      await gateway.waitForCallCount(2);
+
+      expect(before, isNull);
+      expect(afterRegistration, 'FCM-1');
+      expect(registrar.deviceToken, 'FCM-2');
+
+      await registrar.dispose();
+      await tokens.dispose();
+    });
+
+    test('the default registrar keeps the id in secure storage', () {
+      final source = File(
+        'lib/notifications/push_device_registration.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains('installationIdStore: SecureInstallationIdStore()'),
+      );
+    });
+  });
 }
 
 final class _FakeTokenSource implements PushMessagingTokenSource {
@@ -280,4 +368,9 @@ final class _RecordingGateway implements PushDeviceRegistrationApiGateway {
       await waiter.future;
     }
   }
+}
+
+final class _FailingInstallationIdStore implements InstallationIdStore {
+  @override
+  Future<String> readOrCreate() => Future.error(StateError('no storage'));
 }

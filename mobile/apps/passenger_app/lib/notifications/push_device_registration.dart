@@ -73,6 +73,9 @@ typedef PushDeviceRegistrarFactory =
 abstract interface class PushDeviceRegistrar {
   Future<bool> registerForAuthenticatedSession();
 
+  /// The push token last sent for this session, for sign-out (A1).
+  String? get deviceToken;
+
   Future<bool> requestNotificationPermission();
 
   void endAuthenticatedSession();
@@ -84,8 +87,10 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
   FirebasePushDeviceRegistrar({
     required PushMessagingTokenSource tokenSource,
     required PushDeviceRegistrationApiGateway apiGateway,
+    InstallationIdStore? installationIdStore,
   }) : _tokenSource = tokenSource,
-       _apiGateway = apiGateway;
+       _apiGateway = apiGateway,
+       _installationIdStore = installationIdStore;
 
   factory FirebasePushDeviceRegistrar.withDefaultClient({
     required AuthTokenStore tokenStore,
@@ -99,11 +104,17 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
           tokenProvider: _PushDeviceTokenProvider(tokenStore),
         ),
       ),
+      installationIdStore: SecureInstallationIdStore(),
     );
   }
 
   final PushMessagingTokenSource _tokenSource;
   final PushDeviceRegistrationApiGateway _apiGateway;
+  final InstallationIdStore? _installationIdStore;
+  String? _deviceToken;
+
+  @override
+  String? get deviceToken => _deviceToken;
 
   StreamSubscription<String>? _tokenRefreshSubscription;
   bool _authenticated = false;
@@ -156,6 +167,16 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
     _tokenRefreshSubscription = null;
   }
 
+  /// This install's id (A2), or null when it cannot be read: registration
+  /// then goes ahead without it, as older builds do.
+  Future<String?> _installationId() async {
+    try {
+      return await _installationIdStore?.readOrCreate();
+    } on Object {
+      return null;
+    }
+  }
+
   Future<bool> _registerTokenSafely(String? rawToken) async {
     if (!_authenticated || _disposed) {
       return false;
@@ -166,10 +187,16 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
       return false;
     }
 
+    _deviceToken = token;
+    final installationId = await _installationId();
     try {
       final response = await _apiGateway.post(
         pushDeviceRegistrationPath,
-        data: <String, Object?>{'device_token': token, 'platform': 'android'},
+        data: <String, Object?>{
+          'device_token': token,
+          'platform': 'android',
+          'installation_id': ?installationId,
+        },
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
