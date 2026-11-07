@@ -684,12 +684,16 @@ class AuthService {
     AuthTokenStore? tokenStore,
     AuthAppContext? appContext,
     AuthRefreshRetry? refreshRetry,
+    PendingSignOutStore? pendingSignOutStore,
+    InstallationIdStore? installationIdStore,
   }) {
     return AuthService(
       apiGateway: AsmAuthApiGateway(client),
       tokenStore: tokenStore ?? SecureAuthTokenStore(),
       appContext: appContext,
       refreshRetry: refreshRetry,
+      pendingSignOutStore: pendingSignOutStore ?? SecurePendingSignOutStore(),
+      installationIdStore: installationIdStore ?? SecureInstallationIdStore(),
     );
   }
 

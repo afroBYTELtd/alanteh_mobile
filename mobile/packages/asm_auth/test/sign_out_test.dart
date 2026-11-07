@@ -559,6 +559,31 @@ void main() {
     });
   });
 
+  group('withApiClient (what both apps use)', () {
+    test('keeps pending sign-outs and the id in secure storage', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      final tokens = MemoryAuthTokenStore();
+      await tokens.saveTokens(
+        AuthTokens(accessToken: 'access-1', refreshToken: 'refresh-1'),
+      );
+      final service = AuthService.withApiClient(
+        client: AsmApiClient(baseUrl: 'https://sign-out-test.alanteh.invalid'),
+        tokenStore: tokens,
+      );
+
+      final result = await service.signOut(deviceToken: 'fcm-1');
+      final kept = await SecurePendingSignOutStore().read();
+
+      expect(result.outcome, SignOutOutcome.signedOutPending);
+      expect(kept.single.refresh, 'refresh-1');
+      expect(kept.single.deviceToken, 'fcm-1');
+      expect(
+        kept.single.installationId,
+        await SecureInstallationIdStore().readOrCreate(),
+      );
+    });
+  });
+
   group('installation id', () {
     test(
       'made once, random, at most 64 characters, kept across sign-outs',
