@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:driver_app/notifications/push_device_registration.dart';
 
@@ -273,15 +273,29 @@ void main() {
       await tokens.dispose();
     });
 
-    test('the default registrar keeps the id in secure storage', () {
-      final source = File(
-        'lib/notifications/push_device_registration.dart',
-      ).readAsStringSync();
-
-      expect(
-        source,
-        contains('installationIdStore: SecureInstallationIdStore()'),
+    // Lead, 7 Nov (3d): built the way production builds it (no id store
+    // passed), with secure storage holding a known id: the request carries
+    // that id. Only the token source and the gateway are swapped, because
+    // the default ones need Firebase and the network.
+    test('the default registrar sends the id kept in secure storage', () async {
+      const knownId = '0123456789abcdef0123456789abcdef';
+      FlutterSecureStorage.setMockInitialValues(<String, String>{
+        SecureInstallationIdStore.key: knownId,
+      });
+      final tokens = _FakeTokenSource(initialToken: 'FCM-1');
+      final gateway = _RecordingGateway();
+      final registrar = FirebasePushDeviceRegistrar.withDefaultClient(
+        tokenStore: MemoryAuthTokenStore(),
+        baseUrl: 'https://push-test.alanteh.invalid',
+        tokenSource: tokens,
+        apiGateway: gateway,
       );
+
+      expect(await registrar.registerForAuthenticatedSession(), isTrue);
+      expect(gateway.bodies.single['installation_id'], knownId);
+
+      await registrar.dispose();
+      await tokens.dispose();
     });
   });
 }

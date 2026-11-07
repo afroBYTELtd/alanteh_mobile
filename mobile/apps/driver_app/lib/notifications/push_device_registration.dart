@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 const String pushDeviceRegistrationPath = '/api/push/devices/';
 
@@ -92,18 +93,25 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
        _apiGateway = apiGateway,
        _installationIdStore = installationIdStore;
 
+  /// What the apps use. [tokenSource] and [apiGateway] are for tests only
+  /// (the defaults need Firebase and the network); the installation id
+  /// store is always the secure one.
   factory FirebasePushDeviceRegistrar.withDefaultClient({
     required AuthTokenStore tokenStore,
     required String baseUrl,
+    @visibleForTesting PushMessagingTokenSource? tokenSource,
+    @visibleForTesting PushDeviceRegistrationApiGateway? apiGateway,
   }) {
     return FirebasePushDeviceRegistrar(
-      tokenSource: FirebasePushMessagingTokenSource(),
-      apiGateway: AsmPushDeviceRegistrationApiGateway(
-        AsmApiClient(
-          baseUrl: baseUrl,
-          tokenProvider: _PushDeviceTokenProvider(tokenStore),
-        ),
-      ),
+      tokenSource: tokenSource ?? FirebasePushMessagingTokenSource(),
+      apiGateway:
+          apiGateway ??
+          AsmPushDeviceRegistrationApiGateway(
+            AsmApiClient(
+              baseUrl: baseUrl,
+              tokenProvider: _PushDeviceTokenProvider(tokenStore),
+            ),
+          ),
       installationIdStore: SecureInstallationIdStore(),
     );
   }
