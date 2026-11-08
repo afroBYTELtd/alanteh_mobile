@@ -513,6 +513,7 @@ final class ApiDriverOfferResponseGateway
 
     final accessToken = await _accessTokenForSubmission(
       telemetrySink: telemetrySink,
+      unavailableMessage: driverOfferAcceptanceFailureMessage,
     );
 
     final firstResponse = await _postWithBoundedRetry(
@@ -534,6 +535,7 @@ final class ApiDriverOfferResponseGateway
     if (firstResponse.statusCode == 401) {
       final refreshedAccessToken = await _refreshAccessTokenForSubmission(
         telemetrySink: telemetrySink,
+        unavailableMessage: driverOfferAcceptanceFailureMessage,
       );
 
       final retryResponse = await _postWithBoundedRetry(
@@ -597,6 +599,7 @@ final class ApiDriverOfferResponseGateway
 
     final accessToken = await _accessTokenForSubmission(
       telemetrySink: telemetrySink,
+      unavailableMessage: driverOfferDeclineFailureMessage,
     );
     final extraFields = <String, Object?>{
       'reason': reason.code,
@@ -628,6 +631,7 @@ final class ApiDriverOfferResponseGateway
     if (firstResponse.statusCode == 401) {
       final refreshedAccessToken = await _refreshAccessTokenForSubmission(
         telemetrySink: telemetrySink,
+        unavailableMessage: driverOfferDeclineFailureMessage,
       );
 
       final retryResponse = await _postWithBoundedRetry(
@@ -666,6 +670,7 @@ final class ApiDriverOfferResponseGateway
   }
 
   Future<String> _accessTokenForSubmission({
+    required String unavailableMessage,
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     try {
@@ -681,12 +686,17 @@ final class ApiDriverOfferResponseGateway
       );
 
       return resolution.accessToken;
-    } on DriverAccessTokenRefreshException {
-      _throwTokenRefreshFailed(telemetrySink);
+    } on DriverAccessTokenRefreshException catch (error) {
+      _throwTokenRefreshFailed(
+        telemetrySink,
+        refused: error.refused,
+        unavailableMessage: unavailableMessage,
+      );
     }
   }
 
   Future<String> _refreshAccessTokenForSubmission({
+    required String unavailableMessage,
     DriverOfferSubmissionTelemetrySink? telemetrySink,
   }) async {
     try {
@@ -700,14 +710,23 @@ final class ApiDriverOfferResponseGateway
       );
 
       return resolution.accessToken;
-    } on DriverAccessTokenRefreshException {
-      _throwTokenRefreshFailed(telemetrySink);
+    } on DriverAccessTokenRefreshException catch (error) {
+      _throwTokenRefreshFailed(
+        telemetrySink,
+        refused: error.refused,
+        unavailableMessage: unavailableMessage,
+      );
     }
   }
 
+  /// Only a refused refresh ends the session (signInRequired); one that
+  /// could not be done just now is retryable, and the driver stays signed
+  /// in (F-C).
   Never _throwTokenRefreshFailed(
-    DriverOfferSubmissionTelemetrySink? telemetrySink,
-  ) {
+    DriverOfferSubmissionTelemetrySink? telemetrySink, {
+    required bool refused,
+    required String unavailableMessage,
+  }) {
     emitDriverOfferSubmissionTelemetry(
       telemetrySink,
       const DriverOfferSubmissionTelemetryEvent.tokenCheck(
@@ -715,6 +734,12 @@ final class ApiDriverOfferResponseGateway
       ),
     );
 
+    if (!refused) {
+      throw DriverOfferResponseException(
+        type: DriverOfferResponseFailureType.temporarilyUnavailable,
+        message: unavailableMessage,
+      );
+    }
     throw const DriverOfferResponseException(
       type: DriverOfferResponseFailureType.signInRequired,
       message: driverOfferSessionExpiredMessage,

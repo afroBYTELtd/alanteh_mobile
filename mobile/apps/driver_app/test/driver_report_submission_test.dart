@@ -271,6 +271,52 @@ void main() {
     expect(api.getCalls, 2);
   });
 
+  // F-C (lead, 8 Nov): only a refused refresh asks the driver to sign in;
+  // a refresh that could not be done just now is a retryable failure.
+  for (final (outcome, type, message) in const [
+    (
+      DriverTokenRefreshOutcome.temporarilyUnavailable,
+      DriverReportFailureType.temporarilyUnavailable,
+      'Your report could not be sent. Check your connection and retry.',
+    ),
+    (
+      DriverTokenRefreshOutcome.sessionExpired,
+      DriverReportFailureType.signInRequired,
+      'Please sign in again to send your report.',
+    ),
+  ]) {
+    test('F-C: a refresh that answers $outcome before the report', () async {
+      final tokenStore = MemoryAuthTokenStore();
+      await tokenStore.saveTokens(
+        AuthTokens(
+          accessToken: _jwtExpiringAt(DateTime.utc(2000)),
+          refreshToken: 'synthetic-driver-report-refresh',
+        ),
+      );
+      final api = _UnauthorizedThenSuccessDriverReportApi();
+      final gateway = ApiDriverReportGateway(
+        apiGateway: api,
+        tokenStore: tokenStore,
+        retryPolicy: GhanaRetryPolicy(delay: (_) async {}),
+        refreshAccessToken: () async => outcome,
+      );
+
+      await expectLater(
+        gateway.submit(
+          category: 'Vehicle concern',
+          description: 'Mirror vibration noted',
+          urgency: 'urgent',
+        ),
+        throwsA(
+          isA<DriverReportException>()
+              .having((error) => error.type, 'type', type)
+              .having((error) => error.message, 'message', message),
+        ),
+      );
+      expect(api.postCalls, 0);
+    });
+  }
+
   test('401 refreshes once and retries the report once', () async {
     final initialAccessToken = _jwtExpiringAt(DateTime.utc(2100));
     final refreshedAccessToken = _jwtExpiringAt(DateTime.utc(2101));

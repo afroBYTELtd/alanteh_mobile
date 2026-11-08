@@ -83,6 +83,9 @@ final class DriverReportReceipt {
   }
 }
 
+const _reportUnavailableMessage =
+    'Your report could not be sent. Check your connection and retry.';
+
 enum DriverReportFailureType {
   signInRequired,
   clientFailure,
@@ -232,17 +235,13 @@ final class ApiDriverReportGateway implements DriverReportGateway {
       }
       throw _exceptionFromResponse(
         retryResponse,
-        fallbackMessage:
-            'Your report could not be sent. '
-            'Check your connection and retry.',
+        fallbackMessage: _reportUnavailableMessage,
       );
     }
 
     throw _exceptionFromResponse(
       firstResponse,
-      fallbackMessage:
-          'Your report could not be sent. '
-          'Check your connection and retry.',
+      fallbackMessage: _reportUnavailableMessage,
     );
   }
 
@@ -255,7 +254,14 @@ final class ApiDriverReportGateway implements DriverReportGateway {
     try {
       final resolution = await _tokenGuard.resolve(forceRefresh: forceRefresh);
       return resolution.accessToken;
-    } on DriverAccessTokenRefreshException {
+    } on DriverAccessTokenRefreshException catch (error) {
+      // Only a refused refresh asks the driver to sign in (F-C).
+      if (!error.refused) {
+        throw const DriverReportException(
+          type: DriverReportFailureType.temporarilyUnavailable,
+          message: _reportUnavailableMessage,
+        );
+      }
       throw const DriverReportException(
         type: DriverReportFailureType.signInRequired,
         message: 'Please sign in again to send your report.',

@@ -17,7 +17,14 @@ final class DriverAccessTokenResolution {
 }
 
 final class DriverAccessTokenRefreshException implements Exception {
-  const DriverAccessTokenRefreshException();
+  const DriverAccessTokenRefreshException({this.refused = true});
+
+  /// True when the session cannot be refreshed at all: the server refused
+  /// it, or there is no refresh to ask. False when the refresh could not
+  /// be done just now (no network, a 5xx, a 429, a reply the app cannot
+  /// use): the session may still be good, so this is no reason to sign
+  /// the driver out (F-C).
+  final bool refused;
 }
 
 final class DriverAccessTokenRefreshGuard {
@@ -63,11 +70,16 @@ final class DriverAccessTokenRefreshGuard {
     try {
       outcome = await refresh();
     } on Object {
-      throw const DriverAccessTokenRefreshException();
+      throw const DriverAccessTokenRefreshException(refused: false);
     }
 
-    if (outcome != DriverTokenRefreshOutcome.refreshed) {
-      throw const DriverAccessTokenRefreshException();
+    switch (outcome) {
+      case DriverTokenRefreshOutcome.refreshed:
+        break;
+      case DriverTokenRefreshOutcome.temporarilyUnavailable:
+        throw const DriverAccessTokenRefreshException(refused: false);
+      case DriverTokenRefreshOutcome.sessionExpired:
+        throw const DriverAccessTokenRefreshException();
     }
 
     final refreshedAccessToken = await _readAccessToken();

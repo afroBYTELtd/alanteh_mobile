@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
@@ -8,7 +9,9 @@ import 'package:driver_app/driver_home.dart';
 import 'package:driver_app/main.dart';
 import 'package:driver_app/network/driver_offer_response_gateway.dart';
 import 'package:driver_app/network/driver_offer_response_resilience.dart';
+import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/network/driver_trip_action_resilience.dart';
+import 'package:driver_app/network/ghana_network_resilience.dart';
 import 'package:driver_app/notifications/push_notification_runtime.dart';
 import 'package:driver_app/offers/driver_offer_coordinator.dart';
 import 'package:driver_app/offers/driver_offer_layer.dart';
@@ -244,6 +247,58 @@ void main() {
     expect(app.offerGateway.accepts, 1);
     expect(find.byType(DriverTripDetailScreen), findsOneWidget);
     expect(find.byKey(const Key('offer-screen')), findsNothing);
+    await app.dispose(tester);
+  });
+
+  testWidgets('F-C: Accept while the refresh cannot be done just now keeps '
+      'the driver signed in with a retryable message; Accept again goes '
+      'through', (tester) async {
+    final api = _CountingOfferApi();
+    var refreshes = 0;
+    var answer = DriverTokenRefreshOutcome.temporarilyUnavailable;
+    late final _App app;
+    app = _App(
+      realGateway: (tokenStore) => ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: tokenStore,
+        retryPolicy: const GhanaRetryPolicy(backoffs: <Duration>[]),
+        // The signed-in access token is not a JWT, so the guard refreshes
+        // before the first answer, as for a token about to run out.
+        refreshAccessToken: () async {
+          refreshes += 1;
+          if (answer == DriverTokenRefreshOutcome.refreshed) {
+            await tokenStore.saveTokens(
+              AuthTokens(
+                accessToken: _jwtExpiringIn(const Duration(hours: 1)),
+                refreshToken: 'driver-refresh',
+              ),
+            );
+          }
+          return answer;
+        },
+      ),
+    )..source.offers = [_offer('TRIP-1')];
+    await app.pumpSignedIn(tester);
+    app.push.emitOpened(_offerMessage('TRIP-1'));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await _settle(tester);
+
+    expect(refreshes, 1);
+    expect(api.posts, 0, reason: 'no answer is sent without a good token');
+    expect(find.byKey(const Key('driver-sign-in')), findsNothing);
+    expect(await app.tokenStore.readRefreshToken(), isNotNull);
+    expect(find.text(driverOfferAcceptanceFailureMessage), findsOneWidget);
+    expect(find.byKey(const Key('offer-card')), findsOneWidget);
+
+    answer = DriverTokenRefreshOutcome.refreshed;
+    await tester.tap(find.byKey(const Key('offer-card-accept')));
+    await _settle(tester);
+
+    expect(refreshes, 2);
+    expect(api.posts, 1);
+    expect(find.byType(DriverTripDetailScreen), findsOneWidget);
     await app.dispose(tester);
   });
 
@@ -1532,8 +1587,15 @@ Map<String, Object?> _offer(
 };
 
 final class _App {
-  _App({RemoteMessage? initial, bool holdInitial = false})
+  _App({RemoteMessage? initial, bool holdInitial = false, this.realGateway})
     : push = _PushSource(initial, holdInitial: holdInitial);
+
+  /// When set, the card answers through this gateway (built on the app's
+  /// own token store) instead of the fake.
+  final DriverOfferResponseGateway Function(AuthTokenStore tokenStore)?
+  realGateway;
+  late final DriverOfferResponseGateway _cardGateway =
+      realGateway?.call(tokenStore) ?? offerGateway;
 
   final _PushSource push;
   final clock = _ManualClock();
@@ -1572,7 +1634,7 @@ final class _App {
           unknownOffers.add(unknownOffer);
           return DriverOfferResponseResilienceController(
             queue: queue,
-            gateway: offerGateway,
+            gateway: _cardGateway,
             tripReference: reference,
             driverId: 'DRV-1',
             assignedAt: assignedAt,
@@ -1906,4 +1968,35 @@ final class _PushSource implements DriverPushMessageSource {
     await _foreground.close();
     await _opened.close();
   }
+}
+
+/// The offer endpoint: every answer is accepted.
+final class _CountingOfferApi implements DriverOfferResponseApiGateway {
+  var posts = 0;
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) async {
+    posts += 1;
+    return ApiResponse<T>.success(
+      const DriverOfferResponseReceipt(
+            tripReference: 'TRIP-1',
+            tripStatus: 'driver_accepted',
+            duplicate: false,
+          )
+          as T,
+      statusCode: 201,
+    );
+  }
+}
+
+String _jwtExpiringIn(Duration life) {
+  String part(Map<String, Object?> json) =>
+      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+  final exp = DateTime.now().toUtc().add(life).millisecondsSinceEpoch ~/ 1000;
+  return '${part({'alg': 'none'})}.${part({'exp': exp})}.signature';
 }

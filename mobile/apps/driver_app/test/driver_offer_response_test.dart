@@ -1020,17 +1020,19 @@ void main() {
           deviceTimestamp: '2026-07-25T05:04:00.000Z',
           telemetrySink: events.add,
         ),
+        // F-C (lead, 8 Nov): a refresh that could not be done just now (no
+        // network) is not a sign-out; only a refused refresh is.
         throwsA(
           isA<DriverOfferResponseException>()
               .having(
                 (error) => error.type,
                 'type',
-                DriverOfferResponseFailureType.signInRequired,
+                DriverOfferResponseFailureType.temporarilyUnavailable,
               )
               .having(
                 (error) => error.message,
                 'message',
-                driverOfferSessionExpiredMessage,
+                driverOfferAcceptanceFailureMessage,
               ),
         ),
       );
@@ -1039,6 +1041,137 @@ void main() {
       expect(_telemetryTexts(events), <String>[
         'TOKEN_CHECK: TOKEN_REFRESH_FAILED',
       ]);
+    });
+
+    // F-C: the refresh answered "not now" (a 5xx, a 429, a reply the app
+    // cannot use): the driver stays signed in and may try again.
+    for (final answer in <String>['accept', 'decline']) {
+      test('F-C $answer: a refresh that is temporarily unavailable is a '
+          'retryable failure, not a sign-out', () async {
+        final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+        final api = _RecordingOfferApi(
+          responses: <ApiResponse<DriverOfferResponseReceipt>>[
+            _offerSuccess(statusCode: 201),
+          ],
+        );
+        final gateway = ApiDriverOfferResponseGateway(
+          apiGateway: api,
+          tokenStore: store,
+          utcNow: () => now,
+          refreshAccessToken: () async =>
+              DriverTokenRefreshOutcome.temporarilyUnavailable,
+        );
+
+        final call = answer == 'accept'
+            ? gateway.accept(
+                tripReference: 'TRIP-REFRESH-NOT-NOW',
+                idempotencyKey: 'DRIVER-OFFER-TRIP-REFRESH-NOT-NOW-stable',
+                deviceTimestamp: '2026-07-25T05:05:00.000Z',
+              )
+            : gateway.decline(
+                tripReference: 'TRIP-REFRESH-NOT-NOW',
+                idempotencyKey: 'DRIVER-DECLINE-TRIP-REFRESH-NOT-NOW-stable',
+                deviceTimestamp: '2026-07-25T05:05:00.000Z',
+                reason: DriverDeclineReason.endOfShift,
+              );
+        await expectLater(
+          call,
+          throwsA(
+            isA<DriverOfferResponseException>()
+                .having(
+                  (error) => error.type,
+                  'type',
+                  DriverOfferResponseFailureType.temporarilyUnavailable,
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  answer == 'accept'
+                      ? driverOfferAcceptanceFailureMessage
+                      : driverOfferDeclineFailureMessage,
+                ),
+          ),
+        );
+        expect(api.paths, isEmpty);
+        expect(await store.readRefreshToken(), 'driver-refresh');
+      });
+    }
+
+    test('F-C: a refused refresh after a 401 is still a sign-out', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          ApiResponse<DriverOfferResponseReceipt>.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.authentication,
+              message: 'expired',
+              statusCode: 401,
+            ),
+          ),
+        ],
+      );
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async =>
+            DriverTokenRefreshOutcome.sessionExpired,
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-401-REFUSED',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-401-REFUSED-stable',
+          deviceTimestamp: '2026-07-25T05:06:00.000Z',
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>().having(
+            (error) => error.type,
+            'type',
+            DriverOfferResponseFailureType.signInRequired,
+          ),
+        ),
+      );
+      expect(api.paths, hasLength(1));
+    });
+
+    test('F-C: a 401, then a refresh that is temporarily unavailable, is a '
+        'retryable failure', () async {
+      final store = await _tokenStore();
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          ApiResponse<DriverOfferResponseReceipt>.apiFailure(
+            const AsmApiException(
+              type: AsmApiExceptionType.authentication,
+              message: 'expired',
+              statusCode: 401,
+            ),
+          ),
+        ],
+      );
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async =>
+            DriverTokenRefreshOutcome.temporarilyUnavailable,
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-401-NOT-NOW',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-401-NOT-NOW-stable',
+          deviceTimestamp: '2026-07-25T05:07:00.000Z',
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>().having(
+            (error) => error.type,
+            'type',
+            DriverOfferResponseFailureType.temporarilyUnavailable,
+          ),
+        ),
+      );
+      expect(api.paths, hasLength(1));
     });
 
     test('test_persistent_record_preserved_after_refresh_failure', () async {
