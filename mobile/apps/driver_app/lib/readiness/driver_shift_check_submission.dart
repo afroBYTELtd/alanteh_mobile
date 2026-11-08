@@ -223,21 +223,42 @@ final class ApiDriverShiftCheckGateway implements DriverShiftCheckGateway {
 
     _forceRefreshBeforeNextPost = false;
 
-    final response = await client.post<Object?>(
+    var response = await _post(body, idempotencyKey, resolution.accessToken);
+    if (response.statusCode != 401) {
+      return response;
+    }
+
+    // T1: refresh once and ask again at once, with the same body and key,
+    // so a check made now gets the server's own answer (a stale check its
+    // phone-clock message) instead of being saved for later.
+    final DriverAccessTokenResolution refreshed;
+    try {
+      refreshed = await _tokenGuard.resolve(forceRefresh: true);
+    } on DriverAccessTokenRefreshException {
+      _forceRefreshBeforeNextPost = true;
+      return response;
+    }
+    response = await _post(body, idempotencyKey, refreshed.accessToken);
+    if (response.statusCode == 401) {
+      _forceRefreshBeforeNextPost = true;
+    }
+    return response;
+  }
+
+  Future<ApiResponse<Object?>> _post(
+    Map<String, Object?> body,
+    String idempotencyKey,
+    String accessToken,
+  ) {
+    return client.post<Object?>(
       driverShiftCheckPath,
       data: body,
       headers: <String, String>{
-        'Authorization': 'Bearer ${resolution.accessToken}',
+        'Authorization': 'Bearer $accessToken',
         'Content-Type': 'application/json',
         'Idempotency-Key': idempotencyKey,
       },
     );
-
-    if (response.statusCode == 401) {
-      _forceRefreshBeforeNextPost = true;
-    }
-
-    return response;
   }
 }
 

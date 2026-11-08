@@ -597,7 +597,9 @@ void main() {
     expect(apiClient.headers.last['Authorization'], 'Bearer $refreshedToken');
   });
 
-  test('test_401_response_schedules_retry_with_token_refresh', () async {
+  // T1 (lead, 8 Nov): a 401 on the direct submit now refreshes and posts
+  // again at once, instead of saving the check for a later retry.
+  test('test_401_response_refreshes_and_posts_again_at_once', () async {
     final now = DateTime.utc(2026, 8, 5, 7, 30);
     final initialToken = _jwtWithExpiry(now.add(const Duration(hours: 1)));
     final refreshedToken = _jwtWithExpiry(now.add(const Duration(hours: 2)));
@@ -637,22 +639,132 @@ void main() {
       _testShiftCheckSubmission(DateTime(2026, 8, 5, 7, 30)),
     );
 
-    expect(result.queued, isTrue);
-    expect(apiClient.callCount, 1);
-    expect(refreshCalls, 0);
-    expect(retryDelay.scheduled, <Duration>[const Duration(seconds: 2)]);
-
-    retryDelay.completeNext();
-    await _flushAsyncWork();
-
+    expect(result.submitted, isTrue);
     expect(apiClient.callCount, 2);
     expect(refreshCalls, 1);
     expect(apiClient.headers, hasLength(2));
     expect(apiClient.headers.first['Authorization'], 'Bearer $initialToken');
     expect(apiClient.headers.last['Authorization'], 'Bearer $refreshedToken');
+    expect(
+      apiClient.headers.last['Idempotency-Key'],
+      apiClient.headers.first['Idempotency-Key'],
+    );
     expect(queue.syncedIds, <String>[result.event.id]);
     expect(await queue.pendingEvents(), isEmpty);
-    expect(retryDelay.scheduled, <Duration>[const Duration(seconds: 2)]);
+    expect(retryDelay.scheduled, isEmpty);
+  });
+
+  group('T1 a 401 on the direct submit', () {
+    final now = DateTime.utc(2026, 8, 5, 8);
+    final initialToken = _jwtWithExpiry(now.add(const Duration(hours: 1)));
+    final refreshedToken = _jwtWithExpiry(now.add(const Duration(hours: 2)));
+    ApiResponse<Object?> unauthorized() => ApiResponse<Object?>.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.authentication,
+        message: 'Unauthenticated.',
+        statusCode: 401,
+      ),
+    );
+
+    test('then 409 shift_check_stale: stale at once (the phone-clock '
+        'dialog), not saved', () async {
+      final tokenStore = _StaticAuthTokenStore(initialToken);
+      final apiClient = _ScriptedShiftCheckApiClient(<ApiResponse<Object?>>[
+        unauthorized(),
+        ApiResponse<Object?>.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.badResponse,
+            message: 'Stale.',
+            statusCode: 409,
+            cause: <String, Object?>{'code': 'shift_check_stale'},
+          ),
+        ),
+      ]);
+      final queue = _MemoryShiftCheckQueue();
+      final controller = DriverShiftCheckSubmissionController(
+        queue: queue,
+        gateway: ApiDriverShiftCheckGateway(
+          client: apiClient,
+          tokenStore: tokenStore,
+          refreshAccessToken: () async {
+            tokenStore.setAccessToken(refreshedToken);
+            return DriverTokenRefreshOutcome.refreshed;
+          },
+          utcNow: () => now,
+        ),
+        isOnline: () async => true,
+        retryDelay: (_) => Completer<void>().future,
+      );
+
+      final result = await controller.submit(
+        _testShiftCheckSubmission(DateTime(2026, 8, 5, 8)),
+      );
+
+      expect(result.stale, isTrue);
+      expect(result.queued, isFalse);
+      expect(apiClient.callCount, 2);
+      expect(apiClient.headers.last['Authorization'], 'Bearer $refreshedToken');
+      expect(await queue.pendingEvents(), isEmpty);
+    });
+
+    test('and a refresh that is refused: saved, as before, after one '
+        'post', () async {
+      final tokenStore = _StaticAuthTokenStore(initialToken);
+      final apiClient = _ScriptedShiftCheckApiClient(<ApiResponse<Object?>>[
+        unauthorized(),
+      ]);
+      final controller = DriverShiftCheckSubmissionController(
+        queue: _MemoryShiftCheckQueue(),
+        gateway: ApiDriverShiftCheckGateway(
+          client: apiClient,
+          tokenStore: tokenStore,
+          refreshAccessToken: () async =>
+              DriverTokenRefreshOutcome.sessionExpired,
+          utcNow: () => now,
+        ),
+        isOnline: () async => true,
+        retryDelay: (_) => Completer<void>().future,
+      );
+
+      final result = await controller.submit(
+        _testShiftCheckSubmission(DateTime(2026, 8, 5, 8)),
+      );
+
+      expect(result.queued, isTrue);
+      expect(apiClient.callCount, 1);
+    });
+
+    test('twice: exactly two posts, then saved', () async {
+      final tokenStore = _StaticAuthTokenStore(initialToken);
+      final apiClient = _ScriptedShiftCheckApiClient(<ApiResponse<Object?>>[
+        unauthorized(),
+        unauthorized(),
+        ApiResponse<Object?>.success(<String, Object?>{
+          'ok': true,
+        }, statusCode: 201),
+      ]);
+      final controller = DriverShiftCheckSubmissionController(
+        queue: _MemoryShiftCheckQueue(),
+        gateway: ApiDriverShiftCheckGateway(
+          client: apiClient,
+          tokenStore: tokenStore,
+          refreshAccessToken: () async {
+            tokenStore.setAccessToken(refreshedToken);
+            return DriverTokenRefreshOutcome.refreshed;
+          },
+          utcNow: () => now,
+        ),
+        isOnline: () async => true,
+        retryDelay: (_) => Completer<void>().future,
+      );
+
+      final result = await controller.submit(
+        _testShiftCheckSubmission(DateTime(2026, 8, 5, 8)),
+      );
+
+      expect(result.queued, isTrue);
+      expect(apiClient.callCount, 2);
+    });
   });
 
   testWidgets('test_refresh_failure_queues_item_and_shows_queued_state', (
