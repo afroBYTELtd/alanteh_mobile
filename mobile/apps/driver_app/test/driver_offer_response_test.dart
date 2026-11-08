@@ -1135,6 +1135,74 @@ void main() {
       expect(api.paths, hasLength(1));
     });
 
+    // F-C: the two other ways a refresh is refused, not "not now".
+    test('F-C: with no refresh to ask, a stale token is a sign-out', () async {
+      final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-NO-REFRESH',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-NO-REFRESH-stable',
+          deviceTimestamp: '2026-07-25T05:08:00.000Z',
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>().having(
+            (error) => error.type,
+            'type',
+            DriverOfferResponseFailureType.signInRequired,
+          ),
+        ),
+      );
+      expect(api.paths, isEmpty);
+    });
+
+    test('F-C: a "refreshed" answer that leaves no token stored is a '
+        'sign-out', () async {
+      final store = await _tokenStore(accessToken: _jwtExpiringAt(now));
+      final api = _RecordingOfferApi(
+        responses: <ApiResponse<DriverOfferResponseReceipt>>[
+          _offerSuccess(statusCode: 201),
+        ],
+      );
+      final gateway = ApiDriverOfferResponseGateway(
+        apiGateway: api,
+        tokenStore: store,
+        utcNow: () => now,
+        refreshAccessToken: () async {
+          // Signed out meanwhile: the refresh is answered, but the
+          // session it was for is gone.
+          await store.clearTokens();
+          return DriverTokenRefreshOutcome.refreshed;
+        },
+      );
+
+      await expectLater(
+        gateway.accept(
+          tripReference: 'TRIP-REFRESHED-NO-TOKEN',
+          idempotencyKey: 'DRIVER-OFFER-TRIP-REFRESHED-NO-TOKEN-stable',
+          deviceTimestamp: '2026-07-25T05:09:00.000Z',
+        ),
+        throwsA(
+          isA<DriverOfferResponseException>().having(
+            (error) => error.type,
+            'type',
+            DriverOfferResponseFailureType.signInRequired,
+          ),
+        ),
+      );
+      expect(api.paths, isEmpty);
+    });
+
     test('F-C: a 401, then a refresh that is temporarily unavailable, is a '
         'retryable failure', () async {
       final store = await _tokenStore();
