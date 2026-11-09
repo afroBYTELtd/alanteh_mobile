@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:driver_app/notifications/push_device_registration.dart';
@@ -371,6 +373,44 @@ void main() {
       );
     });
 
+    // Lead, 9 Nov (2a): with the real client and the real token provider,
+    // the post after the refresh carries the new access token: the
+    // provider reads the store at each request.
+    test('the real client sends the refreshed access token', () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      final store = MemoryAuthTokenStore();
+      await store.saveTokens(
+        AuthTokens(accessToken: 'old-access', refreshToken: 'refresh'),
+      );
+      final adapter = _ScriptedAdapter(<int>[401, 201]);
+      final tokens = _FakeTokenSource(initialToken: 'FCM-REAL');
+      final registrar = FirebasePushDeviceRegistrar.withDefaultClient(
+        tokenStore: store,
+        baseUrl: 'https://push-test.alanteh.invalid',
+        tokenSource: tokens,
+        clientFor: (provider) => AsmApiClient(
+          baseUrl: 'https://push-test.alanteh.invalid',
+          tokenProvider: provider,
+          dio: Dio()..httpClientAdapter = adapter,
+        ),
+        refreshSession: () async {
+          await store.saveTokens(
+            AuthTokens(accessToken: 'new-access', refreshToken: 'refresh'),
+          );
+          return true;
+        },
+      );
+
+      expect(await registrar.registerForAuthenticatedSession(), isTrue);
+      expect(adapter.authorizations, <String?>[
+        'Bearer old-access',
+        'Bearer new-access',
+      ]);
+
+      await registrar.dispose();
+      await tokens.dispose();
+    });
+
     test('with no refresh to ask: false after one post', () async {
       expect(await register([unauthorized(), _registered()]), (false, 1, 0));
     });
@@ -485,4 +525,35 @@ final class _ScriptedGateway implements PushDeviceRegistrationApiGateway {
     String path, {
     required Map<String, Object?> data,
   }) async => answers[posts++];
+}
+
+/// Answers each request with the next status and records the bearer sent.
+final class _ScriptedAdapter implements HttpClientAdapter {
+  _ScriptedAdapter(this.statuses);
+
+  final List<int> statuses;
+  final authorizations = <String?>[];
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    authorizations.add(options.headers['Authorization'] as String?);
+    final status = statuses[authorizations.length - 1];
+    return ResponseBody.fromString(
+      status == 401
+          ? '{"detail": "expired"}'
+          : '{"device_token_registered": true, "platform": "android", '
+                '"active": true}',
+      status,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
 }

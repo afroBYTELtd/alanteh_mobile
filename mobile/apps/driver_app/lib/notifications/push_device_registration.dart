@@ -110,16 +110,17 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
     PushSessionRefresh? refreshSession,
     @visibleForTesting PushMessagingTokenSource? tokenSource,
     @visibleForTesting PushDeviceRegistrationApiGateway? apiGateway,
+    @visibleForTesting
+    AsmApiClient Function(TokenProvider tokenProvider)? clientFor,
   }) {
+    final tokenProvider = _PushDeviceTokenProvider(tokenStore);
     return FirebasePushDeviceRegistrar(
       tokenSource: tokenSource ?? FirebasePushMessagingTokenSource(),
       apiGateway:
           apiGateway ??
           AsmPushDeviceRegistrationApiGateway(
-            AsmApiClient(
-              baseUrl: baseUrl,
-              tokenProvider: _PushDeviceTokenProvider(tokenStore),
-            ),
+            clientFor?.call(tokenProvider) ??
+                AsmApiClient(baseUrl: baseUrl, tokenProvider: tokenProvider),
           ),
       installationIdStore: SecureInstallationIdStore(),
       refreshSession: refreshSession,
