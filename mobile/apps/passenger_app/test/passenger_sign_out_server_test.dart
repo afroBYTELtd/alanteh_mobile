@@ -18,6 +18,7 @@ void main() {
   late _AuthApi api;
   late MemoryAuthTokenStore tokens;
   late MemoryPendingSignOutStore pending;
+  PushSessionRefresh? pushRefresh;
 
   setUp(() {
     api = _AuthApi();
@@ -35,7 +36,10 @@ void main() {
       pendingSignOutStore: pending,
       installationIdStore: MemoryInstallationIdStore('install-1'),
     ),
-    pushDeviceRegistrarFactory: (_) => _Registrar(),
+    pushDeviceRegistrarFactory: (_, {refreshSession}) {
+      pushRefresh = refreshSession;
+      return _Registrar();
+    },
     pushMessageSource: _NoPushes(),
   );
 
@@ -68,6 +72,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(button);
   }
+
+  // T2 (lead, 8 Nov): push registration refreshes through the app's own
+  // AuthService.
+  testWidgets('T2: the push registrar refreshes through the app\'s auth '
+      'service', (tester) async {
+    useSurface(tester);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await tokens.saveTokens(
+      AuthTokens(accessToken: 'old-access', refreshToken: 'passenger-refresh'),
+    );
+
+    expect(pushRefresh, isNotNull);
+    expect(await pushRefresh!(), isTrue);
+    expect(api.paths.where((p) => p == AuthService.refreshPath), hasLength(1));
+  });
 
   testWidgets('Sign out tells the server, then shows sign-in', (tester) async {
     useSurface(tester);
@@ -171,6 +191,7 @@ ApiResponse<Map<String, Object?>> _signedOut() => ApiResponse.success(
 );
 
 final class _AuthApi implements AuthApiGateway {
+  final paths = <String>[];
   final logouts = <Map<String, Object?>>[];
   Future<ApiResponse<Map<String, Object?>>> Function()? logoutAnswer;
 
@@ -179,6 +200,7 @@ final class _AuthApi implements AuthApiGateway {
     String path, {
     required Map<String, Object?> body,
   }) async {
+    paths.add(path);
     if (path == AuthService.logoutPath) {
       logouts.add(Map.of(body));
       return (logoutAnswer ?? () async => _signedOut())();

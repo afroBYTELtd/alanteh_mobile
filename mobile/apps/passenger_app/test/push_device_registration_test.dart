@@ -298,6 +298,83 @@ void main() {
       await tokens.dispose();
     });
   });
+  // T2 (lead, 8 Nov): a 401 refreshes the session once and registers once
+  // more; otherwise false, as before.
+  group('T2 a 401 on registration', () {
+    ApiResponse<Map<String, Object?>> unauthorized() =>
+        ApiResponse<Map<String, Object?>>.apiFailure(
+          const AsmApiException(
+            type: AsmApiExceptionType.authentication,
+            message: 'Unauthenticated.',
+            statusCode: 401,
+          ),
+        );
+
+    Future<(bool, int, int)> register(
+      List<ApiResponse<Map<String, Object?>>> answers, {
+      bool? refreshes,
+      bool refreshThrows = false,
+    }) async {
+      final tokens = _FakeTokenSource(initialToken: 'FCM-T2');
+      final gateway = _ScriptedGateway(answers);
+      var refreshCalls = 0;
+      final registrar = FirebasePushDeviceRegistrar(
+        tokenSource: tokens,
+        apiGateway: gateway,
+        refreshSession: refreshes == null && !refreshThrows
+            ? null
+            : () async {
+                refreshCalls += 1;
+                if (refreshThrows) {
+                  throw StateError('no network');
+                }
+                return refreshes!;
+              },
+      );
+      final result = await registrar.registerForAuthenticatedSession();
+      await registrar.dispose();
+      await tokens.dispose();
+      return (result, gateway.posts, refreshCalls);
+    }
+
+    test('then a refresh that works: registered, two posts', () async {
+      expect(await register([unauthorized(), _registered()], refreshes: true), (
+        true,
+        2,
+        1,
+      ));
+    });
+
+    test('then a refused refresh: false after one post', () async {
+      expect(
+        await register([unauthorized(), _registered()], refreshes: false),
+        (false, 1, 1),
+      );
+    });
+
+    test('then a refresh that throws: false after one post', () async {
+      expect(
+        await register([unauthorized(), _registered()], refreshThrows: true),
+        (false, 1, 1),
+      );
+    });
+
+    test('T2d: a refresh that works, then 401 again: false, exactly two '
+        'posts', () async {
+      expect(
+        await register([
+          unauthorized(),
+          unauthorized(),
+          _registered(),
+        ], refreshes: true),
+        (false, 2, 1),
+      );
+    });
+
+    test('with no refresh to ask: false after one post', () async {
+      expect(await register([unauthorized(), _registered()]), (false, 1, 0));
+    });
+  });
 }
 
 final class _FakeTokenSource implements PushMessagingTokenSource {
@@ -387,4 +464,25 @@ final class _RecordingGateway implements PushDeviceRegistrationApiGateway {
 final class _FailingInstallationIdStore implements InstallationIdStore {
   @override
   Future<String> readOrCreate() => Future.error(StateError('no storage'));
+}
+
+ApiResponse<Map<String, Object?>> _registered() =>
+    ApiResponse<Map<String, Object?>>.success(<String, Object?>{
+      'device_token_registered': true,
+      'platform': 'android',
+      'active': true,
+    }, statusCode: 201);
+
+/// Answers each registration with the next scripted reply.
+final class _ScriptedGateway implements PushDeviceRegistrationApiGateway {
+  _ScriptedGateway(this.answers);
+
+  final List<ApiResponse<Map<String, Object?>>> answers;
+  var posts = 0;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) async => answers[posts++];
 }

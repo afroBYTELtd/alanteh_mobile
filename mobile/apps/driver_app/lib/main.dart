@@ -53,10 +53,11 @@ Future<void> main() async {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
   final pushDeviceRegistrarFactory =
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-      ? (AuthTokenStore tokenStore) =>
+      ? (AuthTokenStore tokenStore, {PushSessionRefresh? refreshSession}) =>
             FirebasePushDeviceRegistrar.withDefaultClient(
               tokenStore: tokenStore,
               baseUrl: AsmApiClient.defaultBaseUrl,
+              refreshSession: refreshSession,
             )
       : null;
   runApp(
@@ -766,12 +767,23 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   Future<void> _signInAgain() =>
       _handleOfferSessionExpired(driverSessionExpiredMessage);
 
+  /// T2: push registration refreshes through the app's shared refresh;
+  /// only "refreshed" counts.
+  PushSessionRefresh? get _pushSessionRefresh {
+    final refresh = widget.accessTokenRefresh;
+    if (refresh == null) {
+      return null;
+    }
+    return () async => await refresh() == DriverTokenRefreshOutcome.refreshed;
+  }
+
   @override
   void initState() {
     super.initState();
     DriverSessionEnd.signIn = _signInAgain;
     _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
       widget.authTokenStore,
+      refreshSession: _pushSessionRefresh,
     );
     _configureSessionAwareOfferResponseFactory();
     _configureOffers();

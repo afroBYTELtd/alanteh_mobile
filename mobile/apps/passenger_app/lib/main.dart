@@ -41,10 +41,11 @@ Future<void> main() async {
   final configuration = AsmAppConfigLoader.fromCompileTimeEnvironment();
   final pushDeviceRegistrarFactory =
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-      ? (AuthTokenStore tokenStore) =>
+      ? (AuthTokenStore tokenStore, {PushSessionRefresh? refreshSession}) =>
             FirebasePushDeviceRegistrar.withDefaultClient(
               tokenStore: tokenStore,
               baseUrl: AsmApiClient.defaultBaseUrl,
+              refreshSession: refreshSession,
             )
       : null;
   runApp(
@@ -373,7 +374,6 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
   void initState() {
     super.initState();
     _tokenStore = widget.authTokenStore ?? SecureAuthTokenStore();
-    _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(_tokenStore);
     const apiBaseUrl = AsmApiClient.defaultBaseUrl;
     _authService =
         widget.authService ??
@@ -382,6 +382,11 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           tokenStore: _tokenStore,
           appContext: AuthAppContext.passenger,
         );
+    // T2: push registration refreshes through this app's AuthService.
+    _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
+      _tokenStore,
+      refreshSession: () async => (await _authService.refresh()).isAuthenticated,
+    );
     _rideRequestSubmitter =
         widget.rideRequestSubmitter ??
         ApiPassengerRideRequestSubmitter.withDefaultClient(

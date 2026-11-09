@@ -68,8 +68,14 @@ final class AsmPushDeviceRegistrationApiGateway
   }
 }
 
+/// Refreshes the app session once; true when it was refreshed (T2).
+typedef PushSessionRefresh = Future<bool> Function();
+
 typedef PushDeviceRegistrarFactory =
-    PushDeviceRegistrar Function(AuthTokenStore tokenStore);
+    PushDeviceRegistrar Function(
+      AuthTokenStore tokenStore, {
+      PushSessionRefresh? refreshSession,
+    });
 
 abstract interface class PushDeviceRegistrar {
   Future<bool> registerForAuthenticatedSession();
@@ -89,9 +95,11 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
     required PushMessagingTokenSource tokenSource,
     required PushDeviceRegistrationApiGateway apiGateway,
     InstallationIdStore? installationIdStore,
+    PushSessionRefresh? refreshSession,
   }) : _tokenSource = tokenSource,
        _apiGateway = apiGateway,
-       _installationIdStore = installationIdStore;
+       _installationIdStore = installationIdStore,
+       _refreshSession = refreshSession;
 
   /// What the apps use. [tokenSource] and [apiGateway] are for tests only
   /// (the defaults need Firebase and the network); the installation id
@@ -99,6 +107,7 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
   factory FirebasePushDeviceRegistrar.withDefaultClient({
     required AuthTokenStore tokenStore,
     required String baseUrl,
+    PushSessionRefresh? refreshSession,
     @visibleForTesting PushMessagingTokenSource? tokenSource,
     @visibleForTesting PushDeviceRegistrationApiGateway? apiGateway,
   }) {
@@ -113,12 +122,14 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
             ),
           ),
       installationIdStore: SecureInstallationIdStore(),
+      refreshSession: refreshSession,
     );
   }
 
   final PushMessagingTokenSource _tokenSource;
   final PushDeviceRegistrationApiGateway _apiGateway;
   final InstallationIdStore? _installationIdStore;
+  final PushSessionRefresh? _refreshSession;
   String? _deviceToken;
 
   @override
@@ -198,14 +209,19 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
     _deviceToken = token;
     final installationId = await _installationId();
     try {
-      final response = await _apiGateway.post(
-        pushDeviceRegistrationPath,
-        data: <String, Object?>{
-          'device_token': token,
-          'platform': 'android',
-          'installation_id': ?installationId,
-        },
-      );
+      var response = await _post(token, installationId);
+      if (_unauthorized(response)) {
+        // T2: refresh the session once and ask once more; the API client
+        // reads the new access token from the store.
+        final refresh = _refreshSession;
+        if (refresh == null ||
+            !await _refreshed(refresh) ||
+            !_authenticated ||
+            _disposed) {
+          return false;
+        }
+        response = await _post(token, installationId);
+      }
 
       if (response.statusCode != 200 && response.statusCode != 201) {
         return false;
@@ -216,6 +232,32 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
           data?['device_token_registered'] == true &&
           data?['platform'] == 'android' &&
           data?['active'] == true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<ApiResponse<Map<String, Object?>>> _post(
+    String token,
+    String? installationId,
+  ) {
+    return _apiGateway.post(
+      pushDeviceRegistrationPath,
+      data: <String, Object?>{
+        'device_token': token,
+        'platform': 'android',
+        'installation_id': ?installationId,
+      },
+    );
+  }
+
+  static bool _unauthorized(ApiResponse<Map<String, Object?>> response) =>
+      response.statusCode == 401 ||
+      response.error?.type == AsmApiExceptionType.authentication;
+
+  static Future<bool> _refreshed(PushSessionRefresh refresh) async {
+    try {
+      return await refresh();
     } on Object {
       return false;
     }

@@ -5,6 +5,7 @@ import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:driver_app/driver_duty_trips.dart';
 import 'package:driver_app/main.dart';
+import 'package:driver_app/network/driver_trip_action_gateway.dart';
 import 'package:driver_app/notifications/push_device_registration.dart';
 import 'package:driver_app/notifications/push_notification_runtime.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -45,7 +46,7 @@ void main() {
     ),
     authTokenStore: tokens,
     driverDutyGateway: duty,
-    pushDeviceRegistrarFactory: (_) => _Registrar(),
+    pushDeviceRegistrarFactory: (_, {refreshSession}) => _Registrar(),
     pushMessageSource: _NoPushes(),
     queueHousekeeping: ({signedInTag}) async =>
         events.add('housekeeping ${signedInTag ?? 'none'}'),
@@ -68,6 +69,47 @@ void main() {
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
     await tester.tap(button);
+  }
+
+  // T2 (lead, 8 Nov): push registration refreshes through the app's own
+  // shared refresh, and only "refreshed" counts as success.
+  for (final (outcome, success) in const [
+    (DriverTokenRefreshOutcome.refreshed, true),
+    (DriverTokenRefreshOutcome.temporarilyUnavailable, false),
+    (DriverTokenRefreshOutcome.sessionExpired, false),
+  ]) {
+    testWidgets('T2: the push registrar refreshes through the shared '
+        'refresh ($outcome)', (tester) async {
+      PushSessionRefresh? given;
+      var refreshes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DriverLoginShell(
+            authService: AuthService(
+              apiGateway: api,
+              tokenStore: tokens,
+              appContext: AuthAppContext.driver,
+            ),
+            authTokenStore: tokens,
+            driverDutyGateway: duty,
+            accessTokenRefresh: () async {
+              refreshes += 1;
+              return outcome;
+            },
+            pushDeviceRegistrarFactory: (_, {refreshSession}) {
+              given = refreshSession;
+              return _Registrar();
+            },
+            pushMessageSource: _NoPushes(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(given, isNotNull);
+      expect(await given!(), success);
+      expect(refreshes, 1);
+    });
   }
 
   testWidgets('Sign out tells the server, then shows sign-in', (tester) async {

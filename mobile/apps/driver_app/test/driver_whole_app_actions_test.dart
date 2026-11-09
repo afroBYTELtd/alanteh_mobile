@@ -270,10 +270,11 @@ final class _App {
       connectionConfigured: true,
     ),
     pushMessageSource: _NoPushes(),
-    pushDeviceRegistrarFactory: (_) => FirebasePushDeviceRegistrar(
-      tokenSource: _TokenSource(),
-      apiGateway: AsmPushDeviceRegistrationApiGateway(_client),
-    ),
+    pushDeviceRegistrarFactory: (_, {refreshSession}) =>
+        FirebasePushDeviceRegistrar(
+          tokenSource: _TokenSource(),
+          apiGateway: AsmPushDeviceRegistrationApiGateway(_client),
+        ),
   );
 
   Future<void> pumpSignedIn(WidgetTester tester) async {
