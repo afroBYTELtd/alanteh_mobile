@@ -768,13 +768,20 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
       _handleOfferSessionExpired(driverSessionExpiredMessage);
 
   /// T2: push registration refreshes through the app's shared refresh;
-  /// only "refreshed" counts.
+  /// only "refreshed" counts. T2b: a refused session ends at once, as a
+  /// refused offers poll does; "not now" keeps the sign-in.
   PushSessionRefresh? get _pushSessionRefresh {
     final refresh = widget.accessTokenRefresh;
     if (refresh == null) {
       return null;
     }
-    return () async => await refresh() == DriverTokenRefreshOutcome.refreshed;
+    return () async {
+      final outcome = await refresh();
+      if (outcome == DriverTokenRefreshOutcome.sessionExpired && mounted) {
+        unawaited(_handleOfferSessionExpired(driverSessionExpiredMessage));
+      }
+      return outcome == DriverTokenRefreshOutcome.refreshed;
+    };
   }
 
   @override

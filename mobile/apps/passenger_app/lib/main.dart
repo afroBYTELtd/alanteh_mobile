@@ -383,9 +383,18 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
           appContext: AuthAppContext.passenger,
         );
     // T2: push registration refreshes through this app's AuthService.
+    // T2b: a refused session (not "not now") returns to sign-in at once.
     _pushDeviceRegistrar = widget.pushDeviceRegistrarFactory?.call(
       _tokenStore,
-      refreshSession: () async => (await _authService.refresh()).isAuthenticated,
+      refreshSession: () async {
+        final state = await _authService.refresh();
+        if (!state.isAuthenticated &&
+            !state.isTemporarilyUnavailable &&
+            mounted) {
+          unawaited(_returnToSignIn());
+        }
+        return state.isAuthenticated;
+      },
     );
     _rideRequestSubmitter =
         widget.rideRequestSubmitter ??
@@ -724,7 +733,23 @@ class _PassengerLoginShellState extends State<PassengerLoginShell> {
     });
   }
 
+  bool _returningToSignIn = false;
+
   Future<void> _returnToSignIn() async {
+    // T2b: two refusals at once (push and a booking) return once; a second
+    // "Signing out…" dialog could pop the app's own screen.
+    if (_returningToSignIn) {
+      return;
+    }
+    _returningToSignIn = true;
+    try {
+      await _returnToSignInOnce();
+    } finally {
+      _returningToSignIn = false;
+    }
+  }
+
+  Future<void> _returnToSignInOnce() async {
     // A4: "Sign in again" on the trip screen is a sign-out the passenger
     // asked for, so the server is told first (as for Account's Sign out).
     // A session the server already refused has no tokens left, and then
