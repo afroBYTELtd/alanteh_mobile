@@ -812,7 +812,11 @@ class _DriverShellState extends State<DriverShell> {
           : DriverShiftStatus.notStarted,
       onlineDurationLabel: _isOnline ? 'In progress' : 'Pre-shift',
       completedTrips: 0,
-      vehicleLabel: driverEmptyValue,
+      // F-B: the vehicle from the driver summary, or "Not assigned yet".
+      vehicleLabel: switch (_dutySummary?.assignedVehicleReference?.trim()) {
+        final vehicle? when vehicle.isNotEmpty => vehicle,
+        _ => driverEmptyValue,
+      },
       serviceAreaLabel: widget.configuration.market.countryName,
     );
   }
