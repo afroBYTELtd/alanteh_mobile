@@ -415,6 +415,42 @@ void main() {
       expect(await register([unauthorized(), _registered()]), (false, 1, 0));
     });
   });
+
+  // T2c (lead, 12 Nov): a session that ended on purpose while the first
+  // post was out is not refreshed when that post's 401 comes back.
+  group('T2c the session ends while the first post is out', () {
+    for (final (name, end)
+        in <(String, Future<void> Function(PushDeviceRegistrar))>[
+          (
+            'signed out',
+            (registrar) async => registrar.endAuthenticatedSession(),
+          ),
+          ('disposed', (registrar) => registrar.dispose()),
+        ]) {
+      test('$name, then 401: no refresh, false, one post', () async {
+        final tokens = _FakeTokenSource(initialToken: 'FCM-T2C');
+        final gateway = _GatedGateway();
+        var refreshCalls = 0;
+        final registrar = FirebasePushDeviceRegistrar(
+          tokenSource: tokens,
+          apiGateway: gateway,
+          refreshSession: () async {
+            refreshCalls += 1;
+            return true;
+          },
+        );
+
+        final result = registrar.registerForAuthenticatedSession();
+        await gateway.firstPost.future;
+        await end(registrar);
+        gateway.answer.complete();
+
+        expect((await result, gateway.posts, refreshCalls), (false, 1, 0));
+        await registrar.dispose();
+        await tokens.dispose();
+      });
+    }
+  });
 }
 
 final class _FakeTokenSource implements PushMessagingTokenSource {
@@ -512,6 +548,33 @@ ApiResponse<Map<String, Object?>> _registered() =>
       'platform': 'android',
       'active': true,
     }, statusCode: 201);
+
+/// The first post waits for [answer], then says 401; [firstPost] completes
+/// when it is out.
+final class _GatedGateway implements PushDeviceRegistrationApiGateway {
+  final firstPost = Completer<void>();
+  final answer = Completer<void>();
+  var posts = 0;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) async {
+    posts += 1;
+    if (!firstPost.isCompleted) {
+      firstPost.complete();
+    }
+    await answer.future;
+    return ApiResponse<Map<String, Object?>>.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.authentication,
+        message: 'Unauthenticated.',
+        statusCode: 401,
+      ),
+    );
+  }
+}
 
 /// Answers each registration with the next scripted reply.
 final class _ScriptedGateway implements PushDeviceRegistrationApiGateway {

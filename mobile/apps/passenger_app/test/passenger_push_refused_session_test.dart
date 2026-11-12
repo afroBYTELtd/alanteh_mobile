@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:passenger_app/booking/booking_submission.dart';
 import 'package:passenger_app/main.dart';
 import 'package:passenger_app/notifications/push_device_registration.dart';
 import 'package:passenger_app/notifications/push_notification_runtime.dart';
@@ -18,8 +21,10 @@ void main() {
   late AuthService auth;
   late _Registrar registrar;
   PushSessionRefresh? pushRefresh;
+  PushDeviceRegistrar Function(PushSessionRefresh? refresh)? makeRegistrar;
 
   setUp(() {
+    makeRegistrar = null;
     tokens = MemoryAuthTokenStore();
     api = _Api();
     auth = AuthService(
@@ -42,7 +47,7 @@ void main() {
         authService: auth,
         pushDeviceRegistrarFactory: (_, {refreshSession}) {
           pushRefresh = refreshSession;
-          return registrar;
+          return makeRegistrar?.call(refreshSession) ?? registrar;
         },
         pushMessageSource: _NoPushes(),
       ),
@@ -126,6 +131,51 @@ void main() {
     expect(registrar.sessionEnds, 1, reason: 'one return to sign-in');
     expect(api.paths, isNot(contains(AuthService.logoutPath)));
   });
+
+  // T2c (lead, 12 Nov): a deliberate sign-out while the registration post
+  // is out; its 401 then comes back. No second end of the session.
+  testWidgets('T2c: a deliberate sign-out while a registration is out, '
+      'then its 401: no sign-in message, no "Signing out…", no error, one '
+      'session end', (tester) async {
+    final gateway = _GatedPushGateway();
+    late _CountingRegistrar counting;
+    makeRegistrar = (refresh) => counting = _CountingRegistrar(
+      FirebasePushDeviceRegistrar(
+        tokenSource: _FcmToken(),
+        apiGateway: gateway,
+        refreshSession: refresh,
+      ),
+    );
+    await pumpSignedIn(tester);
+    expect(gateway.posts, 1, reason: 'the registration is out');
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    final signOut = find.byKey(const Key('passenger-account-sign-out'));
+    await tester.ensureVisible(signOut);
+    await tester.pumpAndSettle();
+    await tester.tap(signOut);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(api.paths, contains(AuthService.logoutPath));
+    final endsAfterSignOut = counting.sessionEnds;
+
+    gateway.answer.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('passenger-signing-out')), findsNothing);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('passenger-sign-in')), findsOneWidget);
+    expect(find.byKey(const Key('passenger-signing-out')), findsNothing);
+    expect(
+      find.text(PassengerRideRequestSubmissionException.signInRequiredMessage),
+      findsNothing,
+    );
+    expect(counting.sessionEnds, endsAfterSignOut);
+    expect(gateway.posts, 1);
+  });
 }
 
 final class _Api implements AuthApiGateway {
@@ -193,4 +243,66 @@ final class _NoPushes implements PassengerPushMessageSource {
 
   @override
   Future<RemoteMessage?> getInitialMessage() async => null;
+}
+
+/// T2c: a real registrar whose first registration post waits for
+/// [answer] and then says 401.
+final class _GatedPushGateway implements PushDeviceRegistrationApiGateway {
+  final answer = Completer<void>();
+  var posts = 0;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) async {
+    posts += 1;
+    await answer.future;
+    return ApiResponse<Map<String, Object?>>.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.authentication,
+        message: 'Unauthenticated.',
+        statusCode: 401,
+      ),
+    );
+  }
+}
+
+final class _FcmToken implements PushMessagingTokenSource {
+  @override
+  Future<String?> getToken() async => 'FCM-T2C';
+
+  @override
+  Stream<String> get onTokenRefresh => const Stream<String>.empty();
+
+  @override
+  Future<bool> requestNotificationPermission() async => true;
+}
+
+/// Counts the session ends of the real registrar it wraps.
+final class _CountingRegistrar implements PushDeviceRegistrar {
+  _CountingRegistrar(this.inner);
+
+  final PushDeviceRegistrar inner;
+  var sessionEnds = 0;
+
+  @override
+  String? get deviceToken => inner.deviceToken;
+
+  @override
+  Future<bool> registerForAuthenticatedSession() =>
+      inner.registerForAuthenticatedSession();
+
+  @override
+  Future<bool> requestNotificationPermission() =>
+      inner.requestNotificationPermission();
+
+  @override
+  void endAuthenticatedSession() {
+    sessionEnds += 1;
+    inner.endAuthenticatedSession();
+  }
+
+  @override
+  Future<void> dispose() => inner.dispose();
 }

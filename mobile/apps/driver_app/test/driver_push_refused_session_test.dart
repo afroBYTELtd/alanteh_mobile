@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:asm_api_client/asm_api_client.dart';
 import 'package:asm_auth/asm_auth.dart';
 import 'package:driver_app/driver_duty_trips.dart';
@@ -19,8 +21,10 @@ void main() {
   late _Duty duty;
   late _Routes routes;
   PushSessionRefresh? pushRefresh;
+  PushDeviceRegistrar Function(PushSessionRefresh? refresh)? makeRegistrar;
 
   setUp(() {
+    makeRegistrar = null;
     tokens = MemoryAuthTokenStore();
     refreshEndpoint = _RefreshEndpoint();
     duty = _Duty();
@@ -48,7 +52,7 @@ void main() {
           accessTokenRefresh: controller.refresh,
           pushDeviceRegistrarFactory: (_, {refreshSession}) {
             pushRefresh = refreshSession;
-            return _Registrar();
+            return makeRegistrar?.call(refreshSession) ?? _Registrar();
           },
           pushMessageSource: _NoPushes(),
         ),
@@ -117,6 +121,44 @@ void main() {
     expect(find.text(driverSessionExpiredMessage), findsOneWidget);
     expect(routes.pushes, 0);
     expect(routes.pops, 0);
+  });
+
+  // T2c (lead, 12 Nov): a deliberate sign-out while the registration post
+  // is out; its 401 then comes back. No second end of the session.
+  testWidgets('T2c: a deliberate sign-out while a registration is out, '
+      'then its 401: no "session expired", no error, one session end', (
+    tester,
+  ) async {
+    final gateway = _GatedPushGateway();
+    late _CountingRegistrar registrar;
+    makeRegistrar = (refresh) => registrar = _CountingRegistrar(
+      FirebasePushDeviceRegistrar(
+        tokenSource: _FcmToken(),
+        apiGateway: gateway,
+        refreshSession: refresh,
+      ),
+    );
+    await pumpSignedIn(tester);
+    expect(gateway.posts, 1, reason: 'the registration is out');
+
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    final signOut = find.byKey(const Key('driver-account-sign-out'));
+    await tester.ensureVisible(signOut);
+    await tester.pumpAndSettle();
+    await tester.tap(signOut);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    final endsAfterSignOut = registrar.sessionEnds;
+
+    gateway.answer.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+    expect(find.text(driverSessionExpiredMessage), findsNothing);
+    expect(registrar.sessionEnds, endsAfterSignOut);
+    expect(gateway.posts, 1);
   });
 }
 
@@ -229,4 +271,66 @@ final class _NoPushes implements DriverPushMessageSource {
 
   @override
   Future<RemoteMessage?> getInitialMessage() async => null;
+}
+
+/// T2c: a real registrar whose first registration post waits for
+/// [answer] and then says 401.
+final class _GatedPushGateway implements PushDeviceRegistrationApiGateway {
+  final answer = Completer<void>();
+  var posts = 0;
+
+  @override
+  Future<ApiResponse<Map<String, Object?>>> post(
+    String path, {
+    required Map<String, Object?> data,
+  }) async {
+    posts += 1;
+    await answer.future;
+    return ApiResponse<Map<String, Object?>>.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.authentication,
+        message: 'Unauthenticated.',
+        statusCode: 401,
+      ),
+    );
+  }
+}
+
+final class _FcmToken implements PushMessagingTokenSource {
+  @override
+  Future<String?> getToken() async => 'FCM-T2C';
+
+  @override
+  Stream<String> get onTokenRefresh => const Stream<String>.empty();
+
+  @override
+  Future<bool> requestNotificationPermission() async => true;
+}
+
+/// Counts the session ends of the real registrar it wraps.
+final class _CountingRegistrar implements PushDeviceRegistrar {
+  _CountingRegistrar(this.inner);
+
+  final PushDeviceRegistrar inner;
+  var sessionEnds = 0;
+
+  @override
+  String? get deviceToken => inner.deviceToken;
+
+  @override
+  Future<bool> registerForAuthenticatedSession() =>
+      inner.registerForAuthenticatedSession();
+
+  @override
+  Future<bool> requestNotificationPermission() =>
+      inner.requestNotificationPermission();
+
+  @override
+  void endAuthenticatedSession() {
+    sessionEnds += 1;
+    inner.endAuthenticatedSession();
+  }
+
+  @override
+  Future<void> dispose() => inner.dispose();
 }

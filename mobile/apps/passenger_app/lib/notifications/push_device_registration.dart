@@ -213,9 +213,12 @@ final class FirebasePushDeviceRegistrar implements PushDeviceRegistrar {
       var response = await _post(token, installationId);
       if (_unauthorized(response)) {
         // T2: refresh the session once and ask once more; the API client
-        // reads the new access token from the store.
+        // reads the new access token from the store. T2c: a session that
+        // ended while the post was out is not refreshed.
         final refresh = _refreshSession;
         if (refresh == null ||
+            !_authenticated ||
+            _disposed ||
             !await _refreshed(refresh) ||
             !_authenticated ||
             _disposed) {
