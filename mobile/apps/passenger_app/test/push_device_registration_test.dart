@@ -410,6 +410,46 @@ void main() {
         await tokens.dispose();
       });
     }
+
+    for (final (name, end)
+        in <(String, Future<void> Function(PushDeviceRegistrar))>[
+          (
+            'signed out',
+            (registrar) async => registrar.endAuthenticatedSession(),
+          ),
+          ('disposed', (registrar) => registrar.dispose()),
+        ]) {
+      test(
+        '$name during the refresh, which works: false, no second post',
+        () async {
+          final tokens = _FakeTokenSource(initialToken: 'FCM-T2C');
+          final gateway = _ScriptedGateway([
+            ApiResponse<Map<String, Object?>>.apiFailure(
+              const AsmApiException(
+                type: AsmApiExceptionType.authentication,
+                message: 'Unauthenticated.',
+                statusCode: 401,
+              ),
+            ),
+            _registered(),
+          ]);
+          late FirebasePushDeviceRegistrar registrar;
+          registrar = FirebasePushDeviceRegistrar(
+            tokenSource: tokens,
+            apiGateway: gateway,
+            refreshSession: () async {
+              await end(registrar);
+              return true;
+            },
+          );
+
+          expect(await registrar.registerForAuthenticatedSession(), isFalse);
+          expect(gateway.posts, 1);
+          await registrar.dispose();
+          await tokens.dispose();
+        },
+      );
+    }
   });
 }
 
