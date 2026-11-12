@@ -34,7 +34,10 @@ void main() {
           driverDutyGateway: duty,
           deviceNow: () => now,
           signInTimeLeft: () async => left,
-          onSignOut: () async => signOuts += 1,
+          onSignOut: () async {
+            signOuts += 1;
+            return true;
+          },
         ),
       ),
     );

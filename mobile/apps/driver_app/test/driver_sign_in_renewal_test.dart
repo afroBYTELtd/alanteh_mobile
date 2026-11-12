@@ -26,7 +26,10 @@ void main() {
           driverDutyGateway: _OfflineNoCheck(now),
           deviceNow: () => now,
           signInTimeLeft: () async => left,
-          onSignOut: () async => signOuts += 1,
+          onSignOut: () async {
+            signOuts += 1;
+            return true;
+          },
         ),
       ),
     );
@@ -66,7 +69,10 @@ void main() {
           driverDutyGateway: _OfflineNoCheck(now),
           deviceNow: () => now,
           signInTimeLeft: () async => const Duration(hours: 11),
-          onSignOut: () async => signOuts += 1,
+          onSignOut: () async {
+            signOuts += 1;
+            return true;
+          },
         ),
       ),
     );

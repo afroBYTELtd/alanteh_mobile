@@ -1359,9 +1359,11 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
   /// "Signing out…" dialog. On 409 active_trip the driver stays signed in
   /// and sees the server's words; Work reloads. Otherwise the session ends
   /// on the phone (a sign-out the server did not get is kept pending).
-  Future<void> _signOut() async {
+  /// True when the session ended on the phone; false while another
+  /// sign-out runs or on 409 active_trip (the driver stays signed in).
+  Future<bool> _signOut() async {
     if (_signingOut) {
-      return;
+      return false;
     }
     _signingOut = true;
     SignOutResult? result;
@@ -1377,15 +1379,20 @@ class _DriverLoginShellState extends State<DriverLoginShell> {
     } finally {
       _signingOut = false;
     }
-    if (!mounted) {
-      return;
-    }
     if (result?.outcome == SignOutOutcome.activeTrip) {
-      await _showSignOutRefused(result?.message ?? driverSignOutActiveTripText);
-      _tripsChanged.ping();
-      return;
+      if (mounted) {
+        await _showSignOutRefused(
+          result?.message ?? driverSignOutActiveTripText,
+        );
+        _tripsChanged.ping();
+      }
+      return false;
+    }
+    if (!mounted) {
+      return true;
     }
     await _endSessionOnPhone();
+    return true;
   }
 
   Future<T> _whileSigningOut<T>(Future<T> work) async {

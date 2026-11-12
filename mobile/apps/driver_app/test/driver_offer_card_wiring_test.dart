@@ -302,6 +302,61 @@ void main() {
     await app.dispose(tester);
   });
 
+  // F-A (lead, 8 Nov): Work must not drop to "offline / not yet started"
+  // while the server's 409 is shown, and the offers poll must go on.
+  group('F-A sign-out answered 409 active_trip', () {
+    testWidgets('Work keeps its duty and the poll keeps running while the '
+        'message is open; OK reloads Work', (tester) async {
+      final app = _App();
+      app.auth.logoutActiveTrip = true;
+      await app.pumpSignedIn(tester);
+      expect(find.text("You're online"), findsOneWidget);
+      expect(app.timers.polling, isTrue);
+
+      await app.tapSignOut(tester);
+
+      expect(find.byKey(const Key('driver-sign-out-refused')), findsOneWidget);
+      expect(app.timers.polling, isTrue, reason: 'the poll goes on');
+      expect(find.text("You're offline", skipOffstage: false), findsNothing);
+      expect(
+        find.textContaining('not yet started', skipOffstage: false),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('driver-sign-in')), findsNothing);
+
+      final dutyCalls = app.duty.dutyCalls;
+      await tester.tap(find.byKey(const Key('driver-sign-out-refused-ok')));
+      await _settle(tester);
+
+      expect(app.duty.dutyCalls, greaterThan(dutyCalls), reason: 'reloaded');
+      expect(app.timers.polling, isTrue);
+      expect(find.byKey(const Key('driver-sign-in')), findsNothing);
+      await app.dispose(tester);
+    });
+
+    testWidgets('A5: a poll still out when the sign-out ends changes nothing '
+        'after it', (tester) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      app.source.hold = true;
+      unawaited(app.coordinator.store.refresh());
+      await tester.pump();
+      expect(app.source.held, 1);
+
+      await app.tapSignOut(tester);
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+
+      app.source.releaseExpired();
+      await _settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(app.sessionExpiredCalls, 0, reason: 'no second sign-out');
+      expect(find.byKey(const Key('driver-sign-in')), findsOneWidget);
+      expect(find.text(driverSessionExpiredMessage), findsNothing);
+      await app.dispose(tester);
+    });
+  });
+
   testWidgets("the card's answer is for the listed offer's assigned_at", (
     tester,
   ) async {
@@ -1611,8 +1666,15 @@ final class _App {
   final tokenStore = MemoryAuthTokenStore();
   final duty = _Duty();
   final fetchLog = <String>[];
+
+  /// Times the offers store reported an ended session.
+  var sessionExpiredCalls = 0;
   late final coordinator = DriverOfferCoordinator(
-    store: DriverPendingOfferStore(source: source, clock: clock),
+    store: DriverPendingOfferStore(
+      source: source,
+      clock: clock,
+      onSessionExpired: () async => sessionExpiredCalls += 1,
+    ),
     periodicTimer: timers.create,
     log: fetchLog.add,
   );
@@ -1676,6 +1738,16 @@ final class _App {
     await _settle(tester);
   }
 
+  Future<void> tapSignOut(WidgetTester tester) async {
+    await tester.tap(find.text('Account'));
+    await _settle(tester);
+    final button = find.byKey(const Key('driver-account-sign-out'));
+    await tester.ensureVisible(button);
+    await _settle(tester);
+    await tester.tap(button);
+    await _settle(tester);
+  }
+
   Future<void> dispose(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
@@ -1735,6 +1807,15 @@ final class _Source implements DriverPendingOffersSource {
     _held.clear();
   }
 
+  /// Answers every held fetch with "the session ended".
+  void releaseExpired() {
+    hold = false;
+    for (final pending in _held) {
+      pending.complete(const DriverPendingOffersSessionExpired());
+    }
+    _held.clear();
+  }
+
   /// Answers only the oldest held fetch; later ones stay held.
   void releaseOldest(List<Map<String, Object?>> withOffers) =>
       _held.removeAt(0).complete(_reply(withOffers, serverNow));
@@ -1750,7 +1831,16 @@ final class _Source implements DriverPendingOffersSource {
 }
 
 final class _Timers {
-  Timer create(Duration interval, void Function(Timer) onTick) => _Timer();
+  final created = <_Timer>[];
+
+  /// True while the offers poll has a running timer.
+  bool get polling => created.any((timer) => timer.isActive);
+
+  Timer create(Duration interval, void Function(Timer) onTick) {
+    final timer = _Timer();
+    created.add(timer);
+    return timer;
+  }
 }
 
 final class _Timer implements Timer {
@@ -1768,6 +1858,9 @@ final class _Timer implements Timer {
 
 final class _AuthApi implements AuthApiGateway {
   bool refreshRejected = false;
+
+  /// Sign-out answers 409 active_trip (F-A).
+  bool logoutActiveTrip = false;
   bool holdRefresh = false;
   final _gate = Completer<void>();
 
@@ -1778,6 +1871,20 @@ final class _AuthApi implements AuthApiGateway {
     String path, {
     required Map<String, Object?> body,
   }) async {
+    if (path == AuthService.logoutPath && logoutActiveTrip) {
+      return ApiResponse<Map<String, Object?>>.apiFailure(
+        const AsmApiException(
+          type: AsmApiExceptionType.badResponse,
+          message: 'active trip',
+          statusCode: 409,
+          cause: <String, Object?>{
+            'code': 'active_trip',
+            'detail':
+                'You have an active trip. Call dispatch before signing out.',
+          },
+        ),
+      );
+    }
     if (path == AuthService.refreshPath) {
       if (holdRefresh) {
         await _gate.future;

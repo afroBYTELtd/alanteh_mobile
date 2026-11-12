@@ -117,7 +117,11 @@ class DriverShell extends StatefulWidget {
 
   final AsmAppConfig configuration;
   final bool localQaEnabled;
-  final Future<void> Function()? onSignOut;
+
+  /// Signs out; true when the session ended on the phone (signed out, or
+  /// a sign-out kept to send later). False when it did not end (409
+  /// active_trip): Work then keeps its duty and its offers poll (F-A).
+  final Future<bool> Function()? onSignOut;
   final Future<bool> Function()? requestNotificationPermission;
   final DriverDutyGateway? driverDutyGateway;
   final DriverTripActionControllerFactory? driverTripActionControllerFactory;
@@ -1240,7 +1244,14 @@ class _DriverShellState extends State<DriverShell> {
     );
   }
 
+  /// F-A: ask first; reset Work only when the session ended. Clearing
+  /// first showed "offline / not yet started" and stopped the offers poll
+  /// while the server's 409 was on screen.
   Future<void> _signOut() async {
+    final ended = await widget.onSignOut?.call() ?? true;
+    if (!ended || !mounted) {
+      return;
+    }
     final oldDutyLoading = _dutyLoading;
     final oldConsidered = _startupShiftCheckConsidered;
     final oldSelectedIndex = _selectedIndex;
@@ -1275,7 +1286,6 @@ class _DriverShellState extends State<DriverShell> {
         reason: 'sign_out',
       );
     });
-    await widget.onSignOut?.call();
   }
 
   Widget get _workPage {

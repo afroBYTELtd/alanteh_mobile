@@ -681,7 +681,10 @@ void main() {
           driverDutyGateway: dutyGateway,
           driverShiftCheckController: controller,
           deviceNow: () => now,
-          onSignOut: () async => signOuts += 1,
+          onSignOut: () async {
+            signOuts += 1;
+            return true;
+          },
         ),
       ),
     );
