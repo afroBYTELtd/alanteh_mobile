@@ -272,7 +272,16 @@ final class AsmDriverDutyGateway
 
     try {
       resolution = await tokenGuard.resolve(forceRefresh: forceRefresh);
-    } on DriverAccessTokenRefreshException {
+    } on DriverAccessTokenRefreshException catch (error) {
+      // F-C2: a refused refresh is a session that ended (sign-in, as for a
+      // 401); one that cannot be done just now stays "temporarily
+      // unavailable".
+      if (error.refused) {
+        throw const DriverDutyApiException(
+          DriverDutyApiFailureType.sessionExpired,
+          driverSessionExpiredMessage,
+        );
+      }
       throw const DriverDutyApiException(
         DriverDutyApiFailureType.unavailable,
         'Driver information is temporarily unavailable.',

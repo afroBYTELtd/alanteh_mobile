@@ -1153,6 +1153,77 @@ void main() {
       reason: 'No deferred queue or later duty delivery may remain.',
     );
   });
+
+  // F-C2 (lead, 12 Nov): GO ONLINE/OFFLINE through the real guard. A
+  // refused refresh is a session that ended; a refresh that cannot be done
+  // just now stays "temporarily unavailable".
+  group('F-C2 a refresh before the duty post', () {
+    const expiredToken = 'e30.eyJleHAiOjF9.';
+    const validToken = 'e30.eyJleHAiOjQxMDI0NDQ4MDB9.';
+
+    Future<(DriverDutyApiException, int)> postAfter(
+      Future<DriverTokenRefreshOutcome> Function() refresh, {
+      String storedToken = expiredToken,
+      bool serverSays401 = false,
+    }) async {
+      final DriverDutyApiClient apiClient = serverSays401
+          ? _UnauthorizedDutyApiClient()
+          : _RecordingDutyApiClient();
+      final gateway = AsmDriverDutyGateway.withApiClient(
+        apiClient: apiClient,
+        tokenStore: _MutableTokenStore(storedToken),
+        refreshAccessToken: refresh,
+        dutyRetryDelay: (_) async {},
+      );
+      try {
+        await gateway.updateDutyStatus(DriverOperationalDutyStatus.offline);
+      } on DriverDutyApiException catch (error) {
+        final posts = apiClient is _UnauthorizedDutyApiClient
+            ? apiClient.postCalls
+            : (apiClient as _RecordingDutyApiClient).postCalls;
+        return (error, posts);
+      }
+      fail('the duty post should have failed');
+    }
+
+    test('refused: the session ended, nothing posted', () async {
+      final (error, posts) = await postAfter(
+        () async => DriverTokenRefreshOutcome.sessionExpired,
+      );
+      expect(error.type, DriverDutyApiFailureType.sessionExpired);
+      expect(error.message, driverSessionExpiredMessage);
+      expect(posts, 0);
+    });
+
+    test('refused after the server said 401: the session ended', () async {
+      final (error, posts) = await postAfter(
+        () async => DriverTokenRefreshOutcome.sessionExpired,
+        storedToken: validToken,
+        serverSays401: true,
+      );
+      expect(error.type, DriverDutyApiFailureType.sessionExpired);
+      expect(posts, 1);
+    });
+
+    test('not now: temporarily unavailable, as before', () async {
+      final (error, posts) = await postAfter(
+        () async => DriverTokenRefreshOutcome.temporarilyUnavailable,
+      );
+      expect(error.type, DriverDutyApiFailureType.unavailable);
+      expect(error.message, 'Driver information is temporarily unavailable.');
+      expect(error.noAnswer, isTrue);
+      expect(posts, 0);
+    });
+
+    test('a refresh that throws: temporarily unavailable, as before', () async {
+      final (error, posts) = await postAfter(
+        () async => throw StateError('no network'),
+      );
+      expect(error.type, DriverDutyApiFailureType.unavailable);
+      expect(error.noAnswer, isTrue);
+      expect(posts, 0);
+    });
+  });
   testWidgets('test_greeting_before_noon_is_good_morning', (tester) async {
     await tester.pumpWidget(
       _testApp(
@@ -1811,6 +1882,34 @@ final class _RecordingDutyApiClient
     });
 
     return ApiResponse<T>.success(decoded, statusCode: 200);
+  }
+}
+
+/// Every duty post is answered 401.
+final class _UnauthorizedDutyApiClient
+    implements DriverDutyApiClient, DriverDutyPostApiClient {
+  int postCalls = 0;
+
+  @override
+  Future<ApiResponse<T>> get<T>(String path, {JsonDecoder<T>? decoder}) async {
+    throw StateError('GET not used by this gateway test.');
+  }
+
+  @override
+  Future<ApiResponse<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+    JsonDecoder<T>? decoder,
+  }) async {
+    postCalls += 1;
+    return ApiResponse<T>.apiFailure(
+      const AsmApiException(
+        type: AsmApiExceptionType.authentication,
+        message: 'Unauthenticated.',
+        statusCode: 401,
+      ),
+    );
   }
 }
 
