@@ -492,6 +492,47 @@ void main() {
   });
 
   group('a push while the app is open', () {
+    // T3 (lead, 8 Nov): the push alone opens the card: one fetch, for the
+    // push, no time waited and no poll (its timer never fires here). The
+    // card's route is built on the first frame after the push is handled
+    // and is on screen on the next one: Flutter lays a newly pushed route
+    // out offstage for its first frame.
+    testWidgets('T3: one push_assigned fetch, the card built on the next '
+        'frame and on screen on the one after, no time waited, no poll', (
+      tester,
+    ) async {
+      final app = _App();
+      await app.pumpSignedIn(tester);
+      app.source.offers = [_offer('TRIP-1')];
+      final callsBefore = app.source.calls;
+      app.fetchLog.clear();
+      final startedAt = tester.binding.clock.now();
+      final card = find.byKey(const Key('offer-screen'));
+      final cardBuilt = find.byKey(
+        const Key('offer-screen'),
+        skipOffstage: false,
+      );
+
+      app.push.emitForeground(_offerMessage('TRIP-1'));
+      await tester.idle();
+      expect(app.source.calls, callsBefore + 1);
+      expect(cardBuilt, findsNothing);
+
+      await tester.pump();
+      expect(cardBuilt, findsOneWidget);
+      await tester.pump();
+      expect(card, findsOneWidget);
+
+      expect(tester.binding.clock.now(), startedAt, reason: 'no time waited');
+      expect(app.source.calls, callsBefore + 1);
+      expect(app.fetchLog, hasLength(1));
+      expect(
+        app.fetchLog.single,
+        startsWith('OFFER_FETCH reason=push_assigned'),
+      );
+      await app.dispose(tester);
+    });
+
     testWidgets('with the offer in the fetch: the card opens', (tester) async {
       final app = _App();
       await app.pumpSignedIn(tester);
